@@ -267,10 +267,10 @@ table code {
     </div>
 
     <div class="step-box">
-      <h4>2.4 Using Config Builder to Browse</h4>
-      <p>The easiest way to browse available panels is using the <a href="../firmware/config/index.html" target="_blank">Config Builder</a>:</p>
+      <h4>2.4 Using Toolbox to Browse</h4>
+      <p>The easiest way to browse available panels is using the <a href="../firmware/toolbox/index.html" target="_blank">Toolbox</a>:</p>
       <ol>
-        <li>Open the Config Builder tool</li>
+        <li>Open the Toolbox tool</li>
         <li>Load the YAML schema (it loads automatically)</li>
         <li>Add a display packet (Packet Type 32)</li>
         <li>Click on the <code>panel_ic_type</code> dropdown</li>
@@ -384,7 +384,7 @@ table code {
       <h4>4.1 Start with a Known Good Config</h4>
       <p><strong>Best Practice:</strong> Instead of creating a configuration from scratch, start with an existing preset configuration for a similar board. This ensures you have all required fields properly configured.</p>
       <ol>
-        <li>Open the <a href="../firmware/config/index.html" target="_blank">Config Builder</a> tool</li>
+        <li>Open the <a href="../firmware/toolbox/index.html" target="_blank">Toolbox</a> tool</li>
         <li>Load the YAML schema (it loads automatically)</li>
         <li>Select a compatible preset from the dropdown:
           <ul>
@@ -425,7 +425,7 @@ table code {
             <li>Configure color scheme</li>
             <li>Set all pin assignments</li>
             <li>Configure rotation if needed</li>
-            <li>Set partial_update_support</li>
+            <li>Set <code>partial_update_support</code> if the panel supports 1 bpp region refresh — wire protocol: <a href="ble-flow.html#partial-update" style="color: var(--accent);">partial update</a></li>
           </ul>
         </li>
         <li>Add any optional packets (LEDs, sensors, buttons, etc.)</li>
@@ -434,13 +434,13 @@ table code {
 
     <div class="step-box">
       <h4>4.2 Export Configuration</h4>
-      <p>Once configured, export the configuration as JSON using the "Export JSON" button in the Config Builder.</p>
+      <p>Once configured, export the configuration as JSON using the export action in the <a href="../firmware/toolbox/index.html" style="color: var(--accent);">Toolbox</a>.</p>
     </div>
 
     <div class="step-box">
       <h4>4.3 Save Preset File (Optional)</h4>
       <p>If you're contributing your configuration back to the project, save the exported JSON file to the presets directory in your local repository:</p>
-      <div class="code-block">web/firmware/config/presets/[device-name].json</div>
+      <div class="code-block">web/firmware/toolbox/presets/[device-name].json</div>
       <p>Use a descriptive filename that includes the MCU type and board name, e.g.:</p>
       <ul>
         <li><code>esp32-s3-custom-board.json</code></li>
@@ -503,7 +503,7 @@ table code {
 
     <div class="step-box">
       <h4>6.2 Load Configuration</h4>
-      <p>Use the Config Builder to:</p>
+      <p>Use the Toolbox to:</p>
       <ol>
         <li>Load your preset configuration</li>
         <li>Connect to your device via BLE</li>
@@ -529,7 +529,7 @@ table code {
       <p>Read back the configuration from the device to ensure it was stored correctly:</p>
       <ol>
         <li>Connect to device via BLE</li>
-        <li>Click "Read Config" in Config Builder</li>
+        <li>Click "Read Config" in Toolbox</li>
         <li>Verify all values match your preset</li>
       </ol>
     </div>
@@ -566,7 +566,7 @@ table code {
     <div class="step-box">
       <h4>Configuration Not Saving</h4>
       <ul>
-        <li>Check CRC validation (Config Builder shows CRC info)</li>
+        <li>Check CRC validation (Toolbox shows CRC info)</li>
         <li>Ensure packet size doesn't exceed 4kB limit</li>
         <li>Verify all required packets are present</li>
         <li>Check for firmware errors in serial output</li>
@@ -688,7 +688,7 @@ case 0x0040: return EP29R_CUSTOM_128x296;  // 64 decimal = 0x0040 hex</div>
       <li><a href="ble-flow.html">BLE Protocol Flow</a> - Understand the communication protocol</li>
       <li><a href="yaml-config.html">YAML Config Documentation</a> - Detailed schema reference</li>
       <li><a href="https://github.com/OpenDisplay/" target="_blank">GitHub Repository</a> - Source code and issues</li>
-      <li><a href="../firmware/config/index.html" target="_blank">Config Builder</a> - Interactive configuration tool</li>
+      <li><a href="../firmware/toolbox/index.html" target="_blank">Toolbox</a> - Interactive configuration tool</li>
       <li><a href="../firmware/display/index.html" target="_blank">BLE Tester</a> - Test display functionality</li>
     </ul>
   </div>

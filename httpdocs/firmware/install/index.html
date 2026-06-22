@@ -1,26 +1,23 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="shortcut icon" href="favicon.ico"> 
-  <link rel="stylesheet" href="https://opendisplay.org/common.css">
-	<title>OpenDisplay Web Installer</title>
-  <script>
-    // Redirect to toolbox while preserving URL parameters
-    (function() {
-      const currentUrl = new URL(window.location);
-      const toolboxUrl = new URL('../toolbox/index.html', window.location);
-      
-      // Copy all search parameters to the toolbox URL
-      currentUrl.searchParams.forEach((value, key) => {
-        toolboxUrl.searchParams.set(key, value);
-      });
-      
-      // Redirect to toolbox
-      window.location.replace(toolboxUrl.toString());
-    })();
-  </script>
+  <title>OpenDisplay Toolbox</title>
+  <link rel="canonical" href="https://opendisplay.org/firmware/toolbox/">
 </head>
 <body>
+  <p>Redirecting to the <a id="link" href="/firmware/toolbox/index.html">OpenDisplay Toolbox</a>…</p>
+  <script>
+    (function () {
+      var target = new URL('/firmware/toolbox/index.html', window.location.origin);
+      new URL(window.location.href).searchParams.forEach(function (value, key) {
+        target.searchParams.set(key, value);
+      });
+      var href = target.pathname + target.search + target.hash;
+      document.getElementById('link').href = href;
+      window.location.replace(href);
+    })();
+  </script>
 </body>
 </html>

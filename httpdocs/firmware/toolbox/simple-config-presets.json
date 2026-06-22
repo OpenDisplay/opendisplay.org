@@ -32,7 +32,7 @@
             "battery_sense_pin": "0x2",
             "battery_sense_enable_pin": "0x5",
             "voltage_scaling_factor": "706",
-            "deep_sleep_current_ua": "300"
+            "deep_sleep_current_ua": "160"
          },
          "led": {
             "instance_number": "0x0",
@@ -172,10 +172,10 @@
             "clk": "0x2d"
          },
          "powerDefaults": {
-            "battery_sense_pin": "0x2",
-            "battery_sense_enable_pin": "0x5",
+            "battery_sense_pin": "2",
+            "battery_sense_enable_pin": "19",
             "voltage_scaling_factor": "706",
-            "deep_sleep_current_ua": "300"
+            "deep_sleep_current_ua": "60"
          },
          "led": {
             "instance_number": "0x0",
@@ -193,7 +193,7 @@
             "display_as": "1",
             "inputpin1": "0x3",
             "inputpin2": "0x1c",
-            "inputpin3": "0x4",
+            "inputpin3": "46",
             "inputpin4": "0xff",
             "inputpin5": "0xff",
             "inputpin6": "0xff",
@@ -579,6 +579,155 @@
          },
          "transmission_modes": "11",
          "index": 7
+      },
+      {
+         "id": "reterminal-sticky",
+         "name": "Seeed reTerminal Sticky (ESP32-S3)",
+         "connectorPins": [
+            24
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x11",
+            "pwr_pin": "47",
+            "pwr_pin_2": "45",
+            "pwr_pin_3": "46",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "9",
+            "board_revision": "1",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "17",
+            "busy": "18",
+            "dc": "16",
+            "cs": "15",
+            "data": "14",
+            "clk": "13"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "0xff",
+            "battery_sense_enable_pin": "0xff",
+            "battery_sense_flags": "0x0",
+            "voltage_scaling_factor": "0x0",
+            "deep_sleep_current_ua": "0",
+            "charge_enable_pin": "39",
+            "charge_state_pin": "40",
+            "charger_flags": "0x3"
+         },
+         "buttons": {
+            "instance_number": "0x0",
+            "input_type": "1",
+            "display_as": "1",
+            "inputpin1": "4",
+            "inputpin2": "5",
+            "inputpin3": "6",
+            "inputpin4": "0xff",
+            "inputpin5": "0xff",
+            "inputpin6": "0xff",
+            "inputpin7": "0xff",
+            "inputpin8": "0xff",
+            "isused": "0x7",
+            "invert": "0x7",
+            "pullups": "0x0",
+            "pulldowns": "0x0",
+            "button_data_byte_index": "5",
+            "power_off_flags": "0x1",
+            "power_off_hold_sec": "3",
+            "reserved": "0x0"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0",
+            "pin_2": "1",
+            "pin_3": "0",
+            "pin_4": "0",
+            "pin_5": "0",
+            "pin_6": "0",
+            "pin_7": "0",
+            "bus_speed_hz": "0x61a80",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "instance_number": "0x0",
+            "sensor_type": "4",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x44",
+            "msd_data_start_byte": "7",
+            "reserved": "000000000000000000000000000000000000000000000000"
+         },
+         "touchController": {
+            "instance_number": "0x0",
+            "touch_ic_type": "1",
+            "bus_id": "1",
+            "i2c_addr_7bit": "0x5d",
+            "int_pin": "21",
+            "rst_pin": "41",
+            "display_instance": "0x0",
+            "flags": "0x7",
+            "poll_interval_ms": "0x0",
+            "touch_data_start_byte": "0",
+            "enable_pin": "42",
+            "reserved": "0x0"
+         },
+         "buzzerConfig": {
+            "instance_number": "0x0",
+            "drive_pin": "48",
+            "enable_pin": "0xff",
+            "flags": "0x1",
+            "duty_percent": "0x32",
+            "reserved": "000000000000000000000000000000000000000000000000000000"
+         },
+         "extraPackets": [
+            {
+               "pid": "36",
+               "fields": {
+                  "instance_number": "0x1",
+                  "bus_type": "1",
+                  "pin_1": "2",
+                  "pin_2": "3",
+                  "pin_3": "0",
+                  "pin_4": "0",
+                  "pin_5": "0",
+                  "pin_6": "0",
+                  "pin_7": "0",
+                  "bus_speed_hz": "0x61a80",
+                  "bus_flags": "0x0",
+                  "pullups": "0x0",
+                  "pulldowns": "0x0",
+                  "reserved": "0x0"
+               }
+            },
+            {
+               "pid": "35",
+               "fields": {
+                  "instance_number": "0x1",
+                  "sensor_type": "5",
+                  "bus_id": "0x0",
+                  "i2c_addr_7bit": "0x55",
+                  "msd_data_start_byte": "10",
+                  "reserved": "000000000000000000000000000000000000000000000000"
+               }
+            }
+         ],
+         "defaultDisplay": "ep397-800x480",
+         "defaultPower": "battery-650",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N32R8_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "11",
+         "index": 20
       },
       {
          "id": "ee03",
@@ -1080,7 +1229,7 @@
             "mode": "0x0",
             "reserved": "0000000000000000000000000000000000000000"
          },
-         "transmission_modes": "8",
+         "transmission_modes": "11",
          "installConfig": {
             "firmwareLetter": "S",
             "githubRepo": "https://github.com/OpenDisplay/Firmware_Silabs",
@@ -1183,7 +1332,7 @@
             "mode": "0x0",
             "reserved": "0000000000000000000000000000000000000000"
          },
-         "transmission_modes": "8",
+         "transmission_modes": "11",
          "installConfig": {
             "firmwareLetter": "S",
             "githubRepo": "https://github.com/OpenDisplay/Firmware_Silabs",
@@ -1256,7 +1405,53 @@
          },
          "transmission_modes": "10",
          "index": 18
-      }
+      },
+      {
+  "id": "x4",
+  "name": "XTEINK X4 (ESP32-C3)",
+  "connectorPins": [
+    24
+  ],
+  "systemConfig": {
+    "ic_type": "3",
+    "communication_modes": "0x1",
+    "device_flags": "0x8",
+    "pwr_pin": "0xff",
+    "reserved": "0x0",
+    "pwr_pin_2": "0xd",
+    "pwr_pin_3": "0x3"
+  },
+  "manufacturerData": {
+    "manufacturer_id": "0",
+    "board_type": "0",
+    "board_revision": "0x1",
+    "reserved": "0x0"
+  },
+  "displayPins": {
+    "reset": "0x5",
+    "busy": "0x6",
+    "dc": "0x4",
+    "cs": "0x15",
+    "data": "0xa",
+    "clk": "0x8"
+  },
+  "powerDefaults": {
+    "battery_sense_pin": "0xff",
+    "battery_sense_enable_pin": "0xff",
+    "voltage_scaling_factor": "0x0",
+    "deep_sleep_current_ua": "0"
+  },
+  "defaultDisplay": "ep426-800x480",
+  "defaultPower": "battery-650",
+  "installConfig": {
+    "type": "esp32",
+    "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-c3-N16_full.json",
+    "firmwareLetter": "O",
+    "githubRepo": "https://github.com/OpenDisplay/Firmware"
+  },
+  "transmission_modes": "10",
+  "index": 19
+}
    ],
    "displays": [
       {
@@ -1325,11 +1520,11 @@
          "config": {
             "pixel_width": "128",
             "pixel_height": "0xFA",
-            "active_width_mm": "23",
-            "active_height_mm": "61",
+            "active_width_mm": "24",
+            "active_height_mm": "49",
             "partial_update_support": "1",
             "color_scheme": "0",
-            "full_update_mC": "0"
+            "full_update_mC": "10"
          },
          "index": 4
       },
@@ -1343,11 +1538,11 @@
          "config": {
             "pixel_width": "128",
             "pixel_height": "0xFA",
-            "active_width_mm": "23",
-            "active_height_mm": "61",
+            "active_width_mm": "24",
+            "active_height_mm": "49",
             "partial_update_support": "0",
             "color_scheme": "3",
-            "full_update_mC": "0"
+            "full_update_mC": "60"
          },
          "index": 5
       },
@@ -1381,10 +1576,10 @@
             "pixel_width": "0x80",
             "pixel_height": "0x128",
             "active_width_mm": "29",
-            "active_height_mm": "13",
+            "active_height_mm": "67",
             "partial_update_support": "0",
             "color_scheme": "0",
-            "full_update_mC": "0"
+            "full_update_mC": "15"
          },
          "index": 7
       },
@@ -1399,12 +1594,31 @@
             "pixel_width": "0x80",
             "pixel_height": "0x128",
             "active_width_mm": "29",
-            "active_height_mm": "13",
+            "active_height_mm": "67",
             "partial_update_support": "0",
             "color_scheme": "3",
-            "full_update_mC": "0"
+            "full_update_mC": "82"
          },
          "index": 8
+      },
+      {
+         "id": "ep29yr-168x384",
+         "name": "2.9\" BWRY (168x384)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "30",
+         "config": {
+            "pixel_width": "168",
+            "pixel_height": "384",
+            "active_width_mm": "29",
+            "active_height_mm": "62",
+            "partial_update_support": "0",
+            "color_scheme": "3",
+            "full_update_mC": "120",
+            "rotation": "0"
+         },
+         "index": 33
       },
       {
          "id": "ep35yr-184x384",
@@ -1424,6 +1638,60 @@
             "rotation": "0"
          },
          "index": 9
+      },
+      {
+         "id": "ep397-800x480",
+         "name": "3.97\" GDEM0397T81P monochrome (800×480)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "69",
+         "config": {
+            "pixel_width": "0x320",
+            "pixel_height": "0x1e0",
+            "active_width_mm": "86",
+            "active_height_mm": "52",
+            "partial_update_support": "1",
+            "color_scheme": "0",
+            "full_update_mC": "16"
+         },
+         "index": 33
+      },
+      {
+         "id": "ep397-800x480-4gray",
+         "name": "3.97\" GDEM0397T81P 4-gray (800×480)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "70",
+         "config": {
+            "pixel_width": "0x320",
+            "pixel_height": "0x1e0",
+            "active_width_mm": "86",
+            "active_height_mm": "52",
+            "partial_update_support": "0",
+            "color_scheme": "5",
+            "full_update_mC": "16"
+         },
+         "index": 34
+      },
+      {
+         "id": "ep397yr-800x480",
+         "name": "3.97\" GDEM0397F81 BWRY (800×480)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "55",
+         "config": {
+            "pixel_width": "0x320",
+            "pixel_height": "0x1e0",
+            "active_width_mm": "86",
+            "active_height_mm": "52",
+            "partial_update_support": "0",
+            "color_scheme": "3",
+            "full_update_mC": "360"
+         },
+         "index": 35
       },
       {
          "id": "ep42-400x300",
@@ -1476,9 +1744,27 @@
             "active_height_mm": "56",
             "partial_update_support": "1",
             "color_scheme": "0",
-            "full_update_mC": "38"
+            "full_update_mC": "16"
          },
          "index": 12
+      },
+      {
+         "id": "ep426-800x480-4g",
+         "name": "4.26\" Monochrome 4gray (800×480)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "40",
+         "config": {
+            "pixel_width": "0x320",
+            "pixel_height": "0x1e0",
+            "active_width_mm": "93",
+            "active_height_mm": "56",
+            "partial_update_support": "0",
+            "color_scheme": "5",
+            "full_update_mC": "10"
+         },
+         "index": 33
       },
       {
          "id": "ep583-648x480",
@@ -1490,11 +1776,11 @@
          "config": {
             "pixel_width": "648",
             "pixel_height": "480",
-            "active_width_mm": "130",
-            "active_height_mm": "97",
+            "active_width_mm": "119",
+            "active_height_mm": "88",
             "partial_update_support": "1",
             "color_scheme": "0",
-            "full_update_mC": "0"
+            "full_update_mC": "27"
          },
          "index": 13
       },
@@ -1512,9 +1798,27 @@
             "active_height_mm": "98",
             "partial_update_support": "1",
             "color_scheme": "0",
-            "full_update_mC": "0"
+            "full_update_mC": "42"
          },
          "index": 14
+      },
+      {
+         "id": "ep75-800x480-4gray",
+         "name": "7.5\" Monochrome 4-gray (800×480)",
+         "connectorPins": [
+            24
+         ],
+         "panelIcType": "60",
+         "config": {
+            "pixel_width": "0x320",
+            "pixel_height": "0x1e0",
+            "active_width_mm": "163",
+            "active_height_mm": "98",
+            "partial_update_support": "0",
+            "color_scheme": "5",
+            "full_update_mC": "42"
+         },
+         "index": 36
       },
       {
          "id": "ep73-spectra-800x480",
@@ -1528,7 +1832,7 @@
             "pixel_height": "0x1e0",
             "active_width_mm": "160",
             "active_height_mm": "96",
-            "partial_update_support": "1",
+            "partial_update_support": "0",
             "color_scheme": "4",
             "full_update_mC": "400"
          },
@@ -1544,8 +1848,8 @@
          "config": {
             "pixel_width": "0x320",
             "pixel_height": "0x1e0",
-            "active_width_mm": "93",
-            "active_height_mm": "56",
+            "active_width_mm": "163",
+            "active_height_mm": "98",
             "partial_update_support": "0",
             "color_scheme": "3",
             "full_update_mC": "310"
@@ -1690,7 +1994,7 @@
             "pixel_height": "384",
             "active_width_mm": "29",
             "active_height_mm": "62",
-            "partial_update_support": "1",
+            "partial_update_support": "0",
             "color_scheme": "1",
             "full_update_mC": "0"
          },
@@ -1742,8 +2046,8 @@
          "config": {
             "pixel_width": "240",
             "pixel_height": "320",
-            "active_width_mm": "48",
-            "active_height_mm": "64",
+            "active_width_mm": "34",
+            "active_height_mm": "45",
             "partial_update_support": "0",
             "color_scheme": "1",
             "full_update_mC": "0"
@@ -1778,8 +2082,8 @@
          "config": {
             "pixel_width": "200",
             "pixel_height": "300",
-            "active_width_mm": "54",
-            "active_height_mm": "81",
+            "active_width_mm": "38",
+            "active_height_mm": "57",
             "partial_update_support": "0",
             "color_scheme": "1",
             "full_update_mC": "0",
@@ -1833,8 +2137,8 @@
          "config": {
             "pixel_width": "128",
             "pixel_height": "250",
-            "active_width_mm": "48",
-            "active_height_mm": "64",
+            "active_width_mm": "26",
+            "active_height_mm": "50",
             "partial_update_support": "0",
             "color_scheme": "1",
             "full_update_mC": "0"
@@ -1973,6 +2277,22 @@
             "reserved": "0x0"
          },
          "index": 8
+      },
+            {
+         "id": "battery-650",
+         "name": "LiPo 650mAh",
+         "powerOption": {
+            "power_mode": "1",
+            "battery_capacity_mah": "650",
+            "sleep_timeout_ms": "40000",
+            "tx_power": "0x8",
+            "sleep_flags": "0x0",
+            "battery_sense_flags": "0x0",
+            "capacity_estimator": "1",
+            "deep_sleep_time_seconds": "0",
+            "reserved": "0x0"
+         },
+         "index": 9
       }
    ]
 }

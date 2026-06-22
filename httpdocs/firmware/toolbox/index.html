@@ -959,11 +959,11 @@ a:hover {
         <h2 class="toolbox-step__title">More options</h2>
       <div class="encryption-option">
         <div class="encryption-slider-wrap">
-          <input type="range" id="initRandomEncryptionSlider" class="encryption-slider-input" min="0" max="1" step="1" value="1" aria-label="Encryption" aria-valuetext="Locked" />
+          <input type="range" id="initRandomEncryptionSlider" class="encryption-slider-input" min="0" max="1" step="1" value="0" aria-label="Encryption" aria-valuetext="Locked" />
           <svg class="encryption-slider-icon encryption-slider-icon--left" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h2c0-1.65 1.35-3 3-3s3 1.35 3 3v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>
           <svg class="encryption-slider-icon encryption-slider-icon--right" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
         </div>
-        <p id="encryptionHint" class="encryption-hint">Locked (recommended) — generates a random key. Save your setup link after configuring if you need to reconnect later.</p>
+        <p id="encryptionHint" class="encryption-hint">Locked generates a random key. Save your setup link after configuring if you need to reconnect later.</p>
       </div>
       <div class="esp-deep-sleep-option" id="espDeepSleepGroup" style="display: none;">
         <label for="espDeepSleepSlider">Deep sleep between updates</label>
@@ -1964,6 +1964,16 @@ const presetMappings = {
     display: 'seeed-ed103-1872x1404',
     power: 'battery-3000'
   },
+  'reterminal-sticky': {
+    driverBoard: 'reterminal-sticky',
+    display: 'ep397-800x480',
+    power: 'battery-650'
+  },
+  'reterminal-sticky-4gray': {
+    driverBoard: 'reterminal-sticky',
+    display: 'ep397-800x480-4gray',
+    power: 'battery-650'
+  },
   'esp32-s3-wspp': {
     driverBoard: 'esp32-s3-wspp',
     display: 'ep73-spectra-800x480',
@@ -2799,8 +2809,8 @@ function initializeSimpleConfigMode() {
       const encHint = document.getElementById('encryptionHint');
       if (encHint) {
         encHint.textContent = locked
-          ? 'Locked (recommended) — generates a random key. Save your setup link after configuring if you need to reconnect later.'
-          : 'Unlocked — no BLE encryption (testing only). Most people should leave this locked.';
+          ? 'Locked — generates a random key. Save your setup link after configuring if you need to reconnect later.'
+          : 'Unlocked — no BLE encryption';
       }
     };
     encSlider.oninput = syncEncSliderA11y;
@@ -3462,8 +3472,9 @@ function getDisplayInfoFromConfig() {
   const pixelHeight = parseValueToNumber(displayPacket.fields.pixel_height) || 480;
   const colorScheme = parseInt(displayPacket.fields.color_scheme) || 0;
   const rotation = parseInt(displayPacket.fields.rotation) || 0;
+  const panelIcType = parseValueToNumber(displayPacket.fields.panel_ic_type);
   
-  return { pixelWidth, pixelHeight, colorScheme, rotation };
+  return { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType };
 }
 
 function createTestImageCanvas(width, height, colorScheme) {
@@ -3583,7 +3594,7 @@ async function uploadTestImageAfterReboot() {
       return;
     }
     
-    const { pixelWidth, pixelHeight, colorScheme, rotation } = displayInfo;
+    const { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType } = displayInfo;
     addLog(`Display info: ${pixelWidth}x${pixelHeight}, color scheme: ${colorScheme}, rotation: ${rotation * 90}°`, 'info');
     
     // Wait for device to reboot and reconnect
@@ -3608,6 +3619,7 @@ async function uploadTestImageAfterReboot() {
         rotation: rotation,
         originalWidth: pixelWidth,
         originalHeight: pixelHeight,
+        panelIcType: panelIcType,
         useFastRefresh: false,
         onProgress: (current, total) => {
           const progress = Math.floor((current / total) * 100);
@@ -3724,8 +3736,20 @@ function mergeSimpleConfigToFull() {
       powerOptionFields.battery_sense_pin = simpleConfigSelections.driverBoard.powerDefaults.battery_sense_pin;
       powerOptionFields.battery_sense_enable_pin = simpleConfigSelections.driverBoard.powerDefaults.battery_sense_enable_pin;
       powerOptionFields.voltage_scaling_factor = simpleConfigSelections.driverBoard.powerDefaults.voltage_scaling_factor;
+      if (simpleConfigSelections.driverBoard.powerDefaults.battery_sense_flags !== undefined) {
+        powerOptionFields.battery_sense_flags = simpleConfigSelections.driverBoard.powerDefaults.battery_sense_flags;
+      }
       if (simpleConfigSelections.driverBoard.powerDefaults.deep_sleep_current_ua !== undefined) {
         powerOptionFields.deep_sleep_current_ua = simpleConfigSelections.driverBoard.powerDefaults.deep_sleep_current_ua;
+      }
+      if (simpleConfigSelections.driverBoard.powerDefaults.charge_enable_pin !== undefined) {
+        powerOptionFields.charge_enable_pin = simpleConfigSelections.driverBoard.powerDefaults.charge_enable_pin;
+      }
+      if (simpleConfigSelections.driverBoard.powerDefaults.charge_state_pin !== undefined) {
+        powerOptionFields.charge_state_pin = simpleConfigSelections.driverBoard.powerDefaults.charge_state_pin;
+      }
+      if (simpleConfigSelections.driverBoard.powerDefaults.charger_flags !== undefined) {
+        powerOptionFields.charger_flags = simpleConfigSelections.driverBoard.powerDefaults.charger_flags;
       }
     }
     if (isEsp32DriverBoard(simpleConfigSelections.driverBoard)) {
@@ -3871,7 +3895,10 @@ function mergeSimpleConfigToFull() {
   
   // Add sensor_data packet if driver board has sensor data configuration
   if (simpleConfigSelections.driverBoard && simpleConfigSelections.driverBoard.sensorData) {
-    const existingSensorData = instances.packets.find(p => p.pid === '35');
+    const sensorInst = simpleConfigSelections.driverBoard.sensorData.instance_number || '0x0';
+    const existingSensorData = instances.packets.find(function (p) {
+      return p.pid === '35' && (p.fields.instance_number || '0x0') === sensorInst;
+    });
     if (existingSensorData) {
       existingSensorData.fields = { ...simpleConfigSelections.driverBoard.sensorData };
     } else {
@@ -3882,6 +3909,24 @@ function mergeSimpleConfigToFull() {
       };
       instances.packets.push(sensorDataInst);
     }
+  }
+
+  if (simpleConfigSelections.driverBoard && simpleConfigSelections.driverBoard.extraPackets) {
+    simpleConfigSelections.driverBoard.extraPackets.forEach(function (ep) {
+      const instNum = ep.fields && ep.fields.instance_number != null ? ep.fields.instance_number : '0x0';
+      const existing = instances.packets.find(function (p) {
+        return p.pid === ep.pid && (p.fields.instance_number || '0x0') === instNum;
+      });
+      if (existing) {
+        existing.fields = { ...ep.fields };
+      } else {
+        instances.packets.push({
+          uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          pid: ep.pid,
+          fields: { ...ep.fields }
+        });
+      }
+    });
   }
 
   instances.packets = instances.packets.filter(function (p) {

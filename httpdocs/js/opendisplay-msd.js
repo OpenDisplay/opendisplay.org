@@ -77,18 +77,31 @@
   var PID_BINARY_INPUTS = 0x25;
   var PID_TOUCH_CONTROLLER = 0x28;
   var SENSOR_TYPE_SHT40 = 0x0004;
+  var SENSOR_TYPE_BQ27220 = 0x0005;
   var TOUCH_IC_GT911 = 1;
+
+  function decodeBq27220Packed(b) {
+    if ((b & 0xff) === 0xff) {
+      return { valid: false };
+    }
+    return {
+      valid: true,
+      percent: b & 0x7f,
+      charging: (b & 0x80) !== 0
+    };
+  }
 
   /**
    * Build MSD decode options from bleLib.parseConfigBytes() result so only configured sensors are decoded.
    * @param {object|null} parsedConfig
-   * @returns {{ buttonDataByteIndex: number|null, touchDataStartByte: number|null, sht40StartByte: number|null }}
+   * @returns {{ buttonDataByteIndex: number|null, touchDataStartByte: number|null, sht40StartByte: number|null, bq27220StartByte: number|null }}
    */
   function extractMsdOptsFromParsedConfig(parsedConfig) {
     const out = {
       buttonDataByteIndex: null,
       touchDataStartByte: null,
-      sht40StartByte: null
+      sht40StartByte: null,
+      bq27220StartByte: null
     };
     if (!parsedConfig || !parsedConfig.packets || !parsedConfig.packets.length) {
       return out;
@@ -99,12 +112,18 @@
       const data = p.data;
       if (!data || !data.length) continue;
 
-      if (id === PID_SENSOR_DATA && data.length >= 6 && out.sht40StartByte === null) {
+      if (id === PID_SENSOR_DATA && data.length >= 6) {
         const sensorType = data[1] | (data[2] << 8);
-        if (sensorType === SENSOR_TYPE_SHT40) {
+        if (sensorType === SENSOR_TYPE_SHT40 && out.sht40StartByte === null) {
           let start = data[5];
           if (start === 0xff || start === undefined) start = 7;
           out.sht40StartByte = start & 0xff;
+        }
+        if (sensorType === SENSOR_TYPE_BQ27220 && out.bq27220StartByte === null) {
+          const idx = data[5] & 0xff;
+          if (idx <= 10 && idx !== 0xff) {
+            out.bq27220StartByte = idx;
+          }
         }
       }
       if (id === PID_BINARY_INPUTS && data.length > 15 && out.buttonDataByteIndex === null) {
@@ -125,7 +144,7 @@
    * @param {object} [opts] — optional layout from device config (use extractMsdOptsFromParsedConfig). If omitted, legacy decode shows button@0, touch@0, SHT40@7–9.
    * @param {number|null} [opts.buttonDataByteIndex] — null skips button line
    * @param {number|null} [opts.touchDataStartByte] — null skips touch line
-   * @param {number|null} [opts.sht40StartByte] — null skips SHT40 line; otherwise first byte index of 3-byte SHT40 block in dynamic (0–8)
+   * @param {number|null} [opts.bq27220StartByte] — null skips BQ27220 SOC line; otherwise packed byte index in dynamic (0–10)
    * @returns {object} decoded fields and raw slices
    */
   function parseMsd16(msd16, opts) {
@@ -182,6 +201,20 @@
       }
     }
 
+    let bq27220StartByteUsed = null;
+    let bq27220Packed = null;
+    if (!legacyMode && opts.bq27220StartByte != null) {
+      const bqIdx = opts.bq27220StartByte | 0;
+      if (bqIdx >= 0 && bqIdx <= 10) {
+        bq27220StartByteUsed = bqIdx;
+        bq27220Packed = decodeBq27220Packed(dynamic[bqIdx]);
+        bq27220Packed.index = bqIdx;
+        if (!bq27220Packed.valid) {
+          bq27220Packed.raw = dynamic[bqIdx] & 0xff;
+        }
+      }
+    }
+
     return {
       companyId,
       companyIdHex: '0x' + companyId.toString(16).toUpperCase().padStart(4, '0'),
@@ -202,6 +235,8 @@
       touchBlockAt0: touchBlock,
       sht40At7: sht40At7,
       sht40StartByte: legacyMode ? 7 : opts.sht40StartByte != null ? sht40StartByteUsed : null,
+      bq27220StartByte: legacyMode ? null : bq27220StartByteUsed,
+      bq27220Packed,
       raw16Hex: hexBytes(u8)
     };
   }
@@ -218,6 +253,25 @@
       'Battery: ' + (d.batteryVoltage10mV > 0 ? d.batteryVoltageV + ' V (' + d.batteryVoltage10mV + ' × 10 mV)' : 'not configured / N/A'),
       'Status: reboot=' + d.status.rebootFlag + ', connReq=' + d.status.connectionRequested + ', mloop=' + d.status.mloopCounter
     ];
+    if (d.bq27220StartByte != null) {
+      const idx = d.bq27220StartByte;
+      if (d.bq27220Packed && d.bq27220Packed.valid) {
+        lines.push(
+          'SOC @' +
+            idx +
+            ': ' +
+            d.bq27220Packed.percent +
+            ' %' +
+            (d.bq27220Packed.charging ? ' (charging)' : '')
+        );
+      } else {
+        const raw =
+          d.bq27220Packed && d.bq27220Packed.raw != null
+            ? '0x' + (d.bq27220Packed.raw & 0xff).toString(16).toUpperCase().padStart(2, '0')
+            : '—';
+        lines.push('SOC @' + idx + ': (no valid sample, raw ' + raw + ')');
+      }
+    }
     if (d.buttonBlock) {
       lines.push(
         'Button @' +
@@ -284,6 +338,7 @@
     formatDecoded,
     readAndDecodeFromBle,
     extractMsdOptsFromParsedConfig,
+    decodeBq27220Packed,
     decodeButtonByte,
     decodeSht40Three,
     decodeTouchFive,

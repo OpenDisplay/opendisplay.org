@@ -2,13 +2,13 @@
   /* Hardcoded from firmware/toolbox/simple-config-presets.json — ordered by screen size */
   var PANELS = [
     { id: "ep42yr-400x300", label: "4.2″ BWRY", fullUpdateMc: 165 },
-    { id: "ep426-800x480", label: "4.26″ mono", fullUpdateMc: 38 },
+    { id: "ep426-800x480", label: "4.26″ mono", fullUpdateMc: 16 },
     { id: "ep73-spectra-800x480", label: "7.3″ Spectra 6", fullUpdateMc: 400 },
     { id: "ep75-800x480", label: "7.5″ mono", fullUpdateMc: 100 }
   ];
 
   var CHIPS = [
-    { id: "nrf52840", label: "nRF52840", sub: "Nordic", standbyUa: 300 },
+    { id: "nrf52840", label: "nRF52840", sub: "Nordic", standbyUa: 60 },
     { id: "silabs", label: "EFR32BG22", sub: "Silicon Labs", standbyUa: 20 },
     { id: "esp32", label: "ESP32", sub: "Espressif", standbyMa: 80 }
   ];

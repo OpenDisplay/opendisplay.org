@@ -1331,7 +1331,6 @@ a.od-foot-link:hover {
   font-size: 10.5px;
   letter-spacing: 0.04em;
   color: var(--fg3);
-  text-transform: uppercase;
 }
 .battery__result {
   padding: 22px 28px;

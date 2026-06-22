@@ -64,10 +64,9 @@
       advertises the correct capabilities to any OpenDisplay client.
     </p>
     <p class="intro-text">
-      Clients still speak the <strong><a href="basic-standard.html" style="color: var(--accent);">OpenDisplay</a></strong> protocol 
+      Clients still speak the <strong><a href="ble-flow.html" style="color: var(--accent);">OpenDisplay communication protocol</a></strong> 
       for configuration read/write, image transfer, and encryption. Flex only defines <em>what</em> is stored in the 
-      configuration blob — see the <a href="ble-flow.html" style="color: var(--accent);">communication protocol</a> for 
-      <em>how</em> bytes move over BLE and optional LAN.
+      configuration blob — see the <a href="yaml-config.html" style="color: var(--accent);">YAML schema</a> for field detail.
     </p>
   </div>
 
@@ -95,7 +94,7 @@
         </tr>
         <tr>
           <td style="padding: 12px; color: var(--muted-foreground);">Writing a sender (Python, HA, custom app)</td>
-          <td style="padding: 12px; color: var(--muted-foreground);"><a href="basic-standard.html" style="color: var(--accent);">OpenDisplay spec</a> + <a href="ble-flow.html" style="color: var(--accent);">communication protocol</a></td>
+          <td style="padding: 12px; color: var(--muted-foreground);"><a href="ble-flow.html" style="color: var(--accent);">Communication protocol</a> + <a href="display-data-format.html" style="color: var(--accent);">Display data format</a></td>
         </tr>
       </tbody>
     </table>
@@ -225,11 +224,21 @@
   <div class="col panel">
     <h2>Image transfer (OpenDisplay protocol)</h2>
     <p class="intro-text">
-      Flex configuration tells the device display dimensions and color scheme (packet type 32). Image bytes use the shared 
+      Flex configuration tells the device display dimensions, color scheme, and capabilities (packet type 32). Image bytes use the shared 
       <a href="display-data-format.html" style="color: var(--accent);">display data format</a>. Reference firmware implements 
-      <strong>Direct Write</strong> (<code>0x0070</code> start, <code>0x0071</code> data chunks, <code>0x0072</code> end). 
-      Block upload commands <code>0x0064</code> / <code>0x0065</code> are defined in the OpenDisplay spec but are 
-      <strong>not implemented</strong> in reference firmware today.
+      <strong>direct write</strong> (<code>0x0070</code>–<code>0x0072</code>). Full wire spec: 
+      <a href="ble-flow.html#image-transfer" style="color: var(--accent);">image transfer</a>.
+    </p>
+    <p class="intro-text" style="margin-top: 12px;">
+      <strong>Streaming decompression:</strong> when <code>transmission_modes</code> has both <code>streaming_decompression</code> (bit 0) 
+      and <code>zip</code> (bit 1), clients may send a zlib stream with a 512-byte DEFLATE window. 
+      <strong>New senders must not use legacy large-window zlib</strong> — if streaming decompression is not advertised, use uncompressed direct write. 
+      Legacy acceptance ends with <strong>firmware version 2</strong>. See 
+      <a href="ble-flow.html#streaming-decompression" style="color: var(--accent);">streaming decompression</a>.
+    </p>
+    <p class="intro-text" style="margin-top: 12px;">
+      <strong>Partial updates:</strong> <code>partial_update_support: 1</code> advertises 1 bpp region refresh via <code>0x0076</code> 
+      (main firmware only — <a href="reference-firmware-variants.html" style="color: var(--accent);">variants</a>).
     </p>
   </div>
 

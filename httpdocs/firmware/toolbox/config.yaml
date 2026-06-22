@@ -117,9 +117,11 @@ ble_proto:
             name: ws_pp_init
             description: Use this to lower the power consumption of the Waveshare photo PhotoPainter
           3:
-            name: reserved_3
+            name: pwr_latch
+            description: Self-holding MOSFET latch on pwr_pin_2; optional long-press shutdown button on pwr_pin_3
           4:
-            name: reserved_4
+            name: pwr_latch_dff
+            description: 74AHC1G79 D-FF power latch; pwr_pin_2=D (hold data), pwr_pin_3=CP (clock). No power-button poll; command 0x0052 releases latch
           5:
             name: reserved_5
           6:
@@ -134,10 +136,10 @@ ble_proto:
         description: Reserved bytes for future use
       - name: pwr_pin_2
         size: 1
-        description: Optional auxiliary enable (e.g. Seeed ED103 TFT_ENABLE on GPIO 11); 0 or 0xFF = firmware default
+        description: Aux enable, battery-latch hold, or pwr_latch_dff D input (e.g. reTerminal Sticky PWR_HOLD GPIO45); 0 or 0xFF = firmware default
       - name: pwr_pin_3
         size: 1
-        description: Optional auxiliary enable (e.g. Seeed ED103 ITE_ENABLE on GPIO 21); 0 or 0xFF = firmware default
+        description: Aux enable, battery-latch shutdown button, or pwr_latch_dff CP clock (e.g. PWR_LOCK GPIO46); 0 or 0xFF = none/default
     2:
       name: manufacturer_data
       required: true
@@ -200,6 +202,9 @@ ble_proto:
               8:
                 name: reTerminal_E1003
                 description: reTerminal E1003(ESP32-S3)
+              9:
+                name: reTerminal_Sticky
+                description: reTerminal Sticky (ESP32-S3, 3.97" ePaper)
             2:
               0:
                 name: ESP32_S3:PhotoPainter
@@ -346,8 +351,34 @@ ble_proto:
       - name: deep_sleep_time_seconds
         size: 2
         description: Deepsleep time in seconds(esp only, only on battery, 0 to disable)
+      - name: charge_enable_pin
+        size: 1
+        description: BQ25616 charge enable GPIO (0 or 0xFF = unused; reTerminal Sticky EN_BAT_CHGn = GPIO39)
+      - name: charge_state_pin
+        size: 1
+        description: BQ25616 charge-state input (0 or 0xFF = unused; Sticky CHARGE_STATE = GPIO40)
+      - name: charger_flags
+        size: 1
+        description: Bit 0 = charge enable active low (/CE); bit 1 = charge-state active low (BQ25616 STAT, charging when LOW)
+        bits:
+          0:
+            name: charge_enable_active_low
+          1:
+            name: charge_state_active_low
+          2:
+            name: reserved_2
+          3:
+            name: reserved_3
+          4:
+            name: reserved_4
+          5:
+            name: reserved_5
+          6:
+            name: reserved_6
+          7:
+            name: reserved_7
       - name: reserved
-        size: 10
+        size: 7
         description: Reserved bytes for future use
     32:
       name: display
@@ -573,6 +604,36 @@ ble_proto:
           64:
             name: EP75YR_800x480
             description: EP75YR_800x480
+          67:
+            name: ep154_200x200_4gray
+            description: Waveshare 1.54"
+          68:
+            name: ep42b_400x300_4gray
+            description: DEPG0420BN / GDEY042T81
+          69:
+            name: ep397_800x480
+            description: GDEM0397T81P
+          70:
+            name: ep397_800x480_4gray
+            description: GDEM0397T81P 4-gray
+          71:
+            name: ep368_792x528
+            description: xteink X3 3.68" B/W
+          72:
+            name: ep368_792x528_4gray
+            description: xteink X3 3.68" 4-gray
+          73:
+            name: ep213zz_122x250
+            description: LilyGo T3S3 2.13"
+          74:
+            name: ep40_spectra_400x600
+            description: GDEP040E01 Spectra 6 4" 400x600
+          75:
+            name: ep27_176x264
+            description: Badger2350 B/W
+          76:
+            name: ep27_176x264_4gray
+            description: Badger2350 4-gray
           1000:
             name: uc8176_420_bw
             description: UC8176 4.2" B/W
@@ -753,13 +814,25 @@ ble_proto:
           6:
             name: gray16
             description: 16-level grayscale (4bpp)
+          7:
+            name: 7color
+            description: 7color
+          100:
+            name: RGB565
+            description: RGB565
+          101:
+            name: RGB888
+            description: RGB888
+          102:
+            name: 16bpc
+            description: RGB 16 bit per color
       - name: transmission_modes
         size: 1
         description: Supported image/data transmission modes (bitfield)
         bits:
           0:
-            name: zipxl
-            description: Larger compressed-image buffer (set with zip). Large-memory ESP32+PSRAM firmware allocates 512 KiB in PSRAM; others 54 KiB static.
+            name: streaming_decompression
+            description: Streaming zlib decompression with a 512-byte DEFLATE window (requires zip).
           1:
             name: zip
             description: zip compressed transfer
@@ -780,10 +853,10 @@ ble_proto:
             description: boots up without any text on the screen
       - name: clk_pin
         size: 1
-        description: clk_pin / spare pin 1
-      - name: reserved_pin_2
+        description: clk_pin
+      - name: cs_pin_2
         size: 1
-        description: Reserved / spare pin 2
+        description: Second CS for displays split over 2 drivers
       - name: reserved_pin_3
         size: 1
         description: Reserved / spare pin 3
@@ -893,15 +966,18 @@ ble_proto:
           4:
             name: sht40
             description: Sensirion SHT40 (I2C). Writes 3 bytes LE into MSD dynamicreturndata (21 bits, 0.1°C and 0.1% RH)
+          5:
+            name: bq27220
+            description: TI BQ27220 fuel gauge (I2C 0x55). Voltage in MSD bytes 14–15; one packed dynamic byte at msd_data_start_byte (bits 0–6 = SOC %, bit 7 = charging; 0xFF index = skip)
       - name: bus_id
         size: 1
         description: Instance id of the bus to use for this sensor
       - name: i2c_addr_7bit
         size: 1
-        description: I2C 7-bit address; 0 or 0xFF = default for sensor (SHT40 0x44)
+        description: I2C 7-bit address; 0 or 0xFF = default for sensor (SHT40 0x44, BQ27220 0x55)
       - name: msd_data_start_byte
         size: 1
-        description: First byte index in advertising dynamicreturndata (11 bytes). SHT40 uses 3 bytes; 0 or 0xFF = default 7 (bytes 7–9); may use start 8 (bytes 8–10)
+        description: First dynamicreturndata index. SHT40 uses 3 bytes (0 or 0xFF = default 7). BQ27220 uses 1 packed byte (0xFF = do not publish)
       - name: reserved
         size: 24
         description: Reserved bytes for future use
@@ -1181,8 +1257,31 @@ ble_proto:
           10:
             name: byte_10
             description: Use dynamicreturndata[10]
+      - name: power_off_flags
+        size: 1
+        description: Bit N = pin N+1 long-press power-off on latched devices (ignored if not latched)
+        bits:
+          0:
+            name: pin_1
+          1:
+            name: pin_2
+          2:
+            name: pin_3
+          3:
+            name: pin_4
+          4:
+            name: pin_5
+          5:
+            name: pin_6
+          6:
+            name: pin_7
+          7:
+            name: pin_8
+      - name: power_off_hold_sec
+        size: 1
+        description: Seconds to hold before power-off (0 = default 3 s; latched devices only)
       - name: reserved
-        size: 14
+        size: 12
         description: Reserved bytes for future use
     38:
       name: wifi_config
@@ -1289,7 +1388,7 @@ ble_proto:
             description: Goodix GT911 (I2C)
       - name: bus_id
         size: 1
-        description: data_bus instance for I2C (must be bus 0 today). Use 0xFF to mean bus 0 when buses are defined, or omit data_bus only if Wire is already started (e.g. after display init).
+        description: data_bus instance for I2C (0–3). Use 0xFF to mean bus 0. On boards with separate sensor/touch buses (e.g. reTerminal Sticky MISC=0, TP=1), point touch at the TP bus index.
       - name: i2c_addr_7bit
         size: 1
         description: I2C 7-bit address (GT911 0x5D or 0x14). 0 or 0xFF = auto-detect after reset
@@ -1331,8 +1430,11 @@ ble_proto:
       - name: touch_data_start_byte
         size: 1
         description: Start index in dynamicreturndata for 5-byte touch block (0–6; avoid overlap with binary_inputs). Encoding see touch_controller description (nibble 6 = release).
+      - name: enable_pin
+        size: 1
+        description: Optional touch panel power enable GPIO (active high); 0 or 0xFF = unused
       - name: reserved
-        size: 21
+        size: 20
         description: Reserved for future config (e.g. GT911 register profile)
     41:
       name: passive_buzzer

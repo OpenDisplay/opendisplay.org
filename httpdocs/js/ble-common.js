@@ -56,6 +56,13 @@ class OpenDisplayBLE {
     };
     
     this.directWriteState = null;
+
+    this.partialState = {
+      etag: 0,
+      lastPalette: null,
+      width: 0,
+      height: 0
+    };
     
     this.dfuState = {
       active: false,
@@ -3089,9 +3096,10 @@ class OpenDisplayBLE {
    * @param {number} rotation - Display rotation (0=0°, 1=90°, 2=180°, 3=270°)
    * @param {number} originalWidth - Original width before rotation
    * @param {number} originalHeight - Original height before rotation
+   * @param {number|null} panelIcType - Panel IC type for panel-specific 4-gray LUT (optional)
    * @returns {Array} Byte array representing the image
    */
-  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null) {
+  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let pixels = imageData.data;
@@ -3210,34 +3218,36 @@ class OpenDisplayBLE {
         byteData.push(currentByte);
       }
     } else if (colorScheme === 5) {
-      // 4 grayscale: 4 pixels per byte
-      let currentByte = 0;
-      let pixelInByte = 0;
+      // bb_epaper 4-gray: two concatenated 1bpp controller planes (plane0 then plane1).
+      // Host applies the panel gray LUT (u8Colors_4gray / u8Colors_4gray_v2), then splits
+      // stored code into bit0->plane0 and bit1->plane1 — matches bbepSetPixel4Gray + streamGray4Bytes.
+      const GRAY4_LUT = [3, 1, 2, 0];
+      const GRAY4_LUT_V2 = [3, 2, 1, 0];
+      const panelId = panelIcType != null ? Number(panelIcType) : NaN;
+      const grayLut = (panelId === 0x16 || panelId === 0x28 || panelId === 22 || panelId === 40)
+        ? GRAY4_LUT_V2
+        : GRAY4_LUT;
+      const bytesPerRow = Math.ceil(imageWidth / 8);
+      const plane0 = new Uint8Array(bytesPerRow * imageHeight);
+      const plane1 = new Uint8Array(bytesPerRow * imageHeight);
+
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
           const i = (y * imageWidth + x) * 4;
-          const r = pixels[i];
-          const g = pixels[i + 1];
-          const b = pixels[i + 2];
-          const gray = (r + g + b) / 3;
-          let grayLevel;
-          if (gray < 64) grayLevel = 0;
-          else if (gray < 128) grayLevel = 1;
-          else if (gray < 192) grayLevel = 2;
-          else grayLevel = 3;
-          
-          currentByte |= (grayLevel << (6 - pixelInByte * 2));
-          pixelInByte++;
-          if (pixelInByte >= 4) {
-            byteData.push(currentByte);
-            currentByte = 0;
-            pixelInByte = 0;
-          }
+          const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+          let level;
+          if (gray < 64) level = 0;
+          else if (gray < 128) level = 1;
+          else if (gray < 192) level = 2;
+          else level = 3;
+          const stored = grayLut[level];
+          const byteIdx = y * bytesPerRow + (x >> 3);
+          const bitIdx = 7 - (x & 7);
+          if (stored & 1) plane0[byteIdx] |= 1 << bitIdx;
+          if (stored & 2) plane1[byteIdx] |= 1 << bitIdx;
         }
       }
-      if (pixelInByte > 0) {
-        byteData.push(currentByte);
-      }
+      byteData.push(...plane0, ...plane1);
     } else if (colorScheme === 1 || colorScheme === 2) {
       // B/W + Red or B/W + Yellow: 2 bitplanes
       const byteDataPlane1 = [];
@@ -3339,6 +3349,317 @@ class OpenDisplayBLE {
     return byteData;
   }
 
+  resetPartialState() {
+    this.partialState = { etag: 0, lastPalette: null, width: 0, height: 0 };
+  }
+
+  generateEtag() {
+    let value;
+    do {
+      value = (Math.floor(Math.random() * 0x100000000)) >>> 0;
+    } while (value === 0);
+    return value;
+  }
+
+  _getRotatedCanvasPixels(canvas, rotation, originalWidth, originalHeight) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let pixels = imageData.data;
+    let imageWidth = imageData.width;
+    let imageHeight = imageData.height;
+
+    if (rotation === 1 || rotation === 3) {
+      const origWidth = originalWidth || imageHeight;
+      const origHeight = originalHeight || imageWidth;
+      const rotatedPixels = new Uint8ClampedArray(origWidth * origHeight * 4);
+      for (let y = 0; y < imageHeight; y++) {
+        for (let x = 0; x < imageWidth; x++) {
+          const srcIndex = (y * imageWidth + x) * 4;
+          let dstX, dstY;
+          if (rotation === 1) {
+            dstX = imageHeight - 1 - y;
+            dstY = x;
+          } else {
+            dstX = y;
+            dstY = imageWidth - 1 - x;
+          }
+          const dstIndex = (dstY * origWidth + dstX) * 4;
+          rotatedPixels[dstIndex] = pixels[srcIndex];
+          rotatedPixels[dstIndex + 1] = pixels[srcIndex + 1];
+          rotatedPixels[dstIndex + 2] = pixels[srcIndex + 2];
+          rotatedPixels[dstIndex + 3] = pixels[srcIndex + 3];
+        }
+      }
+      pixels = rotatedPixels;
+      imageWidth = origWidth;
+      imageHeight = origHeight;
+    } else if (rotation === 2) {
+      const origWidth = originalWidth || imageWidth;
+      const origHeight = originalHeight || imageHeight;
+      const rotatedPixels = new Uint8ClampedArray(origWidth * origHeight * 4);
+      for (let y = 0; y < imageHeight; y++) {
+        for (let x = 0; x < imageWidth; x++) {
+          const srcIndex = (y * imageWidth + x) * 4;
+          const dstX = imageWidth - 1 - x;
+          const dstY = imageHeight - 1 - y;
+          const dstIndex = (dstY * origWidth + dstX) * 4;
+          rotatedPixels[dstIndex] = pixels[srcIndex];
+          rotatedPixels[dstIndex + 1] = pixels[srcIndex + 1];
+          rotatedPixels[dstIndex + 2] = pixels[srcIndex + 2];
+          rotatedPixels[dstIndex + 3] = pixels[srcIndex + 3];
+        }
+      }
+      pixels = rotatedPixels;
+      imageWidth = origWidth;
+      imageHeight = origHeight;
+    }
+    return { pixels, imageWidth, imageHeight };
+  }
+
+  extractMonoPaletteFromCanvas(canvas, rotation = 0, originalWidth = null, originalHeight = null) {
+    const { pixels, imageWidth, imageHeight } = this._getRotatedCanvasPixels(
+      canvas, rotation, originalWidth, originalHeight
+    );
+    const palette = new Uint8Array(imageWidth * imageHeight);
+    for (let y = 0; y < imageHeight; y++) {
+      for (let x = 0; x < imageWidth; x++) {
+        const i = (y * imageWidth + x) * 4;
+        const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+        palette[y * imageWidth + x] = gray > 128 ? 1 : 0;
+      }
+    }
+    return { palette, width: imageWidth, height: imageHeight };
+  }
+
+  computeBoundingRect(oldPalette, newPalette, width, height) {
+    if (oldPalette.length !== newPalette.length) return null;
+    let minX = width, maxX = -1, minY = height, maxY = -1;
+    for (let y = 0; y < height; y++) {
+      const rowOff = y * width;
+      let rowChanged = false;
+      for (let x = 0; x < width; x++) {
+        if (oldPalette[rowOff + x] !== newPalette[rowOff + x]) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          rowChanged = true;
+        }
+      }
+      if (rowChanged) {
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < 0) return null;
+    return [minX, minY, maxX + 1, maxY + 1];
+  }
+
+  alignPartialRect(x0, y0, x1, y1, displayWidth, pixelsPerByte) {
+    const alignedX0 = Math.floor(x0 / pixelsPerByte) * pixelsPerByte;
+    let alignedX1 = x1;
+    if (alignedX1 % pixelsPerByte) {
+      alignedX1 += pixelsPerByte - (alignedX1 % pixelsPerByte);
+    }
+    if (alignedX1 > displayWidth) {
+      alignedX1 = displayWidth;
+      const misalign = (alignedX1 - alignedX0) % pixelsPerByte;
+      if (misalign) {
+        return [Math.max(0, alignedX0 - (pixelsPerByte - misalign)), y0, alignedX1 - alignedX0, y1 - y0];
+      }
+    }
+    return [alignedX0, y0, alignedX1 - alignedX0, y1 - y0];
+  }
+
+  encodeMonoSegmentWire(palette, x, y, w, h, imageWidth) {
+    const bytesPerRow = Math.ceil(w / 8);
+    const output = new Uint8Array(bytesPerRow * h);
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        if (palette[(y + row) * imageWidth + (x + col)] > 0) {
+          const byteIdx = row * bytesPerRow + (col >> 3);
+          output[byteIdx] |= 0x80 >> (col & 7);
+        }
+      }
+    }
+    return output;
+  }
+
+  computePartialRegion(palette, width, height) {
+    const state = this.partialState;
+    if (!state.etag || !state.lastPalette || state.width !== width || state.height !== height) {
+      return 'fallback_full';
+    }
+    if (state.lastPalette.length !== palette.length) return 'fallback_full';
+
+    const bbox = this.computeBoundingRect(state.lastPalette, palette, width, height);
+    if (!bbox) return 'no_change';
+
+    const [rx, ry, rw, rh] = this.alignPartialRect(bbox[0], bbox[1], bbox[2], bbox[3], width, 8);
+    if (rw === 0 || rh === 0) return 'fallback_full';
+    return { rx, ry, rw, rh };
+  }
+
+  buildDirectWriteEndHex(refreshMode, etag = null) {
+    const payload = [refreshMode & 0xFF];
+    if (etag != null) {
+      payload.push(
+        (etag >>> 24) & 0xFF,
+        (etag >>> 16) & 0xFF,
+        (etag >>> 8) & 0xFF,
+        etag & 0xFF
+      );
+    }
+    return '0072' + this.bytesToHex(payload).replace(/\s+/g, '');
+  }
+
+  _commitPartialState(etag, palette, width, height) {
+    this.partialState.etag = etag;
+    this.partialState.lastPalette = palette.slice();
+    this.partialState.width = width;
+    this.partialState.height = height;
+  }
+
+  _prepareDirectWriteChunks(dataArray, chunkSize) {
+    const chunks = [];
+    for (let i = 0; i < dataArray.length; i += chunkSize) {
+      chunks.push(dataArray.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
+  _activateFullDirectWrite(prepared) {
+    const state = {
+      active: true,
+      mode: 'full',
+      compressed: prepared.compressed,
+      chunks: prepared.chunks,
+      chunkIndex: prepared.chunkIndex || 0,
+      pendingAcks: 0,
+      uploadStartTime: Date.now(),
+      uploadEndTime: null,
+      refreshStartTime: null,
+      onProgress: prepared.onProgress,
+      onComplete: prepared.onComplete,
+      onStatusChange: prepared.onStatusChange,
+      useFastRefresh: prepared.useFastRefresh,
+      chunkSize: prepared.chunkSize,
+      pipelineSize: prepared.pipelineSize,
+      trackPartial: prepared.trackPartial,
+      newEtag: prepared.newEtag,
+      paletteBuffer: prepared.paletteBuffer,
+      paletteWidth: prepared.paletteWidth,
+      paletteHeight: prepared.paletteHeight
+    };
+    this.directWriteState = state;
+    if (prepared.onStatusChange) {
+      prepared.onStatusChange(prepared.statusMessage || `Starting upload: ${prepared.chunks.length} chunks`);
+    }
+    return this.sendHexCommand(prepared.startCommandHex);
+  }
+
+  _beginPartialDirectWrite(region, palette, imageWidth, imageHeight, prepared) {
+    const oldRect = this.encodeMonoSegmentWire(
+      this.partialState.lastPalette, region.rx, region.ry, region.rw, region.rh, imageWidth
+    );
+    const newRect = this.encodeMonoSegmentWire(
+      palette, region.rx, region.ry, region.rw, region.rh, imageWidth
+    );
+    const logicalStream = new Uint8Array(oldRect.length + newRect.length);
+    logicalStream.set(oldRect, 0);
+    logicalStream.set(newRect, oldRect.length);
+
+    let streamBytes = logicalStream;
+    let partialCompressed = false;
+    if (prepared.supportsCompression && typeof pako !== 'undefined') {
+      try {
+        const compressed = pako.deflate(logicalStream, {
+          level: 6,
+          windowBits: prepared.STREAMING_ZLIB_WINDOW_BITS
+        });
+        if (compressed.length < logicalStream.length) {
+          streamBytes = compressed;
+          partialCompressed = true;
+        }
+      } catch (e) {
+        this.log('Partial compression failed, using uncompressed: ' + e.message, 'warning');
+      }
+    }
+
+    const partialNewEtag = this.generateEtag();
+    const flags = partialCompressed ? 1 : 0;
+    const fixed = new Uint8Array(17);
+    fixed[0] = flags;
+    fixed[1] = (this.partialState.etag >>> 24) & 0xFF;
+    fixed[2] = (this.partialState.etag >>> 16) & 0xFF;
+    fixed[3] = (this.partialState.etag >>> 8) & 0xFF;
+    fixed[4] = this.partialState.etag & 0xFF;
+    fixed[5] = (partialNewEtag >>> 24) & 0xFF;
+    fixed[6] = (partialNewEtag >>> 16) & 0xFF;
+    fixed[7] = (partialNewEtag >>> 8) & 0xFF;
+    fixed[8] = partialNewEtag & 0xFF;
+    fixed[9] = (region.rx >>> 8) & 0xFF;
+    fixed[10] = region.rx & 0xFF;
+    fixed[11] = (region.ry >>> 8) & 0xFF;
+    fixed[12] = region.ry & 0xFF;
+    fixed[13] = (region.rw >>> 8) & 0xFF;
+    fixed[14] = region.rw & 0xFF;
+    fixed[15] = (region.rh >>> 8) & 0xFF;
+    fixed[16] = region.rh & 0xFF;
+
+    const maxStartPayload = prepared.maxStartPayload;
+    const maxInitial = maxStartPayload - 2 - 17;
+    const initial = streamBytes.slice(0, Math.max(0, maxInitial));
+    const remaining = streamBytes.slice(initial.length);
+    const chunks = this._prepareDirectWriteChunks(Array.from(remaining), prepared.chunkSize);
+
+    this.directWriteState = {
+      active: true,
+      mode: 'partial',
+      awaitingPartialStart: true,
+      compressed: partialCompressed,
+      chunks,
+      chunkIndex: 0,
+      pendingAcks: 0,
+      uploadStartTime: Date.now(),
+      uploadEndTime: null,
+      refreshStartTime: null,
+      onProgress: prepared.onProgress,
+      onComplete: prepared.onComplete,
+      onStatusChange: prepared.onStatusChange,
+      chunkSize: prepared.chunkSize,
+      pipelineSize: prepared.pipelineSize,
+      partialNewEtag,
+      newPalette: palette.slice(),
+      paletteWidth: imageWidth,
+      paletteHeight: imageHeight,
+      fullFallback: prepared
+    };
+
+    const startHex = '0076' + this.bytesToHex(fixed).replace(/\s+/g, '') +
+      this.bytesToHex(Array.from(initial)).replace(/\s+/g, '');
+    if (prepared.onStatusChange) {
+      prepared.onStatusChange(
+        `Partial update ${region.rw}x${region.rh} at (${region.rx},${region.ry}), ${chunks.length + (initial.length ? 1 : 0)} chunks`
+      );
+    }
+    this.log(`Partial update rect=(${region.rx},${region.ry},${region.rw},${region.rh}) stream=${streamBytes.length}B`, 'info');
+    return this.sendHexCommand(startHex);
+  }
+
+  _fallbackToFullDirectWrite() {
+    const fallback = this.directWriteState && this.directWriteState.fullFallback;
+    if (!fallback) {
+      this.log('Partial fallback requested but no full upload prepared', 'error');
+      if (this.directWriteState && this.directWriteState.onComplete) {
+        this.directWriteState.onComplete(false, new Error('Partial update failed'));
+      }
+      this.directWriteState = null;
+      return;
+    }
+    this.log('Falling back to full upload', 'info');
+    fallback.statusMessage = 'Partial unavailable, uploading full frame...';
+    return this._activateFullDirectWrite(fallback);
+  }
+
   /**
    * Send canvas image to display via direct write
    * @param {HTMLCanvasElement} canvas - Canvas element
@@ -3367,103 +3688,79 @@ class OpenDisplayBLE {
       originalWidth = null,
       originalHeight = null,
       useFastRefresh = false,
+      partialUpdateSupport = false,
       transmissionModes = null,
+      panelIcType = null,
       onProgress = null,
       onComplete = null,
       onStatusChange = null
     } = options;
     
-    // Calculate chunk size based on encryption status
-    // Encryption adds 31 bytes overhead: 2 (header) + 16 (nonce) + 1 (length) + 12 (tag)
-    // Use a safe MTU of 185 bytes for encrypted packets (some BLE stacks negotiate lower MTUs)
-    // Plaintext chunk size = 185 - 31 = 154 bytes when encrypted
-    // When not encrypted, use the full 230 bytes
-    const ENCRYPTION_OVERHEAD = 31; // 2 (header) + 16 (nonce) + 1 (length) + 12 (tag)
-    const MAX_ENCRYPTED_PACKET_SIZE = 185; // Safe MTU size for encrypted packets
+    const ENCRYPTION_OVERHEAD = 31;
+    const MAX_ENCRYPTED_PACKET_SIZE = 185;
     const DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED = 230;
-    const DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED = MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD; // 154 bytes
-    const DIRECT_WRITE_CHUNK_SIZE = (this.encryptionSession.authenticated) 
-      ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED 
+    const DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED = MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD;
+    const DIRECT_WRITE_CHUNK_SIZE = (this.encryptionSession.authenticated)
+      ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED
       : DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED;
     const DIRECT_WRITE_PIPELINE_SIZE = 1;
-    const TRANSMISSION_MODE_ZIPXL = 0x01;
+    const TRANSMISSION_MODE_STREAMING_DECOMPRESSION = 0x01;
     const TRANSMISSION_MODE_ZIP = 0x02;
-    const MAX_COMPRESSED_SIZE_STD = 54 * 1024;
-    const MAX_COMPRESSED_SIZE_ZIPXL = 512 * 1024;
+    const STREAMING_ZLIB_WINDOW_BITS = 9;
+    const maxStartPayload = this.encryptionSession.authenticated
+      ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
+      : 200;
     
     if (this.encryptionSession.authenticated) {
       this.log(`Encryption enabled: Using reduced chunk size ${DIRECT_WRITE_CHUNK_SIZE} bytes (encrypted size: ${DIRECT_WRITE_CHUNK_SIZE + ENCRYPTION_OVERHEAD} bytes)`, 'info');
     }
-    
-    // Initialize direct write state
-    this.directWriteState = {
-      active: true,
-      compressed: false,
-      chunks: [],
-      chunkIndex: 0,
-      pendingAcks: 0,
-      uploadStartTime: Date.now(),
-      uploadEndTime: null,
-      refreshStartTime: null,
-      onProgress: onProgress,
-      onComplete: onComplete,
-      onStatusChange: onStatusChange,
-      useFastRefresh: useFastRefresh,
-      chunkSize: DIRECT_WRITE_CHUNK_SIZE,
-      pipelineSize: DIRECT_WRITE_PIPELINE_SIZE
-    };
+
+    const trackPartial = !!(partialUpdateSupport && colorScheme === 0);
+    let paletteBuffer = null;
+    let paletteWidth = 0;
+    let paletteHeight = 0;
+    if (trackPartial) {
+      const extracted = this.extractMonoPaletteFromCanvas(canvas, rotation, originalWidth, originalHeight);
+      paletteBuffer = extracted.palette;
+      paletteWidth = extracted.width;
+      paletteHeight = extracted.height;
+    }
     
     try {
-      // Encode canvas to bytes
-      const byteData = this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight);
+      const byteData = this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType);
       const uncompressedSize = byteData.length;
       const byteDataUint8 = new Uint8Array(byteData);
       
-      const supportsZipCompression = transmissionModes !== null && transmissionModes !== undefined &&
-                                     (transmissionModes & TRANSMISSION_MODE_ZIP) !== 0;
-      const maxCompressedSize = supportsZipCompression
-        ? (((transmissionModes & TRANSMISSION_MODE_ZIPXL) !== 0) ? MAX_COMPRESSED_SIZE_ZIPXL : MAX_COMPRESSED_SIZE_STD)
-        : 0;
-      
-      // Try compression if pako is available AND device supports ZIP compression
+      const supportsZip = transmissionModes !== null && transmissionModes !== undefined &&
+                          (transmissionModes & TRANSMISSION_MODE_ZIP) !== 0;
+      const supportsStreamingDecompression = transmissionModes !== null && transmissionModes !== undefined &&
+        (transmissionModes & TRANSMISSION_MODE_STREAMING_DECOMPRESSION) !== 0;
+      const supportsCompression = supportsZip && supportsStreamingDecompression;
+
       let compressedBytes = null;
-      if (supportsZipCompression && typeof pako !== 'undefined') {
+      if (supportsCompression && typeof pako !== 'undefined') {
         try {
           compressedBytes = pako.deflate(byteDataUint8, {
             level: 9,
-            windowBits: 12
+            windowBits: STREAMING_ZLIB_WINDOW_BITS
           });
         } catch (e) {
-          this.log('Compression failed, using uncompressed: ' + e.message, 'warning');
+          this.log('Compression failed, using uncompressed direct write: ' + e.message, 'warning');
         }
-      } else if (!supportsZipCompression && typeof pako !== 'undefined') {
-        this.log('Device does not support ZIP compression (transmission_modes ZIP not set), using uncompressed', 'info');
+      } else if (supportsZip && !supportsStreamingDecompression) {
+        this.log('Device has zip but not streaming_decompression — using uncompressed direct write', 'info');
+      } else if (!supportsZip) {
+        this.log('Device does not support compression (transmission_modes zip not set), using uncompressed direct write', 'info');
       }
+
+      const useCompressed = supportsCompression && compressedBytes;
       
-      const useCompressed = supportsZipCompression && compressedBytes && compressedBytes.length <= maxCompressedSize;
-      
-      if (useCompressed) {
-        this.directWriteState.compressed = true;
-        this.directWriteState.data = Array.from(compressedBytes);
-        this.log(`Using compressed upload: ${uncompressedSize} bytes uncompressed, ${compressedBytes.length} bytes compressed`, 'info');
-      } else {
-        this.directWriteState.compressed = false;
-        this.directWriteState.data = byteData;
-        this.log(`Using uncompressed upload: ${uncompressedSize} bytes`, 'info');
-      }
-      
-      // Chunk the data
-      const dataToSend = this.directWriteState.data;
-      for (let i = 0; i < dataToSend.length; i += DIRECT_WRITE_CHUNK_SIZE) {
-        const chunk = dataToSend.slice(i, i + DIRECT_WRITE_CHUNK_SIZE);
-        this.directWriteState.chunks.push(chunk);
-      }
-      
-      if (onStatusChange) {
-        onStatusChange(`Starting upload: ${canvas.width}x${canvas.height} pixels, ${this.directWriteState.chunks.length} chunks`);
-      }
-      
-      // Send start command
+      const dataToSend = useCompressed ? Array.from(compressedBytes) : byteData;
+      const chunks = this._prepareDirectWriteChunks(dataToSend, DIRECT_WRITE_CHUNK_SIZE);
+      const newEtag = trackPartial ? this.generateEtag() : null;
+
+      let startCommandHex = '0070';
+      let chunkIndex = 0;
       if (useCompressed) {
         const startPayload = new Uint8Array(4 + compressedBytes.length);
         startPayload[0] = uncompressedSize & 0xFF;
@@ -3471,44 +3768,71 @@ class OpenDisplayBLE {
         startPayload[2] = (uncompressedSize >> 16) & 0xFF;
         startPayload[3] = (uncompressedSize >> 24) & 0xFF;
         startPayload.set(compressedBytes, 4);
-        
-        // Account for encryption overhead when calculating max start payload size
-        // When encrypted: maxStartPayload = MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
-        // When not encrypted: use original 200 bytes
-        const maxStartPayload = (this.encryptionSession.authenticated)
-          ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD  // 185 - 31 = 154 bytes
-          : 200;
         if (startPayload.length <= maxStartPayload) {
-          const startPayloadHex = this.bytesToHex(startPayload).replace(/\s+/g, '');
-          await this.sendHexCommand('0070' + startPayloadHex);
-          this.directWriteState.chunkIndex = this.directWriteState.chunks.length;
-          this.directWriteState.pendingAcks = 0;
+          startCommandHex = '0070' + this.bytesToHex(startPayload).replace(/\s+/g, '');
+          chunkIndex = chunks.length;
         } else {
           const headerHex = this.bytesToHex(startPayload.slice(0, 4)).replace(/\s+/g, '');
           const maxCompressedInStart = maxStartPayload - 4;
           const firstChunkData = startPayload.slice(4, 4 + Math.min(maxCompressedInStart, DIRECT_WRITE_CHUNK_SIZE));
-          const firstChunkHex = this.bytesToHex(firstChunkData).replace(/\s+/g, '');
-          await this.sendHexCommand('0070' + headerHex + firstChunkHex);
+          startCommandHex = '0070' + headerHex + this.bytesToHex(firstChunkData).replace(/\s+/g, '');
           const firstChunkBytesSent = firstChunkData.length;
-          if (this.directWriteState.chunks.length > 0) {
-            const firstChunkSize = this.directWriteState.chunks[0].length;
+          if (chunks.length > 0) {
+            const firstChunkSize = chunks[0].length;
             if (firstChunkBytesSent >= firstChunkSize) {
-              this.directWriteState.chunkIndex = 1;
+              chunkIndex = 1;
             } else {
-              this.directWriteState.chunks[0] = this.directWriteState.chunks[0].slice(firstChunkBytesSent);
-              this.directWriteState.chunkIndex = 0;
+              chunks[0] = chunks[0].slice(firstChunkBytesSent);
+              chunkIndex = 0;
             }
           }
         }
-        } else {
-          await this.sendHexCommand('0070');
+        this.log(`Using compressed upload: ${uncompressedSize} bytes uncompressed, ${compressedBytes.length} bytes compressed`, 'info');
+      } else {
+        this.log(`Using uncompressed upload: ${uncompressedSize} bytes`, 'info');
+      }
+
+      const prepared = {
+        compressed: useCompressed,
+        chunks,
+        chunkIndex,
+        onProgress,
+        onComplete,
+        onStatusChange,
+        useFastRefresh,
+        chunkSize: DIRECT_WRITE_CHUNK_SIZE,
+        pipelineSize: DIRECT_WRITE_PIPELINE_SIZE,
+        trackPartial,
+        newEtag,
+        paletteBuffer,
+        paletteWidth,
+        paletteHeight,
+        startCommandHex,
+        supportsCompression,
+        supportsStreamingDecompression,
+        STREAMING_ZLIB_WINDOW_BITS,
+        maxStartPayload,
+        statusMessage: `Starting upload: ${canvas.width}x${canvas.height} pixels, ${chunks.length} chunks`
+      };
+
+      if (trackPartial) {
+        const regionResult = this.computePartialRegion(paletteBuffer, paletteWidth, paletteHeight);
+        if (regionResult === 'no_change') {
+          if (onStatusChange) onStatusChange('No pixel changes — upload skipped');
+          if (onComplete) onComplete(true, null);
+          return;
         }
-      
-      // Don't send chunks yet - wait for 0070 response from device
-      // The notification handler will call sendNextDirectWriteChunk() when it receives 0070
+        if (regionResult !== 'fallback_full') {
+          await this._beginPartialDirectWrite(regionResult, paletteBuffer, paletteWidth, paletteHeight, prepared);
+          return;
+        }
+        this.log('Partial update unavailable (first upload or size mismatch); using full upload', 'info');
+      }
+
+      await this._activateFullDirectWrite(prepared);
       
     } catch (error) {
-      this.directWriteState.active = false;
+      this.directWriteState = null;
       if (onComplete) {
         onComplete(false, error);
       }
@@ -3561,8 +3885,12 @@ class OpenDisplayBLE {
         state.onStatusChange(`Upload complete (${uploadTime}s), refreshing display...`);
       }
       
-      if (state.useFastRefresh) {
+      if (state.mode === 'partial') {
+        this.sendHexCommand(this.buildDirectWriteEndHex(2));
+      } else if (state.useFastRefresh) {
         this.sendHexCommand('007201');
+      } else if (state.trackPartial && state.newEtag) {
+        this.sendHexCommand(this.buildDirectWriteEndHex(0, state.newEtag));
       } else {
         this.sendHexCommand('0072');
       }
@@ -3585,17 +3913,32 @@ class OpenDisplayBLE {
       return false;
     }
     
+    if (bytes.length >= 4 && bytes[0] === 0xFF && bytes[3] === 0x00 &&
+        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76)) {
+      const opcode = bytes[1];
+      const err = bytes[2];
+      if (opcode === 0x76 && this.directWriteState.awaitingPartialStart) {
+        this.log(`Partial start NACK 0x${err.toString(16)}`, 'warning');
+        if (err === 0x01) {
+          this.resetPartialState();
+        }
+        this.directWriteState.awaitingPartialStart = false;
+        this._fallbackToFullDirectWrite();
+        return true;
+      }
+    }
+
     // Parse command - handle both byte orders (00 70 and 70 00)
     const cmd1 = bytes[0];
     const cmd2 = bytes[1];
     let responseType = null;
     
     // Check for 00 XX format
-    if (cmd1 === 0x00 && (cmd2 === 0x70 || cmd2 === 0x71 || cmd2 === 0x72 || cmd2 === 0x73 || cmd2 === 0x74)) {
+    if (cmd1 === 0x00 && (cmd2 === 0x70 || cmd2 === 0x71 || cmd2 === 0x72 || cmd2 === 0x73 || cmd2 === 0x74 || cmd2 === 0x76)) {
       responseType = cmd2;
     }
     // Check for XX 00 format (reversed byte order)
-    else if (cmd2 === 0x00 && (cmd1 === 0x70 || cmd1 === 0x71 || cmd1 === 0x72 || cmd1 === 0x73 || cmd1 === 0x74)) {
+    else if (cmd2 === 0x00 && (cmd1 === 0x70 || cmd1 === 0x71 || cmd1 === 0x72 || cmd1 === 0x73 || cmd1 === 0x74 || cmd1 === 0x76)) {
       responseType = cmd1;
     }
     
@@ -3604,13 +3947,20 @@ class OpenDisplayBLE {
       const cleanHex = hexString.replace(/\s+/g, '').toUpperCase();
       if (cleanHex.length >= 4) {
         const cmdHex = cleanHex.substring(0, 4);
-        // Check for 0070, 0071, 0072, 0073, 0074
-        if (cmdHex === '0070' || cmdHex === '0071' || cmdHex === '0072' || cmdHex === '0073' || cmdHex === '0074') {
+        if (cmdHex === '0070' || cmdHex === '0071' || cmdHex === '0072' || cmdHex === '0073' || cmdHex === '0074' || cmdHex === '0076') {
           responseType = parseInt(cmdHex.substring(2, 4), 16);
         }
-        // Check for 7000, 7100, 7200, 7300, 7400 (reversed)
-        else if (cmdHex === '7000' || cmdHex === '7100' || cmdHex === '7200' || cmdHex === '7300' || cmdHex === '7400') {
+        else if (cmdHex === '7000' || cmdHex === '7100' || cmdHex === '7200' || cmdHex === '7300' || cmdHex === '7400' || cmdHex === '7600') {
           responseType = parseInt(cmdHex.substring(0, 2), 16);
+        } else if (cleanHex.startsWith('FF76') && cleanHex.length >= 8) {
+          const err = parseInt(cleanHex.substring(4, 6), 16);
+          if (this.directWriteState.awaitingPartialStart) {
+            this.log(`Partial start NACK 0x${err.toString(16)}`, 'warning');
+            if (err === 0x01) this.resetPartialState();
+            this.directWriteState.awaitingPartialStart = false;
+            this._fallbackToFullDirectWrite();
+            return true;
+          }
         }
       }
     }
@@ -3625,6 +3975,12 @@ class OpenDisplayBLE {
       this.log('Direct write started, sending data chunks...', 'success');
       this.directWriteState.pendingAcks = 0;
       // Now send chunks (or end command if all data was in start payload)
+      this.sendNextDirectWriteChunk();
+      return true;
+    } else if (responseType === 0x76) {
+      this.log('Partial direct write started, sending data chunks...', 'success');
+      this.directWriteState.awaitingPartialStart = false;
+      this.directWriteState.pendingAcks = 0;
       this.sendNextDirectWriteChunk();
       return true;
     } else if (responseType === 0x71) {
@@ -3644,35 +4000,42 @@ class OpenDisplayBLE {
       return true;
     } else if (responseType === 0x73) {
       // Refresh complete
+      const state = this.directWriteState;
       const refreshEndTime = Date.now();
       let refreshTime = "?";
-      if (this.directWriteState.refreshStartTime) {
-        refreshTime = ((refreshEndTime - this.directWriteState.refreshStartTime) / 1000).toFixed(2);
+      if (state.refreshStartTime) {
+        refreshTime = ((refreshEndTime - state.refreshStartTime) / 1000).toFixed(2);
       }
-      const uploadTime = this.directWriteState.uploadEndTime && this.directWriteState.uploadStartTime
-        ? ((this.directWriteState.uploadEndTime - this.directWriteState.uploadStartTime) / 1000).toFixed(2)
+      const uploadTime = state.uploadEndTime && state.uploadStartTime
+        ? ((state.uploadEndTime - state.uploadStartTime) / 1000).toFixed(2)
         : "?";
-      const totalTime = this.directWriteState.uploadStartTime
-        ? ((refreshEndTime - this.directWriteState.uploadStartTime) / 1000).toFixed(2)
+      const totalTime = state.uploadStartTime
+        ? ((refreshEndTime - state.uploadStartTime) / 1000).toFixed(2)
         : "?";
-      this.log(`Direct write completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s, Total: ${totalTime}s`, 'success');
-      if (this.directWriteState.onStatusChange) {
-        this.directWriteState.onStatusChange(`Upload completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s`);
+      const modeLabel = state.mode === 'partial' ? 'Partial update' : 'Direct write';
+      this.log(`${modeLabel} completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s, Total: ${totalTime}s`, 'success');
+      if (state.onStatusChange) {
+        state.onStatusChange(`${modeLabel} completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s`);
       }
-      
-      // Reset state
-      const wasActive = this.directWriteState.active;
-      this.directWriteState.active = false;
-      this.directWriteState.data = null;
-      this.directWriteState.chunks = [];
-      this.directWriteState.chunkIndex = 0;
-      this.directWriteState.pendingAcks = 0;
-      this.directWriteState.uploadStartTime = null;
-      this.directWriteState.uploadEndTime = null;
-      this.directWriteState.refreshStartTime = null;
-      
-      if (wasActive && this.directWriteState.onComplete) {
-        this.directWriteState.onComplete(true, null);
+
+      if (state.mode === 'partial') {
+        this._commitPartialState(state.partialNewEtag, state.newPalette, state.paletteWidth, state.paletteHeight);
+      } else if (state.trackPartial && state.newEtag && state.paletteBuffer) {
+        this._commitPartialState(state.newEtag, state.paletteBuffer, state.paletteWidth, state.paletteHeight);
+      }
+
+      const onComplete = state.onComplete;
+      state.active = false;
+      state.chunks = [];
+      state.chunkIndex = 0;
+      state.pendingAcks = 0;
+      state.uploadStartTime = null;
+      state.uploadEndTime = null;
+      state.refreshStartTime = null;
+      this.directWriteState = null;
+
+      if (onComplete) {
+        onComplete(true, null);
       }
       return true;
     } else if (responseType === 0x74) {

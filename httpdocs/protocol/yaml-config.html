@@ -281,7 +281,7 @@ table code {
     <p class="intro-text">
       This configuration fully explains all capabilities the device has, including display specifications, 
       power management options, communication modes, sensor support, and all other device settings. 
-      The configuration is used by tools like the Config Builder to generate and parse configuration packets, 
+      The configuration is used by tools like the Toolbox to generate and parse configuration packets, 
       and by clients to understand what features are available on a particular device.
     </p>
     <p class="intro-text">
@@ -479,7 +479,7 @@ table code {
     <h2>Packet Types</h2>
     <p class="intro-text">
       The protocol defines multiple packet types, each representing a different aspect of device configuration. 
-      For detailed field definitions, enumerations, and constraints, use the <a href="../firmware/config/index.html" target="_blank" style="color: var(--accent); font-weight: 500;">Config Builder</a> tool, 
+      For detailed field definitions, enumerations, and constraints, use the <a href="../firmware/toolbox/index.html" target="_blank" style="color: var(--accent); font-weight: 500;">Toolbox</a> tool, 
       which provides an interactive interface to explore all packet types and their fields.
     </p>
     
@@ -500,8 +500,15 @@ table code {
 
     <div class="packet-type" id="packet-type-32">
       <h4>Packet Type 32: display <span class="badge repeatable">Repeatable</span></h4>
-      <p>Specifies display/panel configuration including dimensions, color scheme, controller type, and pin assignments. 
+      <p>Specifies display/panel configuration including dimensions, color scheme, controller type, pin assignments, and transfer capabilities. 
       This packet is required for the protocol to function. Can appear multiple times for devices with multiple displays.</p>
+      <p style="margin-top: 12px; color: var(--muted-foreground);">Key fields for senders:</p>
+      <ul style="margin: 8px 0 0 20px; color: var(--muted-foreground); line-height: 1.8;">
+        <li><code>pixel_width</code>, <code>pixel_height</code>, <code>color_scheme</code> — frame geometry and encoding</li>
+        <li><code>partial_update_support</code> — <code>1</code> if 1 bpp partial region refresh (<code>0x0076</code>) is supported</li>
+        <li><code>transmission_modes</code> bitfield — <code>streaming_decompression</code> (bit 0) + <code>zip</code> (bit 1) enable compressed direct write; <code>direct_write</code> (bit 3) marks bufferless mode</li>
+      </ul>
+      <p style="margin-top: 12px;">Full field list: <code>web/firmware/toolbox/config.yaml</code> or the <a href="../firmware/toolbox/index.html" style="color: var(--accent);">Toolbox</a>.</p>
     </div>
 
     <div class="packet-type">
@@ -557,7 +564,7 @@ table code {
     <h2>Using the YAML Config</h2>
     
     <p class="intro-text">
-      The <a href="../firmware/config/index.html" target="_blank" style="color: var(--accent); font-weight: 500;">Config Builder</a> web tool loads the YAML configuration to:
+      The <a href="../firmware/toolbox/index.html" target="_blank" style="color: var(--accent); font-weight: 500;">Toolbox</a> web tool loads the YAML configuration to:
     </p>
     <ul>
       <li>Generate UI forms for each packet type</li>

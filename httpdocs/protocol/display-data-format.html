@@ -653,8 +653,8 @@ Byte 1: Pixels 8-15 (Row 2: 8-11, Row 3: 12-15)</code>
       <li>For bitplane schemes, ensure Plane 1 and Plane 2 have the same number of bytes.</li>
       <li>Color detection from RGB values uses thresholds: pixels are classified based on their RGB components.</li>
       <li>The image data must be sent in the rotated orientation. The client should apply rotation before encoding the pixel data.</li>
-      <li>Data can be compressed using zlib before transmission to reduce transfer size.</li>
-      <li>Image data is written directly to the framebuffer, so there is no size limit for uncompressed images. Only compressed data is limited by the compression buffer size (50 KB).</li>
+      <li>Data can be compressed using zlib before transmission when the device supports streaming decompression (see below).</li>
+      <li>Uncompressed direct write has no protocol-level size limit — pixels stream directly into the framebuffer.</li>
     </ul>
   </div>
 
@@ -686,40 +686,49 @@ Offset (3+image_length) to (6+image_length): poll_interval (4 bytes, uint32, lit
       See <strong><a href="basic-standard.html" style="color: var(--accent);">OpenDisplay Basic</a></strong> for complete packet specifications.
     </p>
     
-    <h3>Full GATT protocol (reference firmware)</h3>
+    <h3 id="transmission-reference">Full GATT protocol (reference firmware)</h3>
     <p class="intro-text">
-      Reference firmware sends image data using Direct Write (<code>0x0070</code>–<code>0x0072</code>) with optional compression:
+      Wire-level details: <a href="ble-flow.html#image-transfer" style="color: var(--accent);">Communication protocol — image transfer</a>. 
+      Panel geometry comes from Flex config, not from the client start command.
     </p>
     
-    <h4>Start Command (0x0070)</h4>
+    <h4>Start command (<code>0x0070</code>)</h4>
     <div class="code-block">
 <code>Command: 0x00 0x70
-Payload (uncompressed):
-  - Width: 2 bytes (little-endian)
-  - Height: 2 bytes (little-endian)
-  - Color scheme: 1 byte
-  - Refresh mode: 1 byte
 
-Payload (compressed):
-  - Uncompressed size: 4 bytes (little-endian)
-  - Compressed data: variable (up to 200 bytes in start command for BLE, up to 1000 bytes for TCP)</code>
+Payload (uncompressed direct write):
+  (empty — fewer than 4 bytes)
+
+Payload (streaming decompression):
+  [uncompressed_size: 4 bytes, little-endian]
+  [optional zlib prefix bytes in the same command]</code>
     </div>
     
-    <h4>Data Command (0x0071)</h4>
+    <h4>Data command (<code>0x0071</code>)</h4>
     <div class="code-block">
 <code>Command: 0x00 0x71
-Payload: Image data chunk
-  - BLE: up to 230 bytes per chunk
-  - TCP: up to 1000 bytes per chunk</code>
+Payload: raw pixel bytes OR continuation of zlib stream
+  - BLE: up to ~230 bytes per chunk
+  - LAN: up to ~1000 bytes per chunk</code>
     </div>
     
-    <h4>End Command (0x0072)</h4>
+    <h4>End command (<code>0x0072</code>)</h4>
     <div class="code-block">
 <code>Command: 0x00 0x72
-Payload: Refresh mode flag (1 byte, optional)
-  - 0x00: Full refresh (default)
-  - 0x01: Fast/partial refresh</code>
+Payload (optional):
+  [refresh_mode: 1 byte] — 0 = full (default), 1 = fast refresh
+  [new_etag: 4 bytes, big-endian] — optional after full-frame upload
+
+After refresh: device notifies 0x00 0x73 (success) or 0x00 0x74 (timeout)</code>
     </div>
+
+    <h4>Partial region update (<code>0x0076</code>)</h4>
+    <p class="intro-text">
+      1 bpp B/W panels only. Stream layout: <code>old_region_bits || new_region_bits</code>, each 
+      <code>ceil(w/8) × h</code> bytes. Region <code>x</code> and <code>w</code> must be multiples of 8. 
+      Uses the same <code>0x0071</code>/<code>0x0072</code> chunking as full frames. 
+      See <a href="ble-flow.html#partial-update" style="color: var(--accent);">partial update</a>.
+    </p>
     
     <h3>Maximum Packet Sizes</h3>
     <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
@@ -754,15 +763,17 @@ Payload: Refresh mode flag (1 byte, optional)
       </tbody>
     </table>
     
-    <h3>Compression</h3>
+    <h3 id="streaming-decompression">Streaming decompression</h3>
     <p class="intro-text">
-      Both standards support zlib compression of image data:
+      When Flex <code>transmission_modes</code> has both <code>streaming_decompression</code> (bit 0) and 
+      <code>zip</code> (bit 1) set, the client may send a zlib DEFLATE stream over direct write. The device 
+      decompresses incrementally and writes pixels as they are decoded — no full-frame buffer on the device.
     </p>
     <ul style="margin: 12px 0; padding-left: 20px; color: var(--muted-foreground); line-height: 1.8;">
-      <li><strong>Basic:</strong> Compressed data is included directly in the image_data field of packet 0x82</li>
-      <li><strong>Flex:</strong> Compressed data is sent in the Direct Write protocol, with uncompressed size in the start command (0x0070)</li>
-      <li><strong>Compressed Data Buffer Limit:</strong> 50 KB (50,000 bytes) - if compressed data exceeds this, use uncompressed mode</li>
-      <li><strong>Uncompressed Image Size:</strong> No limit - image data is written directly to the framebuffer, so uncompressed images can be any size that fits in device memory</li>
+      <li><strong>Client:</strong> compress with <code>window_bits = 9</code> (512-byte DEFLATE window)</li>
+      <li><strong>Basic standard:</strong> compressed data may still be embedded in packet <code>0x82</code> (separate profile)</li>
+      <li><strong>New senders:</strong> do not use legacy large-window zlib. If streaming decompression is not advertised, use <strong>uncompressed</strong> direct write</li>
+      <li><strong>Firmware v2:</strong> reference firmware version 2 will drop legacy large-window zlib; only streaming decompression remains (v1.x ESP32/nRF builds still accept both)</li>
     </ul>
     
     <p class="intro-text" style="margin-top: 16px;">

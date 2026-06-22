@@ -323,7 +323,7 @@
     <div class="breadcrumb">
       <a href="../index.html">Home</a><span class="breadcrumb-separator">/</span>
       <a href="index.html">Protocol</a><span class="breadcrumb-separator">/</span>
-      <span>Flex communication protocol</span>
+      <span>Communication protocol</span>
     </div>
   </div>
   <h1>OpenDisplay — communication protocol</h1>
@@ -691,89 +691,203 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
   </div>
 
   <div class="col panel">
-    <h2>Image Transfer Flow</h2>
-    
-    <h3>1. Direct Write Mode (Recommended)</h3>
+    <h2 id="image-transfer">Image Transfer Flow</h2>
+    <p class="intro-text">
+      Reference firmware implements <strong>direct write</strong> only: image bytes stream straight into the panel framebuffer 
+      via <code>0x0070</code> → <code>0x0071</code> → <code>0x0072</code>. Pixel layout is defined in 
+      <a href="display-data-format.html" style="color: var(--accent);">Display data format</a>.
+      Panel width, height, and color scheme come from the loaded Flex <a href="yaml-config.html#packet-type-32">display packet (type 32)</a> — 
+      the client does not send dimensions in the start command.
+    </p>
+
+    <h3>1. Direct write (uncompressed)</h3>
     <div class="flow-step">
-      <h4>Start Direct Write: 0x0070</h4>
-      <p>
-        The client initiates direct write mode, which sends image data directly to the display buffer without intermediate storage.
-        The image dimensions and color scheme must match the display configuration that was previously read or written.
-      </p>
+      <h4>Start: <code>0x0070</code></h4>
+      <p>Empty payload (or fewer than 4 bytes). Device powers the panel, opens the full address window, and ACKs.</p>
       <div class="code-block">
-        <code>Command: 0x00 0x70<br>Payload: [width (2 bytes), height (2 bytes), color_scheme (1 byte), refresh_mode (1 byte)]</code>
+        <code>Command: 0x00 0x70<br>Payload: (empty)</code>
+      </div>
+      <p>Response: <code>0x00 0x70</code></p>
+    </div>
+    <div class="flow-step">
+      <h4>Data: <code>0x0071</code></h4>
+      <p>Raw encoded pixels in row-major order. Chunk until the full frame size is sent.</p>
+      <div class="code-block">
+        <code>Command: 0x00 0x71<br>Payload: [pixel bytes]<br>BLE: up to ~230 bytes per chunk (less when encryption is on)<br>LAN: up to ~1000 bytes per chunk</code>
+      </div>
+      <p>Response after each chunk: <code>0x00 0x71</code>. On the uncompressed path the device may auto-complete when the expected byte count is reached.</p>
+    </div>
+    <div class="flow-step">
+      <h4>End: <code>0x0072</code></h4>
+      <div class="code-block">
+        <code>Command: 0x00 0x72<br>Payload (optional):<br>
+  [refresh_mode: 1 byte]  — 0 = full (default), 1 = fast refresh<br>
+  [new_etag: 4 bytes, big-endian] — optional; seeds partial-update state</code>
       </div>
       <p>
-        The device responds with <code>0x0070</code> (ACK) if ready to receive data. The width, height, and color_scheme 
-        must match the display configuration (<a href="yaml-config.html#packet-type-32">Packet Type 32</a>) for the transfer to succeed.
+        Response: <code>0x00 0x72</code> (ACK), then the device refreshes the panel. 
+        After refresh completes: <code>0x00 0x73</code> (success) or <code>0x00 0x74</code> (timeout, ~60 s).
       </p>
     </div>
 
-    <h3>2. Send Image Data</h3>
-    <div class="flow-step">
-      <h4>Data Chunks: 0x0071</h4>
+    <h3 id="streaming-decompression">2. Streaming decompression (compressed direct write)</h3>
+    <div class="flow-step callout-info">
+      <h4>Sender guidance</h4>
       <p>
-        Image data is sent in chunks using the direct write data command. Each chunk contains:
+        <strong>New senders must not use legacy compression</strong> (standard zlib with a large DEFLATE history window). 
+        If the device does not advertise <code>streaming_decompression</code> in Flex <code>transmission_modes</code>, 
+        send an <strong>uncompressed</strong> direct write instead.
       </p>
-      <div class="code-block">
-        <code>Command: 0x00 0x71<br>Payload: [chunk data, up to 230 bytes]</code>
-      </div>
-      <p>
-        The device responds with <code>0x0071</code> (ACK) after each chunk is received.
+      <p style="margin-top: 12px;">
+        <strong>Deprecation:</strong> Reference firmware <strong>version 1.x</strong> (from <code>0x0043</code>, major in the high byte) 
+        still accepts legacy large-window zlib on existing ESP32/nRF builds. <strong>Firmware version 2</strong> will remove that path; 
+        only streaming decompression (512-byte DEFLATE window) will remain. Plan client upgrades before moving to v2 firmware.
       </p>
     </div>
+    <p class="intro-text">
+      When both <code>streaming_decompression</code> (bit 0) and <code>zip</code> (bit 1) are set in the display 
+      <code>transmission_modes</code> field, the client may send a zlib DEFLATE stream. The device decompresses 
+      <strong>incrementally</strong> as <code>0x0071</code> chunks arrive and writes decoded pixels directly to the panel — 
+      no full-image RAM buffer on the device.
+    </p>
+    <div class="flow-step">
+      <h4>Start: <code>0x0070</code> (compressed)</h4>
+      <div class="code-block">
+        <code>Command: 0x00 0x70<br>Payload:<br>
+  [uncompressed_size: 4 bytes, little-endian] — must match frame size from Flex config<br>
+  [zlib bytes: optional] — remainder of start command may hold the first part of the DEFLATE stream</code>
+      </div>
+      <p>
+        Client compression must use a <strong>512-byte DEFLATE window</strong> (<code>window_bits = 9</code> in zlib/pako). 
+        Response: <code>0x00 0x70</code>.
+      </p>
+    </div>
+    <div class="flow-step">
+      <h4>Data: <code>0x0071</code> (zlib stream)</h4>
+      <p>Continuation of the zlib stream (not pre-decompressed pixels). ACK per chunk: <code>0x00 0x71</code>.</p>
+    </div>
+    <div class="flow-step">
+      <h4>End: <code>0x0072</code></h4>
+      <p>Same optional refresh mode and <code>new_etag</code> as uncompressed direct write. Finalize the zlib stream, refresh, then <code>0x73</code>/<code>0x74</code>.</p>
+    </div>
+    <p class="intro-text" style="margin-top: 12px;">
+      The same streaming path applies to <a href="#partial-update" style="color: var(--accent);">partial region updates</a> when 
+      the <code>0x0076</code> flags byte has bit 0 set. See also 
+      <a href="display-data-format.html#transmission-reference" style="color: var(--accent);">Display data format — transmission</a>.
+    </p>
 
-    <h3>3. Complete Transfer</h3>
+    <h3 id="partial-update">3. Partial region update (<code>0x0076</code>)</h3>
+    <p class="intro-text">
+      For 1 bpp B/W panels that support differential partial refresh, the client can update a rectangular region 
+      instead of the full frame. Requires <code>partial_update_support: 1</code> in Flex config (main reference firmware only; 
+      see <a href="reference-firmware-variants.html" style="color: var(--accent);">firmware variants</a>).
+    </p>
     <div class="flow-step">
-      <h4>End Direct Write: 0x0072</h4>
-      <p>
-        When all image data has been sent, the client sends the end command:
-      </p>
+      <h4>Start: <code>0x0076</code></h4>
       <div class="code-block">
-        <code>Command: 0x00 0x72</code>
+        <code>Command: 0x00 0x76<br>Payload (17-byte header + optional stream bytes):<br>
+  [flags: 1 byte] — bit 0 = zlib-compressed stream (requires zip in transmission_modes)<br>
+  [old_etag: 4 bytes, big-endian] — must match device displayed etag<br>
+  [new_etag: 4 bytes, big-endian] — non-zero; committed on success<br>
+  [x: 2][y: 2][w: 2][h: 2] — region, big-endian; x and w must be multiples of 8<br>
+  [optional initial stream bytes]</code>
       </div>
+      <p>Response: <code>0x00 0x76</code>. NACK: <code>0xFF 0x76 [error] 0x00</code> (see error table below).</p>
+    </div>
+    <div class="flow-step">
+      <h4>Stream via <code>0x0071</code></h4>
       <p>
-        The device responds with <code>0x0072</code> (ACK) and refreshes the display with the new image.
+        Logical stream size = <code>plane_size × 2</code> where <code>plane_size = ceil(w/8) × h</code> bytes. 
+        <strong>First half</strong> = old image bits for the region (controller plane 1). 
+        <strong>Second half</strong> = new image bits (controller plane 0). 
+        Same chunking as full-frame direct write.
       </p>
     </div>
-    <h3>4. Block upload mode (not in reference firmware)</h3>
+    <div class="flow-step">
+      <h4>End: <code>0x0072</code></h4>
+      <p>
+        Optional byte 0: refresh mode — default is <strong>partial</strong> region refresh; 
+        <code>0</code> = full panel, <code>1</code> = fast. No <code>new_etag</code> in this end payload (etag comes from the <code>0x0076</code> header). 
+        Responses: <code>0x00 0x72</code>, then <code>0x00 0x73</code> or <code>0x00 0x74</code>. On success, <code>displayed_etag = new_etag</code>.
+      </p>
+    </div>
+    <div class="flow-step">
+      <h4>Partial update error codes</h4>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border-color);">
+            <th style="padding: 8px; text-align: left;">Code</th>
+            <th style="padding: 8px; text-align: left;">Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--border-color);"><td style="padding: 8px;"><code>0x01</code></td><td style="padding: 8px; color: var(--muted-foreground);">Etag mismatch</td></tr>
+          <tr style="border-bottom: 1px solid var(--border-color);"><td style="padding: 8px;"><code>0x03</code></td><td style="padding: 8px; color: var(--muted-foreground);">Rectangle out of bounds</td></tr>
+          <tr style="border-bottom: 1px solid var(--border-color);"><td style="padding: 8px;"><code>0x04</code></td><td style="padding: 8px; color: var(--muted-foreground);"><code>x</code> or <code>w</code> not 8-pixel aligned</td></tr>
+          <tr style="border-bottom: 1px solid var(--border-color);"><td style="padding: 8px;"><code>0x05</code></td><td style="padding: 8px; color: var(--muted-foreground);">Invalid flags or compression not allowed</td></tr>
+          <tr style="border-bottom: 1px solid var(--border-color);"><td style="padding: 8px;"><code>0x06</code></td><td style="padding: 8px; color: var(--muted-foreground);">Stream size or zlib error</td></tr>
+          <tr><td style="padding: 8px;"><code>0x07</code></td><td style="padding: 8px; color: var(--muted-foreground);">Panel not 1 bpp (unsupported)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="intro-text">
+      <strong>Etag lifecycle:</strong> After a successful full frame, the client may supply <code>new_etag</code> in the 
+      <code>0x0072</code> end payload. Partial updates must send matching <code>old_etag</code>. 
+      On refresh timeout (<code>0x74</code>) the device clears the etag; the client should fall back to a full refresh.
+    </p>
+
+    <h3>4. Block upload (not in reference firmware)</h3>
     <div class="flow-step">
       <h4>Commands <code>0x0064</code> / <code>0x0065</code></h4>
       <p>
-        The OpenDisplay spec defines block-based image upload for implementations that buffer the full image before refresh. 
-        Reference firmware today implements <strong>Direct Write only</strong> (<code>0x0070</code>–<code>0x0072</code>); 
-        block commands are listed in the command reference for forward compatibility but return an error if sent.
+        Defined for implementations that buffer the full image before refresh. Reference firmware returns an error if sent.
       </p>
     </div>
   </div>
 
+  <div class="col panel" id="firmware-variants-summary">
+    <h2>Reference firmware variants</h2>
+    <p class="intro-text">
+      ESP32/nRF and Silicon Labs BG22 builds share this command set but differ in optional features 
+      (partial refresh, NFC, Wi‑Fi/LAN, compression window limits). 
+      Full matrix: <a href="reference-firmware-variants.html" style="color: var(--accent);">Reference firmware variants</a>.
+    </p>
+  </div>
+
   <div class="col panel">
     <h2>Command Reference</h2>
+    <p class="intro-text">Commands are 2-byte big-endian opcodes followed by payload. Direction notes apply where the same low byte appears in responses.</p>
     <ul class="command-list">
-      <li><code>0x0040</code> - Read configuration</li>
-      <li><code>0x0041</code> - Write configuration (first chunk or small config)</li>
-      <li><code>0x0042</code> - Write configuration (subsequent chunks)</li>
-      <li><code>0x0043</code> - Read firmware version (always plaintext; allowed without encryption session)</li>
-      <li><code>0x0050</code> - Authenticate / encryption handshake (plaintext; see <a href="#encryption-authentication" style="color: var(--accent);">Encryption and authentication</a>)</li>
-      <li><code>0x000F</code> - Reboot device</li>
-      <li><code>0x0070</code> - Direct write start</li>
-      <li><code>0x0071</code> - Direct write data</li>
-      <li><code>0x0072</code> - Direct write end</li>
-      <li><code>0x0064</code> - Send data info (block-based)</li>
-      <li><code>0x0065</code> - Send block part (block-based)</li>
+      <li><code>0x000F</code> — Reboot device</li>
+      <li><code>0x0040</code> — Read configuration</li>
+      <li><code>0x0041</code> — Write configuration (first chunk or small config)</li>
+      <li><code>0x0042</code> — Write configuration (subsequent chunks)</li>
+      <li><code>0x0043</code> — Read firmware version (plaintext; allowed without encryption session)</li>
+      <li><code>0x0044</code> — Read 16-byte manufacturer specific data (MSD)</li>
+      <li><code>0x0050</code> — Authenticate / encryption handshake (see <a href="#encryption-authentication" style="color: var(--accent);">Encryption</a>)</li>
+      <li><code>0x0051</code> — Enter DFU</li>
+      <li><code>0x0052</code> — Deep sleep</li>
+      <li><code>0x0070</code> — Direct write start</li>
+      <li><code>0x0071</code> — Direct write data (also partial stream while a <code>0x0076</code> session is active)</li>
+      <li><code>0x0072</code> — Direct write end</li>
+      <li><code>0x0073</code> — <strong>Client → device:</strong> LED activate. <strong>Device → client:</strong> refresh completed after image end (context-dependent; not a client command during upload)</li>
+      <li><code>0x0075</code> — LED stop</li>
+      <li><code>0x0076</code> — Partial region write start (main firmware, 1 bpp)</li>
+      <li><code>0x0077</code> — Buzzer activate (main firmware)</li>
+      <li><code>0x0082</code> — NFC endpoint (BG22 firmware only)</li>
+      <li><code>0x0064</code> — Send data info (block-based; not implemented)</li>
+      <li><code>0x0065</code> — Send block part (block-based; not implemented)</li>
     </ul>
   </div>
 
   <div class="col panel">
     <h2>Response codes</h2>
     <ul class="command-list">
-      <li><code>0x00 [command]</code> - Success response</li>
-      <li><code>0xFF [command]</code> - Error response</li>
-      <li><code>0x00C4</code> - Block part acknowledged</li>
-      <li><code>0x00C5</code> - Request next block part</li>
-      <li><code>0x00C6</code> - Request block</li>
-      <li><code>0x00C7</code> - Upload complete</li>
-      <li><code>0x00C8</code> - Image already displayed</li>
+      <li><code>0x00 [command_low]</code> — Success (second byte echoes the command being answered)</li>
+      <li><code>0xFF [command_low]</code> — Error (partial updates: <code>0xFF [opcode] [error_code] 0x00</code>)</li>
+      <li><code>0x00 0x73</code> — Display refresh completed successfully (after <code>0x0072</code>)</li>
+      <li><code>0x00 0x74</code> — Display refresh timed out</li>
+      <li><code>0x00C4</code>–<code>0x00C8</code> — Block upload responses (spec only; not used by reference firmware)</li>
     </ul>
     <h3 id="response-codes-auth">Encryption and <code>0x0050</code> statuses</h3>
     <p class="intro-text" style="margin-top: 12px;">
@@ -877,7 +991,7 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
         </div>
         <div class="sequence-message to-device" style="top: 90px;">
           <div class="sequence-message-line"></div>
-          <div class="sequence-message-box">Write: 0x00 0x70<br>800×600, B/W, full refresh</div>
+          <div class="sequence-message-box">Write: 0x00 0x70<br><small>Start (empty or compressed header)</small></div>
         </div>
         <div class="sequence-message to-client" style="top: 140px;">
           <div class="sequence-message-line"></div>
@@ -921,14 +1035,18 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
         </div>
         <div class="sequence-message to-client" style="top: 640px;">
           <div class="sequence-message-line"></div>
-          <div class="sequence-message-box">Notify: 0x00 0x72<br><small>Display refreshed</small></div>
+          <div class="sequence-message-box">Notify: 0x00 0x72<br><small>ACK</small></div>
         </div>
-        <div class="sequence-disconnect" style="top: 690px;">
+        <div class="sequence-message to-client" style="top: 690px;">
+          <div class="sequence-message-line"></div>
+          <div class="sequence-message-box">Notify: 0x00 0x73<br><small>Refresh complete</small></div>
+        </div>
+        <div class="sequence-disconnect" style="top: 740px;">
           <div class="sequence-disconnect-line"></div>
           <div class="sequence-disconnect-label">Disconnect</div>
         </div>
       </div>
-      <div style="height: 730px;"></div>
+      <div style="height: 780px;"></div>
     </div>
   </div>
 
