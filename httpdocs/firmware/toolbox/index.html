@@ -654,7 +654,7 @@ a:hover {
   color: var(--foreground);
 }
 </style>
-  <script src="https://opendisplay.org/js/js-yaml.min.js"></script>
+  <script src="/js/js-yaml.min.js"></script>
   <!-- nRF Web Tools with Android support -->
   <script src="jszip.min.js"></script>
   <!-- Web Serial Polyfill for Android support (must be loaded before ESP Web Tools and nRF Web Tools) -->
@@ -666,7 +666,7 @@ a:hover {
       // Only use polyfill on Android with WebUSB support
       if (isAndroid && navigator.usb) {
         try {
-          const { serial } = await import('https://opendisplay.org/firmware/toolbox/serial.js');
+          const { serial } = await import('./serial.js');
           
           // Try to replace navigator.serial - on Android it might exist but not work
           try {
@@ -721,7 +721,7 @@ a:hover {
         if (document.querySelector('script[src*="install-button.js"]') === null) {
           const espScript = document.createElement('script');
           espScript.type = 'module';
-          espScript.src = 'https://opendisplay.org/firmware/toolbox/js/install-button.js';
+          espScript.src = './js/install-button.js';
           document.head.appendChild(espScript);
         }
         
@@ -1036,8 +1036,8 @@ a:hover {
       <button type="button" id="downloadYamlBtn">Download YAML</button>
     </div>
   </div>
-<script src="https://opendisplay.org/js/pako.js"></script>
-<script src="https://opendisplay.org/js/ble-common.js"></script>
+<script src="/js/pako.js"></script>
+<script src="/js/ble-common.js"></script>
 <script>
 let bleLib = null;
 let lastAutoInstallRedirectKeyHex = null;
@@ -2403,7 +2403,7 @@ async function loadYamlFromFile() {
       (async function () {
         let r = await fetch('config.yaml');
         if (r.ok) return r;
-        r = await fetch('https://opendisplay.org/firmware/toolbox/config.yaml');
+        r = await fetch('./config.yaml');
         return r;
       })()
     ]);
@@ -2557,7 +2557,7 @@ function showAutoInstallPanel() {
   }
 }
 function openBleTester() {
-  window.open('https://opendisplay.org/firmware/display/', '_blank');
+  window.open('../display/', '_blank');
 }
 async function startAutoInstall() {
   const autoInstallBtn = document.getElementById('autoInstallBtn');
@@ -4040,7 +4040,7 @@ loadYamlFromFile();
         <div class="site-footer__col">
           <span class="site-footer__col-h">Build</span>
           <a href="../../what-hardware-to-buy.html" class="od-foot-link">What hardware to buy</a>
-          <a href="../../firmware/display/index.html" class="od-foot-link">BLE Tester</a>
+          <a href="../display/index.html" class="od-foot-link">BLE Tester</a>
           <a href="../../firmware/battery/index.html" class="od-foot-link">Battery calculator</a>
         </div>
         <div class="site-footer__col">
