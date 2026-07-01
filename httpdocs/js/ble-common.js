@@ -116,7 +116,7 @@ class OpenDisplayBLE {
     
     // Load YAML config for forward compatibility
     // Default to static absolute URL
-    const defaultPath = 'https://opendisplay.org/firmware/toolbox/config.yaml';
+    const defaultPath = '/firmware/toolbox/config.yaml';
     // Delay loading to ensure js-yaml script has time to load
     // Scripts load asynchronously, so we need to wait for them
     const loadConfig = () => {
