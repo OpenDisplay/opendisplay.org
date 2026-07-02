@@ -502,6 +502,70 @@
 }
 
 /* ============================================================
+   Dark theme — automatic, follows the OS setting.
+   ------------------------------------------------------------
+   We only redefine the BASE color tokens here. The semantic
+   aliases (--fg1..4, --bg1..3, --line, --od-info) and the
+   var()-based shadow/color-mix tokens re-resolve against these
+   automatically, so everything built on the token layer flips
+   without further edits.
+
+   Palette intent: the light theme is warm cream "paper"; the
+   dark theme is a cool near-black "bezel" (echoing --od-bezel)
+   with soft off-white ink, so text never sits at pure #fff on
+   pure #000. Brand blue is nudged lighter for AA contrast on
+   dark surfaces; semantic hues are brightened for the same
+   reason.
+   ============================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ---------- Ink (now the LIGHT foreground) ---------- */
+    --od-ink:         #E9ECEF;          /* fg1 — body, headings */
+    --od-ink-2:       #C3C9D0;          /* fg2 — secondary text */
+    --od-ink-3:       #949CA5;          /* fg3 — tertiary / captions */
+    --od-ink-4:       #6C757E;          /* fg4 — muted / placeholder */
+    --od-ink-line:    #333A41;          /* hairline borders */
+
+    /* ---------- Paper (now the DARK background) ---------- */
+    --od-paper:       #131619;          /* page bg — cool near-black */
+    --od-paper-2:     #1B1F24;          /* card-on-page, alt rows */
+    --od-paper-3:     #23282E;          /* deeper panels / hero */
+    --od-paper-line:  #2C323A;          /* paper-on-paper borders */
+    --od-white:       #0E1113;          /* inset surface — inputs, code blocks */
+    /* --od-bezel intentionally left as-is (already the dark frame) */
+
+    /* ---------- Brand ---------- */
+    --od-blue:        #22C7FF;          /* keep vivid; a touch brighter on dark */
+    --od-blue-ink:    #5AD4FF;          /* links / blue text — lighter for contrast */
+    --od-blue-deep:   #85DEFF;          /* hover-lighten (inverse of light "pressed") */
+    --od-blue-soft:   #123544;          /* dark-tinted chip / hover fill */
+    --od-blue-wash:   #0E2530;          /* tint backgrounds, table-row hover */
+
+    /* ---------- Semantic (brightened for legibility on dark) ---------- */
+    --od-ok:          #3FC06F;
+    --od-warn:        #E0A536;
+    --od-error:       #E5695C;
+
+    /* ---------- Shadows (black-based; light values vanish on dark) ---------- */
+    --shadow-1: 0 1px 0 var(--od-paper-line), 0 1px 2px rgba(0,0,0,0.40);
+    --shadow-2: 0 2px 0 var(--od-paper-line), 0 4px 14px -6px rgba(0,0,0,0.55);
+    --shadow-hover: 0 4px 0 var(--od-paper-line), 0 8px 24px -8px rgba(0,0,0,0.65);
+  }
+
+  /* Header logo mark: swap to the white-outline variant. Doing this from the
+     page stylesheet (rather than relying on the media query inside the SVG)
+     means it reacts to live OS scheme changes without a reload, matching the
+     rest of the token-driven theme. The `content` swap on an <img> is honored
+     by Chrome/Safari; browsers that ignore it fall back to the src, whose own
+     internal media query still adapts on load. */
+  .site-bar__mark,
+  .home-bar__mark {
+    content: url("../assets/brand/logo-mark-dark.svg");
+  }
+}
+
+/* ============================================================
    Semantic typography roles
    ============================================================ */
 
