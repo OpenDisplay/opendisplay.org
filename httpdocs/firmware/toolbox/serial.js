@@ -99,7 +99,11 @@ class UsbEndpointUnderlyingSource {
      * @param {ReadableByteStreamController} controller
      */
     pull(controller) {
-        (async () => {
+        // Return the promise so the stream serializes pulls (real backpressure):
+        // without this, a read while a transferIn is in flight can start a second
+        // concurrent transferIn on the same endpoint and silently reorder bytes,
+        // which is catastrophic for the SLIP/HCI DFU layer on top.
+        return (async () => {
             var _a;
             let chunkSize;
             if (controller.desiredSize) {
@@ -114,6 +118,9 @@ class UsbEndpointUnderlyingSource {
                 if (result.status != 'ok') {
                     controller.error(`USB error: ${result.status}`);
                     this.onError_();
+                    // Return: enqueue() on an errored controller throws, and USB can
+                    // return data alongside a non-ok status.
+                    return;
                 }
                 if ((_a = result.data) === null || _a === void 0 ? void 0 : _a.buffer) {
                     const chunk = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
@@ -256,18 +263,22 @@ export class SerialPort {
      * closed.
      */
     async close() {
-        const promises = [];
+        // Best-effort per-stream cleanup: cancel()/abort() reject if the consumer
+        // still holds a reader/writer lock, which used to reject the Promise.all
+        // and skip device_.close() entirely — leaving the USB interface claimed.
         if (this.readable_) {
-            promises.push(this.readable_.cancel());
+            try { await this.readable_.cancel(); } catch (e) { }
         }
         if (this.writable_) {
-            promises.push(this.writable_.abort());
+            try { await this.writable_.abort(); } catch (e) { }
         }
-        await Promise.all(promises);
         this.readable_ = null;
         this.writable_ = null;
         if (this.device_.opened) {
-            await this.setSignals({ dataTerminalReady: false, requestToSend: false });
+            // Wrap setSignals so its failure can't skip the load-bearing close().
+            try {
+                await this.setSignals({ dataTerminalReady: false, requestToSend: false });
+            } catch (e) { }
             await this.device_.close();
         }
     }
