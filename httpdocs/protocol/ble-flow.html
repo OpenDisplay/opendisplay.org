@@ -782,6 +782,21 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
       instead of the full frame. Requires <code>partial_update_support: 1</code> in Flex config (main reference firmware only; 
       see <a href="reference-firmware-variants.html" style="color: var(--accent);">firmware variants</a>).
     </p>
+    <div class="flow-step" style="border-left: 4px solid #e0a800;">
+      <h4>&#9888;&#65039; Known firmware issue: content outside the region is erased on some panels</h4>
+      <p>
+        At partial start the reference firmware re-initializes the panel and fills both controller RAM planes
+        white before writing the region. On panels whose partial waveform actively drives pixels whose old and
+        new RAM values are equal (confirmed on EP426 / Seeed EN05), everything <strong>outside</strong> the
+        rectangle is erased to white &mdash; while every protocol response still ACKs, so clients cannot detect
+        it. Until per-panel signaling exists (see
+        <a href="https://github.com/OpenDisplay/Firmware/issues/80" style="color: var(--accent);">Firmware issue #80</a>),
+        the safe pattern on affected panels is a <strong>full-frame partial</strong>: send
+        <code>x=0, y=0, w=panel_width, h=panel_height</code> with both full planes. This still refreshes with
+        the flicker-free partial waveform (hardware-verified) at the cost of a full-frame transfer, which
+        zlib-compresses well for typical content.
+      </p>
+    </div>
     <div class="flow-step">
       <h4>Start: <code>0x0076</code></h4>
       <div class="code-block">
