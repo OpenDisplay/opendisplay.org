@@ -18,6 +18,13 @@ const OPENDISPLAY_MSD_COMPANY_ID = 0x2446;
 // The firmware acks every chunk, so this bounds a dead connection per expected reply.
 const CONFIG_WRITE_ACK_TIMEOUT_MS = 8000;
 
+// Timeout (ms) to wait for each direct-write ack (start 0x70/0x76, chunk 0x71,
+// end 0x72) from the device. A stalled transfer that never gets a response aborts
+// the upload instead of leaving the UI stuck at "Uploading N%" forever. The
+// display-refresh phase (waiting for 0x73) is bounded by the firmware's own
+// refresh timeout (0x74), so the ack timer is cleared once the end command acks.
+const DIRECT_WRITE_ACK_TIMEOUT_MS = 8000;
+
 function normalizeBluetoothUuid(uuid) {
   if (uuid == null || uuid === '') return OPENDISPLAY_BLE_SERVICE_UUID;
   if (typeof uuid === 'string') {
@@ -3762,7 +3769,9 @@ class OpenDisplayBLE {
     if (prepared.onStatusChange) {
       prepared.onStatusChange(prepared.statusMessage || `Starting upload: ${prepared.chunks.length} chunks`);
     }
-    return this.sendHexCommand(prepared.startCommandHex);
+    const sendPromise = this.sendHexCommand(prepared.startCommandHex);
+    this._armDirectWriteAckTimer('start');
+    return sendPromise;
   }
 
   _beginPartialDirectWrite(region, palette, imageWidth, imageHeight, prepared) {
@@ -3851,7 +3860,9 @@ class OpenDisplayBLE {
       );
     }
     this.log(`Partial update rect=(${region.rx},${region.ry},${region.rw},${region.rh}) stream=${streamBytes.length}B`, 'info');
-    return this.sendHexCommand(startHex);
+    const sendPromise = this.sendHexCommand(startHex);
+    this._armDirectWriteAckTimer('partial start');
+    return sendPromise;
   }
 
   _fallbackToFullDirectWrite() {
@@ -4046,6 +4057,7 @@ if (supportsStreamingDecompression) {
       await this._activateFullDirectWrite(prepared);
       
     } catch (error) {
+      this._clearDirectWriteAckTimer();
       this.directWriteState = null;
       if (onComplete) {
         onComplete(false, error);
@@ -4090,7 +4102,13 @@ if (supportsStreamingDecompression) {
       state.chunkIndex++;
       state.pendingAcks++;
     }
-    
+
+    // While chunk acks are still outstanding, keep the ack timer armed so a
+    // stalled transfer (no more acks arriving) aborts rather than hanging.
+    if (state.active && state.pendingAcks > 0) {
+      this._armDirectWriteAckTimer('chunk');
+    }
+
     if (state.chunkIndex >= state.chunks.length && state.pendingAcks === 0) {
       state.uploadEndTime = Date.now();
       if (!state.refreshStartTime) {
@@ -4120,7 +4138,40 @@ if (supportsStreamingDecompression) {
       } else {
         this.sendHexCommand('0072');
       }
+      // Bound the wait for the end-command ack (0x72). Once it arrives the timer
+      // is cleared and the refresh phase (0x73) is bounded by the firmware's own
+      // refresh timeout (0x74).
+      this._armDirectWriteAckTimer('end');
     }
+  }
+
+  /**
+   * Clear the pending direct-write ack timer, if any.
+   */
+  _clearDirectWriteAckTimer() {
+    if (this.directWriteState && this.directWriteState.ackTimeoutId) {
+      clearTimeout(this.directWriteState.ackTimeoutId);
+      this.directWriteState.ackTimeoutId = null;
+    }
+  }
+
+  /**
+   * (Re)arm the direct-write ack timer. Called each time we transmit something
+   * (start/chunk/end) that expects a device response; the next recognized ack
+   * re-arms it, so a stalled transfer aborts after DIRECT_WRITE_ACK_TIMEOUT_MS
+   * of silence instead of hanging forever.
+   */
+  _armDirectWriteAckTimer(label) {
+    if (!this.directWriteState || !this.directWriteState.active) return;
+    this._clearDirectWriteAckTimer();
+    this.directWriteState.ackTimeoutId = setTimeout(() => {
+      if (!this.directWriteState || !this.directWriteState.active) return;
+      this.log(`Direct write ack timeout (${label})`, 'error');
+      if (this.directWriteState.onStatusChange) {
+        this.directWriteState.onStatusChange('Upload timed out (no response from device)');
+      }
+      this._abortDirectWrite(new Error(`Direct write ack timeout (${label})`));
+    }, DIRECT_WRITE_ACK_TIMEOUT_MS);
   }
 
   /**
@@ -4129,6 +4180,7 @@ if (supportsStreamingDecompression) {
   _abortDirectWrite(err) {
     const state = this.directWriteState;
     if (!state || !state.active) return;
+    this._clearDirectWriteAckTimer();
     state.active = false;
     const onComplete = state.onComplete;
     this.directWriteState = null;
@@ -4164,6 +4216,21 @@ if (supportsStreamingDecompression) {
         this._fallbackToFullDirectWrite();
         return true;
       }
+      // Any other {0xFF, cmd, err, 0x00} NACK is a mid-stream rejection of the
+      // transfer. Without this the frame matches no ACK pattern and pendingAcks
+      // never drains, hanging the upload. Fail cleanly instead.
+      this.log(`Direct write NACK opcode 0x${opcode.toString(16)} err 0x${err.toString(16)}`, 'error');
+      this._abortDirectWrite(new Error(`Device rejected direct write (0x${opcode.toString(16)}, error 0x${err.toString(16)})`));
+      return true;
+    }
+
+    // Two-byte {0xFF, 0xFF} compressed-error frame: the firmware signalled a
+    // fatal error (e.g. decompression failure) with no opcode. Abort so the UI
+    // doesn't stay stuck at "Uploading N%".
+    if (bytes.length === 2 && bytes[0] === 0xFF && bytes[1] === 0xFF) {
+      this.log('Direct write error frame {0xFF,0xFF}', 'error');
+      this._abortDirectWrite(new Error('Device reported a direct write error'));
+      return true;
     }
 
     // Parse command - handle both byte orders (00 70 and 70 00)
@@ -4230,7 +4297,9 @@ if (supportsStreamingDecompression) {
         return true;
       }
     } else if (responseType === 0x72) {
-      // End command ACK
+      // End command ACK - upload fully delivered; the ack timer no longer applies
+      // (the refresh phase is bounded by the firmware's 0x74 refresh timeout).
+      this._clearDirectWriteAckTimer();
       if (!this.directWriteState.refreshStartTime) {
         this.directWriteState.refreshStartTime = Date.now();
         this.log('Display is refreshing...', 'info');
@@ -4263,6 +4332,7 @@ if (supportsStreamingDecompression) {
       }
 
       const onComplete = state.onComplete;
+      this._clearDirectWriteAckTimer();
       state.active = false;
       state.chunks = [];
       state.chunkIndex = 0;
@@ -4279,6 +4349,7 @@ if (supportsStreamingDecompression) {
     } else if (responseType === 0x74) {
       // Refresh timeout
       this.log('Display refresh timed out', 'error');
+      this._clearDirectWriteAckTimer();
       const wasActive = this.directWriteState.active;
       this.directWriteState.active = false;
       this.directWriteState.data = null;
