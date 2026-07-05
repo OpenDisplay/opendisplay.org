@@ -4353,7 +4353,11 @@ const OpenDisplayBrowser = {
       alert(this.webBluetoothUnsupportedMessage());
       return false;
     }
-    if (navigator.bluetooth.getAvailability) {
+    // On iOS/Bluefy getAvailability() is unreliable — it can resolve false even
+    // when Bluetooth works, which would wrongly block the device selector from
+    // ever opening. Treat it as inconclusive there and go straight to
+    // requestDevice; the picker itself surfaces any real adapter problem.
+    if (!this.isIOS() && !this.isBluefy() && navigator.bluetooth.getAvailability) {
       try {
         const available = await navigator.bluetooth.getAvailability();
         if (!available) {
