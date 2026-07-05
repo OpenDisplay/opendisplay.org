@@ -2523,13 +2523,20 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 }
             }
             
-            // Check for auto-connect parameter
+            // Check for auto-connect parameter.
+            // Web Bluetooth's requestDevice() requires a live user gesture, so we
+            // cannot open the chooser from a page-load timer — that only works
+            // with an experimental browser flag ("developer mode") and otherwise
+            // silently fails. Instead, pre-fill the filter (done above) and prompt
+            // the user to tap Connect so the chooser opens inside a real gesture.
             const autoConnect = getUrlParameter('connect') === 'true' || getUrlParameter('auto') === 'true';
             if (autoConnect && filterParam) {
-                addLog("Auto-connecting...", 'info');
-                setTimeout(() => {
-                    preConnect();
-                }, 500);
+                addLog("Ready to connect — tap the Connect button to pair your display.", 'info');
+                setStatus("Tap Connect to pair", false);
+                const connectBtn = document.getElementById('connectbutton');
+                if (connectBtn) {
+                    try { connectBtn.focus(); } catch (e) {}
+                }
             }
         }
         

@@ -3942,6 +3942,13 @@
         connectButton.textContent = 'Connect';
         bleLib.disconnect();
       } else {
+        void (async () => {
+        // Feature-detect before touching navigator.bluetooth so unsupported
+        // browsers (iOS Safari, etc.) get the "use Bluefy" prompt instead of a
+        // raw TypeError.
+        if (!window.OpenDisplayBrowser || !(await window.OpenDisplayBrowser.ensureWebBluetoothAvailable())) {
+          return;
+        }
         const deviceFilter = document.getElementById('bleDeviceFilter').value.trim();
         if (!deviceFilter) {
           addBLELog("Error: Device filter needed.", 'error');
@@ -3993,6 +4000,7 @@
             setBLEStatus(`Error: ${error.message}`, false);
           }
         });
+        })();
       }
     }
 
