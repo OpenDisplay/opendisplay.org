@@ -2113,7 +2113,7 @@ async function startAutoInstall() {
     alert('Auto-install failed: ' + error.message);
   }
 }
-function connectToBleDevice() {
+function connectToBleDevice(useCachedDevice = false) {
   return new Promise((resolve, reject) => {
     void ensureWebBluetoothAvailable().then((ok) => {
     if (!ok) {
@@ -2161,10 +2161,14 @@ function connectToBleDevice() {
         }
       });
     }
-    addLog("Requesting device with filters: " + namePrefix);
-    setStatus("Requesting device...");
-    document.getElementById("connectbutton").innerHTML = 'Scanning...';
-    bleLib.connect(namePrefix)
+    if (useCachedDevice) {
+      addLog("Reconnecting to previously selected device...");
+    } else {
+      addLog("Requesting device with filters: " + namePrefix);
+    }
+    setStatus(useCachedDevice ? "Reconnecting..." : "Requesting device...");
+    document.getElementById("connectbutton").innerHTML = useCachedDevice ? 'Reconnecting...' : 'Scanning...';
+    bleLib.connect(namePrefix, { useCachedDevice })
       .then(() => {
         // onConnect callback will call resolve()
       })
@@ -3094,9 +3098,12 @@ async function waitForDeviceReboot(maxWaitTime = 65000, retryInterval = 5000) {
       addLog(`Attempting to reconnect (waited ${elapsed}s)...`, 'info');
       updateProgressBar(92 + Math.min(5, Math.floor(elapsed / 10)), `Waiting for reboot (${elapsed}s)...`);
       
-      // Try to connect
-      await connectToBleDevice();
-      
+      // Reconnect via the cached device (device.gatt.connect()) rather than a
+      // fresh requestDevice() chooser. We are inside a timer loop with no user
+      // gesture, so a chooser would be blocked off the experimental flag and
+      // would fail on iOS/Bluefy.
+      await connectToBleDevice(true);
+
       // If we get here, connection succeeded
       addLog('Device reconnected after reboot!', 'success');
       await delay(2000); // Wait for connection to stabilize

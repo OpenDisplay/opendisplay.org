@@ -495,34 +495,64 @@ class OpenDisplayBLE {
 
   /**
    * Request device and connect
+   *
+   * @param {string|null} deviceNamePrefix - name filter for the chooser
+   * @param {object} [options]
+   * @param {boolean} [options.useCachedDevice] - reconnect to the previously
+   *   selected device via device.gatt.connect() instead of opening a new
+   *   chooser. requestDevice() needs a live user gesture (and is blocked off the
+   *   experimental flag), so this cached path is the only reliable way to
+   *   reconnect after a device reboot — and it is iOS/Bluefy-safe.
    */
-  async connect(deviceNamePrefix = null) {
+  async connect(deviceNamePrefix = null, options = {}) {
     if (this.isConnected && this.device && this.device.gatt && this.device.gatt.connected) {
       this.log('Already connected', 'info');
       return true;
     }
-    
+
+    // Gesture-free reconnect to the device the user already chose.
+    if (options.useCachedDevice && this.device) {
+      try {
+        this.log('Reconnecting to previously selected device...', 'info');
+        this.autoReconnectEnabled = true;
+        // addEventListener with the same bound reference is a no-op if already
+        // attached, so this is safe whether or not disconnect() removed it.
+        this.device.addEventListener('gattserverdisconnected', this._onDisconnect);
+        return await this.connectToGATT();
+      } catch (error) {
+        this.handleError(error);
+        throw error;
+      }
+    }
+
     const prefix = deviceNamePrefix || this.deviceNamePrefix;
     if (!prefix) {
       throw new Error('Device name prefix required');
     }
-    
+
     try {
       this.autoReconnectEnabled = true;
       this.setStatus('Requesting device...', false);
-      
+
       this.device = await this.requestBleDevice(prefix);
       this.log(`Found: ${this.device.name || 'Unknown device'} (${this.device.id})`, 'success');
       this.setStatus(`Found ${this.device.name || 'device'}`, false);
-      
+
       this.device.addEventListener('gattserverdisconnected', this._onDisconnect);
-      
+
       return await this.connectToGATT();
     } catch (error) {
       if (error.name === 'NotFoundError' || error.name === 'AbortError') {
         this.log('No device selected/found', 'error');
         this.setStatus('No device selected', false);
         throw new Error('Device selection cancelled or not found');
+      }
+      if (error.name === 'SecurityError') {
+        // A SecurityError here almost always means requestDevice() was called
+        // without a live user gesture (e.g. from a timer or after an await).
+        // Without a message this just looks like nothing happened.
+        this.log('Bluetooth chooser was blocked — tap Connect to select a device.', 'error');
+        this.setStatus('Tap Connect to choose a device', false);
       }
       this.handleError(error);
       throw error;
