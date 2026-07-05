@@ -20,7 +20,7 @@
 </style>
   <script src="/js/js-yaml.min.js"></script>
   <!-- nRF Web Tools with Android support -->
-  <script src="jszip.min.js"></script>
+  <script src="/js/jszip.min.js"></script>
   <!-- Web Serial Polyfill for Android support (must be loaded before ESP Web Tools and nRF Web Tools) -->
   <script type="module">
     // Load polyfill and apply it properly on Android
@@ -30,7 +30,7 @@
       // Only use polyfill on Android with WebUSB support
       if (isAndroid && navigator.usb) {
         try {
-          const { serial } = await import('./serial.js');
+          const { serial } = await import('/js/serial.js');
           
           // Try to replace navigator.serial - on Android it might exist but not work
           try {
@@ -90,9 +90,9 @@
         }
         
         // Load nRF Web Tools
-        if (document.querySelector('script[src="nrf_web_tools.js"]') === null) {
+        if (document.querySelector('script[src="/js/nrf_web_tools.js"]') === null) {
           const nrfScript = document.createElement('script');
-          nrfScript.src = 'nrf_web_tools.js';
+          nrfScript.src = '/js/nrf_web_tools.js';
           document.head.appendChild(nrfScript);
         }
       }
