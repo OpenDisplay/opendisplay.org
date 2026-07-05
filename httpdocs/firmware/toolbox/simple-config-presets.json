@@ -2057,7 +2057,7 @@
             "pixel_height": "0x1e0",
             "active_width_mm": "93",
             "active_height_mm": "56",
-            "partial_update_support": "1",
+            "partial_update_support": "2",
             "color_scheme": "0",
             "full_update_mC": "16"
          },
