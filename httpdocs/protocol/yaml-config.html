@@ -505,7 +505,7 @@ table code {
       <p style="margin-top: 12px; color: var(--muted-foreground);">Key fields for senders:</p>
       <ul style="margin: 8px 0 0 20px; color: var(--muted-foreground); line-height: 1.8;">
         <li><code>pixel_width</code>, <code>pixel_height</code>, <code>color_scheme</code> — frame geometry and encoding</li>
-        <li><code>partial_update_support</code> — <code>1</code> if 1 bpp partial region refresh (<code>0x0076</code>) is supported</li>
+        <li><code>partial_update_support</code> — <code>0</code> none; <code>1</code> 1 bpp partial region refresh (<code>0x0076</code>); <code>2</code> partial supported but full-frame stream required</li>
         <li><code>transmission_modes</code> bitfield — <code>streaming_decompression</code> (bit 0) + <code>zip</code> (bit 1) enable compressed direct write; <code>direct_write</code> (bit 3) marks bufferless mode</li>
       </ul>
       <p style="margin-top: 12px;">Full field list: <code>web/firmware/toolbox/config.yaml</code> or the <a href="../firmware/toolbox/index.html" style="color: var(--accent);">Toolbox</a>.</p>

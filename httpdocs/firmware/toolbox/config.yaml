@@ -804,7 +804,7 @@ ble_proto:
             name: true
             description: partial updates supported
           2:
-            name: full-frame 
+            name: full-frame
             description: partial updates supported but full-frame stream required
       - name: color_scheme
         size: 1

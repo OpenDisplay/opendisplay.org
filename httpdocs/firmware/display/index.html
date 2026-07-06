@@ -588,7 +588,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         let activeHeightMm = 0;
         let displayRotation = 0; // 0=0°, 1=90°, 2=180°, 3=270°
         let transmissionModes = null;
-        let displayPartialUpdateSupport = false;
+        let displayPartialUpdateSupport = 0;
         const partialDemo = {
             running: false,
             mode: 'counter',
@@ -689,7 +689,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 setBuzzerUI(false);
                 setPartialDemoUI(false);
             } else {
-                setPartialDemoUI(displayPartialUpdateSupport);
+                setPartialDemoUI(displayPartialUpdateSupport > 0);
             }
         }
         function isPartialDemoBwScheme() {
@@ -2053,7 +2053,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             firmwareVersionPreview = '';
             activeWidthMm = 0;
             activeHeightMm = 0;
-            displayPartialUpdateSupport = false;
+            displayPartialUpdateSupport = 0;
             stopPartialDemo();
             clearPreviewBatterySoc();
             const previewMeta = document.getElementById('previewMeta');
@@ -2416,9 +2416,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     activeHeightMm = displayCfg.activeHeightMm || 0;
                     displayRotation = Math.min(Math.max(rotation, 0), 3);
                     transmissionModes = tm;
-                    displayPartialUpdateSupport = !!displayCfg.partialUpdateSupport;
-                    setPartialDemoUI(displayPartialUpdateSupport);
-                    if (displayPartialUpdateSupport) {
+                    displayPartialUpdateSupport = Number(displayCfg.partialUpdateSupport) || 0;
+                    setPartialDemoUI(displayPartialUpdateSupport > 0);
+                    if (displayPartialUpdateSupport === 2) {
+                        addLog('Partial updates supported (full-frame stream required)', 'info');
+                    } else if (displayPartialUpdateSupport === 1) {
                         addLog('Partial updates supported for this display', 'info');
                     }
                     const colorSchemeSelect = document.getElementById('colorSchemeSelect');

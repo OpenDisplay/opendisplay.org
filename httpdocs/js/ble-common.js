@@ -25,6 +25,11 @@ const CONFIG_WRITE_ACK_TIMEOUT_MS = 8000;
 // refresh timeout (0x74), so the ack timer is cleared once the end command acks.
 const DIRECT_WRITE_ACK_TIMEOUT_MS = 8000;
 
+// display.partial_update_support (config tool enum)
+const PARTIAL_UPDATE_NONE = 0;
+const PARTIAL_UPDATE_REGION = 1;
+const PARTIAL_UPDATE_FULL_FRAME = 2;
+
 function normalizeBluetoothUuid(uuid) {
   if (uuid == null || uuid === '') return OPENDISPLAY_BLE_SERVICE_UUID;
   if (typeof uuid === 'string') {
@@ -3802,7 +3807,7 @@ class OpenDisplayBLE {
     return output;
   }
 
-  computePartialRegion(palette, width, height) {
+  computePartialRegion(palette, width, height, partialUpdateSupport = PARTIAL_UPDATE_NONE) {
     const state = this.partialState;
     if (!state.etag || !state.lastPalette || state.width !== width || state.height !== height) {
       return 'fallback_full';
@@ -3814,6 +3819,14 @@ class OpenDisplayBLE {
 
     const [rx, ry, rw, rh] = this.alignPartialRect(bbox[0], bbox[1], bbox[2], bbox[3], width, 8);
     if (rw === 0 || rh === 0) return 'fallback_full';
+
+    if (partialUpdateSupport === PARTIAL_UPDATE_FULL_FRAME) {
+      // Firmware white-fills controller RAM at partial start; on FULL_FRAME panels
+      // (e.g. EP426 / Seeed EN05) the partial waveform erases everything the
+      // stream does not cover (OpenDisplay/Firmware#80).
+      return { rx: 0, ry: 0, rw: width, rh: height };
+    }
+
     return { rx, ry, rw, rh };
   }
 
@@ -3991,7 +4004,8 @@ class OpenDisplayBLE {
    * @param {number} options.rotation - Display rotation (0-3)
    * @param {number} options.originalWidth - Original width before rotation
    * @param {number} options.originalHeight - Original height before rotation
-   * @param {boolean} options.useFastRefresh - Use fast/partial refresh
+   * @param {boolean} options.useFastRefresh - Use fast refresh
+   * @param {number} options.partialUpdateSupport - 0=none, 1=region partial, 2=full-frame partial stream
    * @param {number} options.transmissionModes - Transmission modes bitfield (bit 1 = ZIP compression support)
    * @param {Function} options.onProgress - Progress callback (progress, total)
    * @param {Function} options.onComplete - Completion callback (success, error)
@@ -4011,7 +4025,7 @@ class OpenDisplayBLE {
       originalWidth = null,
       originalHeight = null,
       useFastRefresh = false,
-      partialUpdateSupport = false,
+      partialUpdateSupport = PARTIAL_UPDATE_NONE,
       transmissionModes = null,
       panelIcType = null,
       onProgress = null,
@@ -4038,7 +4052,10 @@ class OpenDisplayBLE {
       this.log(`Encryption enabled: Using reduced chunk size ${DIRECT_WRITE_CHUNK_SIZE} bytes (encrypted size: ${DIRECT_WRITE_CHUNK_SIZE + ENCRYPTION_OVERHEAD} bytes)`, 'info');
     }
 
-    const trackPartial = !!(partialUpdateSupport && colorScheme === 0);
+    const partialMode = partialUpdateSupport === true
+      ? PARTIAL_UPDATE_REGION
+      : (Number(partialUpdateSupport) || PARTIAL_UPDATE_NONE);
+    const trackPartial = partialMode > PARTIAL_UPDATE_NONE && colorScheme === 0;
     let paletteBuffer = null;
     let paletteWidth = 0;
     let paletteHeight = 0;
@@ -4144,7 +4161,9 @@ if (supportsStreamingDecompression) {
       };
 
       if (trackPartial) {
-        const regionResult = this.computePartialRegion(paletteBuffer, paletteWidth, paletteHeight);
+        const regionResult = this.computePartialRegion(
+          paletteBuffer, paletteWidth, paletteHeight, partialMode
+        );
         if (regionResult === 'no_change') {
           if (onStatusChange) onStatusChange('No pixel changes — upload skipped');
           if (onComplete) onComplete(true, null);
