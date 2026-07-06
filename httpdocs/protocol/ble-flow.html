@@ -779,9 +779,27 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
     <h3 id="partial-update">3. Partial region update (<code>0x0076</code>)</h3>
     <p class="intro-text">
       For 1 bpp B/W panels that support differential partial refresh, the client can update a rectangular region 
-      instead of the full frame. Requires <code>partial_update_support: 1</code> in Flex config (main reference firmware only; 
+      instead of the full frame. Requires <code>partial_update_support: 1</code> (region updates) or <code>2</code> (full-frame stream required) in Flex config (main reference firmware only; 
       see <a href="reference-firmware-variants.html" style="color: var(--accent);">firmware variants</a>).
     </p>
+    <div class="flow-step">
+      <h4>Region strategy: check <code>partial_update_support</code></h4>
+      <p>
+        The display config enum tells the client which region strategy the panel supports:
+        <code>1</code> = arbitrary rectangular regions; <code>2</code> = partial updates supported but the
+        stream <strong>must cover the full panel</strong> (<code>x=0, y=0, w=panel_width, h=panel_height</code>,
+        both planes). Value <code>2</code> exists because the firmware white-fills both controller RAM planes at
+        partial start, and on some panels (e.g. EP426 / Seeed EN05) the partial waveform erases everything the
+        stream does not cover &mdash; while every protocol response still ACKs. A full-frame partial still
+        refreshes with the flicker-free partial waveform; the stream zlib-compresses well for typical content.
+        Background: <a href="https://github.com/OpenDisplay/Firmware/issues/80" style="color: var(--accent);">Firmware issue #80</a>.
+      </p>
+      <p style="color: var(--muted-foreground);">
+        &#9888;&#65039; Device configs written before this enum value existed may report <code>1</code> on
+        affected panels. When targeting unknown devices, treat region updates on such panels with care or
+        default to full-frame streams.
+      </p>
+    </div>
     <div class="flow-step">
       <h4>Start: <code>0x0076</code></h4>
       <div class="code-block">
