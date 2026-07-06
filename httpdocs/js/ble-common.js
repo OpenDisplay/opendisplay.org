@@ -64,6 +64,11 @@ class OpenDisplayBLE {
     this.autoReconnectEnabled = true; // disabled by explicit user disconnect
     // Bound once so add/removeEventListener share the same reference.
     this._onDisconnect = () => this.handleDisconnect();
+    // Bound once as well: connectToGATT() re-runs on auto-reconnect against
+    // Chrome's cached characteristic object, so a fresh anonymous listener each
+    // time would stack and process every notification twice. Removing this exact
+    // reference before adding it keeps the count at one per characteristic.
+    this._onNotification = (event) => this.handleNotification(event);
     this.configYAML = null;
     this.packetSchema = null;  // Parsed packet schema from YAML
     this.packetSizes = {};     // Cached packet sizes
@@ -744,7 +749,11 @@ class OpenDisplayBLE {
       // Try to enable notifications with retries
       try {
         await this.enableNotificationsWithRetry(5, 200);
-        this.characteristic.addEventListener('characteristicvaluechanged', (event) => this.handleNotification(event));
+        // Remove first so a reconnect against Chrome's cached characteristic
+        // object doesn't stack a second listener (which would process every
+        // notification twice). No-op the first time / on a fresh characteristic.
+        this.characteristic.removeEventListener('characteristicvaluechanged', this._onNotification);
+        this.characteristic.addEventListener('characteristicvaluechanged', this._onNotification);
         this.log('Notifications started', 'success');
       } catch (notifyError) {
         this.log(`Failed to start notifications: ${notifyError.name} - ${notifyError.message}`, 'error');
@@ -857,10 +866,61 @@ class OpenDisplayBLE {
     this.service = null;
     this.characteristic = null;
     this.isConnected = false;
+    // Abort any in-flight built-in operation (must run before we clear the
+    // configReadState fields below, since it inspects .active to settle callbacks).
+    this.abortInFlightOperations(new Error('Disconnected'));
     this.configReadState.active = false;
     this.configReadState.chunks = {};
     this.configReadState.receivedLength = 0;
     this.configReadState.totalLength = 0;
+  }
+
+  /**
+   * Abort every in-flight built-in operation, settling its pending callback with
+   * `err` and clearing state so a disconnect mid-transfer surfaces an error
+   * instead of hanging silently, and so a later operation starts fresh. Only the
+   * config-read state's callback was previously handled here; directWrite/dfu/
+   * firmwareVersion were left active with their callbacks never invoked (and a
+   * lingering directWriteState.active blocked the next sendCanvasToDisplay).
+   */
+  abortInFlightOperations(err) {
+    // Config read ("Read Toolbox").
+    if (this.configReadState.active) {
+      const onComplete = this.configReadState.onComplete;
+      this.configReadState.active = false;
+      this.configReadState.onComplete = null;
+      this.configReadState.onProgress = null;
+      if (onComplete) onComplete(null, err);
+    }
+
+    // Direct write (canvas/image upload). _abortDirectWrite settles
+    // onComplete(false, err) and drops directWriteState so the next
+    // sendCanvasToDisplay starts fresh instead of throwing 'already in progress'.
+    if (this.directWriteState && this.directWriteState.active) {
+      this._abortDirectWrite(err);
+    } else {
+      this.directWriteState = null;
+    }
+
+    // DFU firmware upload.
+    if (this.dfuState.active) {
+      const onError = this.dfuState.onError;
+      const onComplete = this.dfuState.onComplete;
+      this.resetDFUState();
+      this.dfuState.onProgress = null;
+      this.dfuState.onComplete = null;
+      this.dfuState.onError = null;
+      if (onError) onError(err);
+      else if (onComplete) onComplete(false, err);
+    }
+
+    // Firmware version read.
+    if (this.firmwareVersionState.active) {
+      const onComplete = this.firmwareVersionState.onComplete;
+      this.firmwareVersionState.active = false;
+      this.firmwareVersionState.onComplete = null;
+      if (onComplete) onComplete(null, err);
+    }
   }
   
   /**
