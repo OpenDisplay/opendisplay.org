@@ -246,8 +246,8 @@
         <div class="bit set">1</div>
         <div class="bit">0</div>
       </div>
-      <div class="byte-box">0xB6</div>
-      <span style="color: var(--muted-foreground);">(10110110 binary = 182 decimal = 0xB6 hex)</span>
+      <div class="byte-box">0xB2</div>
+      <span style="color: var(--muted-foreground);">(10110010 binary = 178 decimal = 0xB2 hex)</span>
     </div>
   </div>
 
@@ -294,10 +294,10 @@
           <div class="bit set">1</div>
           <div class="bit">0</div>
         </div>
-        <div class="byte-box">0xB6</div>
+        <div class="byte-box">0xBA</div>
       </div>
     </div>
-    
+
     <div class="plane-visual">
       <div class="plane-label">Plane 2 (Red):</div>
       <div class="byte-visual">
@@ -311,11 +311,11 @@
           <div class="bit">0</div>
           <div class="bit">0</div>
         </div>
-        <div class="byte-box">0x24</div>
+        <div class="byte-box">0x28</div>
       </div>
     </div>
-    
-    <p><strong>Final Data:</strong> <code>0xB6, 0x24</code> (Plane 1 first, then Plane 2)</p>
+
+    <p><strong>Final Data:</strong> <code>0xBA, 0x28</code> (Plane 1 first, then Plane 2)</p>
   </div>
 
   <div class="col panel">
@@ -359,20 +359,20 @@
     <div class="byte-visual">
       <span>Byte:</span>
       <div class="bit-visual">
+        <div class="bit">0</div>
         <div class="bit set">1</div>
-        <div class="bit">0</div>
         <span style="margin: 0 4px;">|</span>
         <div class="bit">0</div>
         <div class="bit">0</div>
         <span style="margin: 0 4px;">|</span>
-        <div class="bit">1</div>
+        <div class="bit set">1</div>
         <div class="bit">0</div>
         <span style="margin: 0 4px;">|</span>
         <div class="bit set">1</div>
         <div class="bit set">1</div>
       </div>
-      <div class="byte-box">0x93</div>
-      <span style="color: var(--muted-foreground);">(W=01, B=00, Y=10, R=11 = 10010011 = 0x93)</span>
+      <div class="byte-box">0x4B</div>
+      <span style="color: var(--muted-foreground);">(W=01, B=00, Y=10, R=11 = 01001011 = 0x4B)</span>
     </div>
     <p><strong>Bit pairs (left to right):</strong> 01 (White), 00 (Black), 10 (Yellow), 11 (Red)</p>
   </div>
@@ -584,8 +584,8 @@
         <div class="bit">0</div>
         <div class="bit set">1</div>
       </div>
-      <div class="byte-box">0xE5</div>
-      <span style="color: var(--muted-foreground);">(W=11, B=00, LG=10, DG=01 = 11100101 = 0xE5)</span>
+      <div class="byte-box">0xC9</div>
+      <span style="color: var(--muted-foreground);">(W=11, B=00, LG=10, DG=01 = 11001001 = 0xC9)</span>
     </div>
     <p><strong>Bit pairs (left to right):</strong> 11 (White), 00 (Black), 10 (Light Gray), 01 (Dark Gray)</p>
   </div>
@@ -673,8 +673,9 @@ Byte 1: Pixels 8-15 (Row 2: 8-11, Row 3: 12-15)</code>
 <code>Packet Type: 0x82
 Offset 0: packet_type (1 byte) = 0x82
 Offset 1-2: image_length (2 bytes, uint16, little-endian)
-Offset 3 to (3+image_length-1): image_data (variable)
-Offset (3+image_length) to (6+image_length): poll_interval (4 bytes, uint32, little-endian)</code>
+Offset 3-6: poll_interval (4 bytes, uint32, little-endian)
+Offset 7: refresh_type (1 byte) = 0 (normal) or 1 (fast)
+Offset 8 to (8+image_length-1): image_data (variable)</code>
     </div>
     <ul style="margin: 12px 0; padding-left: 20px; color: var(--muted-foreground); line-height: 1.8;">
       <li><strong>Image Data:</strong> Raw encoded pixel data (or compressed using zlib)</li>

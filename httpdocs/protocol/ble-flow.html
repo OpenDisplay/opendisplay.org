@@ -840,7 +840,7 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
     <div class="flow-step">
       <h4>Commands <code>0x0064</code> / <code>0x0065</code></h4>
       <p>
-        Defined for implementations that buffer the full image before refresh. Reference firmware returns an error if sent.
+        Defined for implementations that buffer the full image before refresh. Reference firmware does not implement these opcodes: they fall through to the unknown-command path, which sends <strong>no response</strong>. A client must not wait for a reply — these are silently ignored.
       </p>
     </div>
   </div>
@@ -862,6 +862,7 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
       <li><code>0x0040</code> — Read configuration</li>
       <li><code>0x0041</code> — Write configuration (first chunk or small config)</li>
       <li><code>0x0042</code> — Write configuration (subsequent chunks)</li>
+      <li><code>0x0045</code> — Clear stored configuration (erases the saved config blob; replies <code>0x00 0x45</code> on success, <code>0xFF 0x45</code> on failure)</li>
       <li><code>0x0043</code> — Read firmware version (plaintext; allowed without encryption session)</li>
       <li><code>0x0044</code> — Read 16-byte manufacturer specific data (MSD)</li>
       <li><code>0x0050</code> — Authenticate / encryption handshake (see <a href="#encryption-authentication" style="color: var(--accent);">Encryption</a>)</li>
