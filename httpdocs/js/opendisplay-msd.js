@@ -116,7 +116,10 @@
         const sensorType = data[1] | (data[2] << 8);
         if (sensorType === SENSOR_TYPE_SHT40 && out.sht40StartByte === null) {
           let start = data[5];
-          if (start === 0xff || start === undefined) start = 7;
+          // Firmware treats a start byte of 0 (and 0xff) as "unset -> default 7"
+          // (see sensor_sht40.cpp sht40_msd_start); mirror that so 0 doesn't get
+          // decoded as a literal offset yielding a bogus -40 C reading.
+          if (start === 0 || start === 0xff || start === undefined) start = 7;
           start = start & 0xff;
           // SHT40 reads 3 bytes (start..start+2) from the 11-byte dynamic region,
           // so start must be <= 8. Validate symmetrically with BQ27220's idx <= 10

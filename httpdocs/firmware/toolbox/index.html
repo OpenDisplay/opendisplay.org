@@ -30,7 +30,7 @@
       // Only use polyfill on Android with WebUSB support
       if (isAndroid && navigator.usb) {
         try {
-          const { serial } = await import('/js/serial.js');
+          const { serial } = await import('/js/web-serial-polyfill.js');
           
           // Try to replace navigator.serial - on Android it might exist but not work
           try {
@@ -430,6 +430,14 @@
 <script src="/js/ble-common.js"></script>
 <script>
 let bleLib = null;
+// Live resolve/reject for the current connectToBleDevice() attempt. The persistent
+// OpenDisplayBLE callbacks are created once but must settle whichever promise is active,
+// so they read these instead of capturing the first attempt's resolve/reject.
+let bleConnectResolve = null;
+let bleConnectReject = null;
+// Single nRF Web Tools instance, reused across board changes so its click listener
+// is never stacked (NrfWebTools.init() calls addEventListener, which onclick=null can't remove).
+let nrfInstaller = null;
 
 function isToolboxBleOnlyMode() {
   return window.OpenDisplayBrowser
@@ -970,7 +978,7 @@ function updateTotalBytesDisplay() {
   bytesView.parentNode.insertBefore(counter, bytesView);
 }
 function hexPad(n, len=2){return n.toString(16).toUpperCase().padStart(len,'0');}
-function numToBytesLE(num, size){ const out=[]; for(let i=0;i<size;i++){ out.push(num & 0xFF); num = num >> 8; } return out; }
+function numToBytesLE(num, size){ const out=[]; num=Math.floor(num); for(let i=0;i<size;i++){ out.push(num & 0xFF); num = Math.floor(num / 256); } return out; }
 function numToBytesBE(num, size){ const out=[]; for(let i=size-1;i>=0;i--){ out.push((num >> (i*8)) & 0xFF); } return out; }
 function parseSizeToken(sizeTok){ 
   if(!sizeTok) return null; 
@@ -2130,6 +2138,9 @@ function connectToBleDevice(useCachedDevice = false) {
       reject(new Error('Device filter needed'));
       return;
     }
+    // Point the persistent callbacks at this attempt's promise.
+    bleConnectResolve = resolve;
+    bleConnectReject = reject;
     if (!bleLib) {
       bleLib = new OpenDisplayBLE({
         deviceNamePrefix: namePrefix,
@@ -2139,7 +2150,7 @@ function connectToBleDevice(useCachedDevice = false) {
           addLog('BLE connection established', 'success');
           document.getElementById("connectbutton").innerHTML = 'Disconnect';
           await ensureAuthenticatedOnConnect();
-          resolve();
+          if (bleConnectResolve) bleConnectResolve();
         },
         onDisconnect: () => {
           addLog('Device disconnected.');
@@ -2150,7 +2161,7 @@ function connectToBleDevice(useCachedDevice = false) {
           addLog(`Error: ${error.name} - ${error.message}`, 'error');
           setStatus(`Error: ${error.message}`);
           document.getElementById("connectbutton").innerHTML = 'Connect';
-          reject(error);
+          if (bleConnectReject) bleConnectReject(error);
         },
         onNotification: handleNotification,
         onLog: (message, type) => {
@@ -2514,10 +2525,14 @@ function handleDriverBoardChange() {
       installNrfBtn.style.display = 'block';
       // Initialize nRF Web Tools
       if (typeof NrfWebTools !== 'undefined') {
-        // Remove any existing onclick to avoid duplicates
-        installNrfBtn.onclick = null;
-        // Create new instance - firmware path is relative to toolbox page
-        const nrfInstaller = new NrfWebTools(installNrfBtn, 'firmware/NRF52840.zip');
+        // Create once and reuse. NrfWebTools.init() attaches a click listener via
+        // addEventListener; constructing a new instance per board change would stack
+        // listeners (one click -> N installs), and installNrfBtn.onclick=null can't
+        // remove an addEventListener handler.
+        if (!nrfInstaller) {
+          // firmware path is relative to toolbox page
+          nrfInstaller = new NrfWebTools(installNrfBtn, 'firmware/NRF52840.zip');
+        }
       } else {
         installNrfBtn.onclick = () => {
           alert('nRF Web Tools library not loaded. Please refresh the page.');

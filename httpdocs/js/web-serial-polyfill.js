@@ -434,7 +434,7 @@ export class SerialPort {
             'index': this.controlInterface_.interfaceNumber,
         }, buffer);
         if (result.status != 'ok') {
-            throw new DOMException('NetworkError', 'Failed to set line coding.');
+            throw new DOMException('Failed to set line coding.', 'NetworkError');
         }
     }
 }
