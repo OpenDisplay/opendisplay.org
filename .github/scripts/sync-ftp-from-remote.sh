@@ -10,7 +10,6 @@ REMOTE_MIRROR="$WORKDIR/remote"
 NETRC="$WORKDIR/netrc"
 LFTP_LAST_LOG=""
 
-# Timeouts (seconds) — override via env if needed
 LFTP_NET_TIMEOUT="${LFTP_NET_TIMEOUT:-30}"
 LFTP_CMD_TIMEOUT="${LFTP_CMD_TIMEOUT:-300}"
 LFTP_MAX_RETRIES="${LFTP_MAX_RETRIES:-2}"
@@ -29,10 +28,8 @@ fi
 
 PROTOCOL="${FTP_PROTOCOL:-ftp}"
 
-# Redact FTP_PASSWORD and common credential patterns from any log line.
-# Uses Python for literal replacement (safe with special regex chars in passwords).
 redact_secrets() {
-  FTP_PASSWORD="$FTP_PASSWORD" FTP_USERNAME="$FTP_USERNAME" python3 - <<'PY'
+  FTP_PASSWORD="$FTP_PASSWORD" FTP_USERNAME="$FTP_USERNAME" python3 -u - <<'PY'
 import os
 import re
 import sys
@@ -56,6 +53,7 @@ for line in sys.stdin:
     for regex, repl in patterns:
         line = regex.sub(repl, line)
     sys.stdout.write(line)
+    sys.stdout.flush()
 PY
 }
 
@@ -63,11 +61,11 @@ safe_tail() {
   local file="$1"
   local lines="${2:-30}"
   [[ -f "$file" ]] || return 0
-  tail -n "$lines" "$file" | redact_secrets
+  tail -n "$lines" "$file" | redact_secrets >&2
 }
 
 debug() {
-  printf '[%s] %s\n' "$(date -u +"%H:%M:%S")" "$*" | redact_secrets
+  printf '[%s] %s\n' "$(date -u +"%H:%M:%S")" "$*" | redact_secrets >&2
 }
 
 write_netrc() {
@@ -89,8 +87,11 @@ EOF
   if [[ "$PROTOCOL" == "ftps" ]]; then
     echo "set ftp:ssl-force true;"
     echo "set ssl:verify-certificate no;"
+  elif [[ "$PROTOCOL" == "ftpes" ]]; then
+    echo "set ftp:ssl-protect-data true;"
+    echo "set ftp:ssl-protect-list true;"
+    echo "set ssl:verify-certificate no;"
   fi
-  # Intentionally no cmd:trace / debug — they can echo credentials from netrc.
 }
 
 run_lftp_script() {
@@ -103,16 +104,16 @@ run_lftp_script() {
     cat
     echo "bye;"
   } > "$script"
-  debug "Running lftp ($(wc -l < "$script") lines) ..."
+  debug "Running lftp ($(wc -l < "$script") lines, protocol=${PROTOCOL}) ..."
   if [[ "${FTP_DEBUG:-}" == "1" ]]; then
     debug "--- lftp script (no credentials) ---"
-    head -30 "$script" | redact_secrets
+    head -30 "$script" | redact_secrets >&2
     debug "--- end preview ---"
   fi
   if lftp -f "$script" >"$LFTP_LAST_LOG" 2>&1; then
     return 0
   fi
-  debug "lftp exited with error"
+  debug "lftp exited with error (protocol=${PROTOCOL})"
   safe_tail "$LFTP_LAST_LOG" 25
   return 1
 }
@@ -140,31 +141,19 @@ build_candidate_paths() {
 
 probe_remote_path() {
   local remote_path="$1"
-  local probe_out
   debug "Probing: ${remote_path}"
   if ! run_lftp_script <<EOF
 pwd;
-echo __MARK_PWD__;
-pwd;
-echo __MARK_CD__;
 cd '${remote_path}';
 pwd;
-echo __MARK_LS__;
 ls;
-echo __MARK_DONE__;
 EOF
   then
     debug "  probe failed for ${remote_path}"
     return 1
   fi
-  probe_out="$LFTP_LAST_LOG"
-  if ! grep -q __MARK_CD__ "$probe_out" || ! grep -q __MARK_DONE__ "$probe_out"; then
-    debug "  probe incomplete for ${remote_path}"
-    safe_tail "$probe_out" 15
-    return 1
-  fi
-  debug "  probe ok"
-  sed -n '/__MARK_PWD__/,/__MARK_DONE__/p' "$probe_out" | grep -v __MARK_ | head -30 | redact_secrets
+  debug "  probe ok — listing (first entries):"
+  safe_tail "$LFTP_LAST_LOG" 20
   return 0
 }
 
@@ -174,9 +163,7 @@ mirror_remote_path() {
   rm -rf "${REMOTE_MIRROR:?}"/*
   mkdir -p "$REMOTE_MIRROR"
   if run_lftp_script <<EOF
-pwd;
 cd '${remote_path}';
-pwd;
 mirror --verbose --parallel=2 --no-perms --no-umask . ${REMOTE_MIRROR};
 EOF
   then
@@ -195,10 +182,23 @@ EOF
   return 1
 }
 
+try_all_paths() {
+  SELECTED_REMOTE=""
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    if probe_remote_path "$candidate"; then
+      if SELECTED_REMOTE=$(mirror_remote_path "$candidate"); then
+        debug "Using remote path: ${SELECTED_REMOTE}"
+        return 0
+      fi
+    fi
+  done < <(build_candidate_paths)
+  return 1
+}
+
 debug "FTP sync starting"
 debug "  server=${FTP_SERVER} protocol=${PROTOCOL} user=${FTP_USERNAME}"
 debug "  net:timeout=${LFTP_NET_TIMEOUT}s cmd:timeout=${LFTP_CMD_TIMEOUT}s"
-debug "  local httpdocs=${HTTPDOCS}"
 
 debug "Listing FTP root (pwd + ls) ..."
 if run_lftp_script <<'EOF'; then
@@ -207,25 +207,26 @@ ls;
 EOF
   safe_tail "$LFTP_LAST_LOG" 40
 else
-  debug "FTP root listing failed"
+  debug "FTP root listing failed with protocol=${PROTOCOL}"
 fi
 
-SELECTED_REMOTE=""
-while IFS= read -r candidate; do
-  [[ -z "$candidate" ]] && continue
-  if probe_remote_path "$candidate"; then
-    if SELECTED_REMOTE=$(mirror_remote_path "$candidate"); then
-      debug "Using remote path: ${SELECTED_REMOTE}"
-      break
+if ! try_all_paths; then
+  if [[ "$PROTOCOL" == "ftps" && "${FTP_TRY_PLAIN_FTP:-}" != "0" ]]; then
+    debug "All paths failed with ftps — retrying with plain ftp"
+    PROTOCOL="ftp"
+    if ! try_all_paths; then
+      :
     fi
   fi
-done < <(build_candidate_paths)
+fi
 
 if [[ -z "$SELECTED_REMOTE" ]]; then
   echo "Failed to mirror any candidate remote path" >&2
   debug "Candidate paths tried:"
-  build_candidate_paths | while read -r p; do debug "  - $p"; done
-  debug "Tip: set FTP_REMOTE_DIR to the correct path, or FTP_DEBUG=1 for script preview"
+  while IFS= read -r p; do debug "  - $p"; done < <(build_candidate_paths)
+  debug "Last lftp log:"
+  safe_tail "$LFTP_LAST_LOG" 40
+  debug "Tips: verify FTP_PROTOCOL (ftp / ftps / ftpes), credentials, and FTP_REMOTE_DIR"
   exit 1
 fi
 
