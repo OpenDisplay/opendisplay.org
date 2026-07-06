@@ -3433,7 +3433,7 @@ class OpenDisplayBLE {
       const GRAY4_LUT = [3, 1, 2, 0];
       const GRAY4_LUT_V2 = [3, 2, 1, 0];
       const panelId = panelIcType != null ? Number(panelIcType) : NaN;
-      const grayLut = (panelId === 0x16 || panelId === 0x28 || panelId === 22 || panelId === 40)
+      const grayLut = (panelId === 0x28 || panelId === 40 || panelId === 0x48 || panelId === 72)
         ? GRAY4_LUT_V2
         : GRAY4_LUT;
       const bytesPerRow = Math.ceil(imageWidth / 8);
