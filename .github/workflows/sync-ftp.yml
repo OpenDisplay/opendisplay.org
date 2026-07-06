@@ -31,11 +31,13 @@ jobs:
 
       - name: Download remote httpdocs and apply changes
         id: sync
+        timeout-minutes: 30
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_PROTOCOL: ${{ secrets.FTP_PROTOCOL }}
+          FTP_VERBOSE_PROBE: "1"
         run: .github/scripts/sync-ftp-from-remote.sh
 
       - name: Close superseded automated PRs
@@ -57,7 +59,7 @@ jobs:
           commit-message: 'chore: sync httpdocs from live FTP'
           title: 'chore: sync httpdocs from live FTP'
           body: |
-            The live FTP folder at `/opendisplay.org/httpdocs/` changed since the last check.
+            The live FTP folder changed since the last check (path used: `${{ steps.sync.outputs.remote_path }}`).
 
             This PR brings the repository in line with the production server (e.g. manual edits on Netcup).
 
