@@ -5,6 +5,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 HTTPDOCS="$REPO_ROOT/httpdocs"
 CACHE_DIR="$REPO_ROOT/.github/cache"
 MANIFEST_FILE="$CACHE_DIR/ftp-remote-manifest.txt"
+SYNC_EXCLUDE_HTTPDOCS=(
+  firmware/toolbox/firmware/.gitkeep
+)
 WORKDIR="$(mktemp -d)"
 REMOTE_MIRROR="$WORKDIR/remote"
 
@@ -97,12 +100,22 @@ mirror_ftp_curl() {
   done <<< "$listing"
 }
 
+is_sync_excluded() {
+  local rel="$1"
+  local excluded
+  for excluded in "${SYNC_EXCLUDE_HTTPDOCS[@]}"; do
+    [[ "$rel" == "$excluded" ]] && return 0
+  done
+  return 1
+}
+
 build_manifest() {
   local root="$1"
   local out="$2"
   : > "$out"
   find "$root" -type f | sort | while read -r file; do
     rel="${file#"$root"/}"
+    is_sync_excluded "$rel" && continue
     hash=$(sha256sum "$file" | awk '{print $1}')
     printf '%s %s\n' "$hash" "$rel"
   done >> "$out"
@@ -150,9 +163,17 @@ fi
 echo "remote_changed=true" >> "${GITHUB_OUTPUT:-/dev/null}"
 
 debug "applying remote tree to httpdocs/"
-rsync -a --delete "$REMOTE_MIRROR/" "$HTTPDOCS/"
+rsync_excludes=()
+for excluded in "${SYNC_EXCLUDE_HTTPDOCS[@]}"; do
+  rsync_excludes+=(--exclude "$excluded")
+done
+rsync -a --delete "${rsync_excludes[@]}" "$REMOTE_MIRROR/" "$HTTPDOCS/"
 
-if git -C "$REPO_ROOT" diff --quiet -- httpdocs/; then
+git_diff_paths=(httpdocs/)
+for excluded in "${SYNC_EXCLUDE_HTTPDOCS[@]}"; do
+  git_diff_paths+=(":(exclude)httpdocs/${excluded}")
+done
+if git -C "$REPO_ROOT" diff --quiet -- "${git_diff_paths[@]}"; then
   cp "$NEW_MANIFEST" "$MANIFEST_FILE"
   echo "content_changed=false" >> "${GITHUB_OUTPUT:-/dev/null}"
   notice "FTP updated but matches git main"

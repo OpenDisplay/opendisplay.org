@@ -70,6 +70,8 @@ jobs:
           branch: automated/ftp-sync
           delete-branch: true
           labels: automated
+          add-paths: |
+            httpdocs/**
 
       - name: Summary
         run: |
