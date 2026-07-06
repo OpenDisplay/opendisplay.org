@@ -1,6 +1,6 @@
 {
   "name": "Open Display Firmware",
-  "version": "current",
+  "version": "2.10",
   "home_assistant_domain": "open_display",
   "new_install_prompt_erase": false,
   "new_install_improv_wait_time": 0,
