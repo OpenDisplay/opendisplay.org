@@ -1,0 +1,78 @@
+name: Sync from FTP
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore remote manifest cache
+        uses: actions/cache@v4
+        with:
+          path: .github/cache/ftp-remote-manifest.txt
+          key: ftp-remote-manifest
+          restore-keys: |
+            ftp-remote-manifest
+
+      - name: Install lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp rsync
+
+      - name: Download remote httpdocs and apply changes
+        id: sync
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PROTOCOL: ${{ secrets.FTP_PROTOCOL }}
+        run: .github/scripts/sync-ftp-from-remote.sh
+
+      - name: Close superseded automated PRs
+        if: steps.sync.outputs.content_changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing_prs=$(gh pr list --repo "${{ github.repository }}" --head "automated/ftp-sync" --state open --json number --jq '.[].number')
+          for pr_number in $existing_prs; do
+            echo "Closing existing PR #$pr_number"
+            gh pr close "$pr_number" --repo "${{ github.repository }}" --comment "Superseded by a newer FTP sync."
+          done
+
+      - name: Create Pull Request
+        if: steps.sync.outputs.content_changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync httpdocs from live FTP'
+          title: 'chore: sync httpdocs from live FTP'
+          body: |
+            The live FTP folder at `/opendisplay.org/httpdocs/` changed since the last check.
+
+            This PR brings the repository in line with the production server (e.g. manual edits on Netcup).
+
+            ---
+            *Automated by the sync-ftp workflow*
+          branch: automated/ftp-sync
+          delete-branch: true
+          labels: automated
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.sync.outputs.content_changed }}" = "true" ]; then
+            echo "PR created or updated for FTP changes"
+          elif [ "${{ steps.sync.outputs.remote_changed }}" = "true" ]; then
+            echo "Remote changed but matches main — manifest cache updated"
+          else
+            echo "No FTP changes detected"
+          fi

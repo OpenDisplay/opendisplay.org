@@ -1,0 +1,72 @@
+name: Sync Firmware Release
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync firmware binaries from latest release
+        id: sync
+        run: .github/scripts/sync-firmware-release.sh
+
+      - name: Close superseded automated PRs
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing_prs=$(gh pr list --repo "${{ github.repository }}" --head "automated/firmware-sync" --state open --json number --jq '.[].number')
+          for pr_number in $existing_prs; do
+            echo "Closing existing PR #$pr_number"
+            gh pr close "$pr_number" --repo "${{ github.repository }}" --comment "Superseded by a newer firmware sync."
+          done
+
+      - name: Create Pull Request
+        if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
+          title: 'chore: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
+          body: |
+            New release detected in [OpenDisplay/Firmware](https://github.com/OpenDisplay/Firmware).
+
+            ## Release
+
+            - Tag: **${{ steps.sync.outputs.tag }}**
+            - https://github.com/OpenDisplay/Firmware/releases/tag/${{ steps.sync.outputs.tag }}
+
+            ## Updated paths
+
+            - `httpdocs/firmware/toolbox/bin/*_full.bin` and `*_full.json` manifests
+            - `httpdocs/firmware/toolbox/firmware/NRF52840.uf2`
+            - `httpdocs/firmware/toolbox/firmware/NRF52840.zip`
+            - `httpdocs/firmware/toolbox/bin/firmware-version.json`
+
+            Merge this PR, then publish a GitHub Release on opendisplay.org to deploy to production.
+
+            ---
+            *Automated by the sync-firmware workflow*
+          branch: automated/firmware-sync
+          delete-branch: true
+          labels: automated
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.sync.outputs.changed }}" = "true" ]; then
+            echo "PR created for firmware v${{ steps.sync.outputs.tag }}"
+          else
+            echo "Firmware binaries are up to date"
+          fi

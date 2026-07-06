@@ -1,0 +1,29 @@
+name: Deploy to FTP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Deploy httpdocs to FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ secrets.FTP_PROTOCOL != '' && secrets.FTP_PROTOCOL || 'ftp' }}
+          port: 21
+          local-dir: ./httpdocs/
+          server-dir: /opendisplay.org/httpdocs/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.ftp-deploy-sync-state.json
