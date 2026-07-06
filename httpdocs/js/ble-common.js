@@ -3489,11 +3489,17 @@ class OpenDisplayBLE {
             bitPosition = 7;
           }
         }
-      }
-      
-      if (bitPosition !== 7) {
-        byteDataPlane1.push(currentByte1);
-        byteDataPlane2.push(currentByte2);
+        // Row-pad each plane to a byte boundary (matches np.packbits(axis=1) on the
+        // Python sender and the firmware's row-padded two-plane BWR/BWY path, PR #82).
+        // Without this, panels whose width isn't a multiple of 8 (e.g. 122-wide EP213)
+        // would carry pixels of the next row into a shared byte (flat packing).
+        if (bitPosition !== 7) {
+          byteDataPlane1.push(currentByte1);
+          byteDataPlane2.push(currentByte2);
+          currentByte1 = 0;
+          currentByte2 = 0;
+          bitPosition = 7;
+        }
       }
       byteData.push(...byteDataPlane1);
       byteData.push(...byteDataPlane2);
