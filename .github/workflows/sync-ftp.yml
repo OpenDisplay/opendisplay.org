@@ -38,7 +38,9 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_PROTOCOL: ${{ secrets.FTP_PROTOCOL }}
           FTP_VERBOSE_PROBE: "1"
-        run: .github/scripts/sync-ftp-from-remote.sh
+        run: |
+          echo "::notice::sync-ftp step starting"
+          .github/scripts/sync-ftp-from-remote.sh
 
       - name: Close superseded automated PRs
         if: steps.sync.outputs.content_changed == 'true'
