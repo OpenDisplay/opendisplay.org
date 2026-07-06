@@ -8,22 +8,19 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
 
+      - name: Install curl
+        run: sudo apt-get update && sudo apt-get install -y curl
+
       - name: Deploy httpdocs to FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ${{ secrets.FTP_PROTOCOL != '' && secrets.FTP_PROTOCOL || 'ftp' }}
-          port: 21
-          local-dir: ./httpdocs/
-          server-dir: /httpdocs/
-          dangerous-clean-slate: false
-          exclude: |
-            **/.ftp-deploy-sync-state.json
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: .github/scripts/deploy-ftp-curl.sh
