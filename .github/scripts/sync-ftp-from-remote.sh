@@ -7,6 +7,7 @@ CACHE_DIR="$REPO_ROOT/.github/cache"
 MANIFEST_FILE="$CACHE_DIR/ftp-remote-manifest.txt"
 WORKDIR="$(mktemp -d)"
 REMOTE_MIRROR="$WORKDIR/remote"
+NETRC="$WORKDIR/netrc"
 LFTP_LAST_LOG=""
 SELECTED_REMOTE=""
 ACTIVE_PROTOCOL=""
@@ -39,7 +40,6 @@ error() {
   echo "::error::$*" >&2
 }
 
-# Strip ftp://, paths, trailing slashes from the server secret.
 normalize_ftp_host() {
   local h="$1"
   h="${h#ftp://}"
@@ -52,35 +52,16 @@ normalize_ftp_host() {
 
 FTP_HOST="$(normalize_ftp_host "$FTP_SERVER")"
 
-redact_secrets() {
-  FTP_PASSWORD="$FTP_PASSWORD" FTP_USERNAME="$FTP_USERNAME" python3 -u - <<'PY'
-import os
-import re
-import sys
-
-password = os.environ.get("FTP_PASSWORD", "")
-username = os.environ.get("FTP_USERNAME", "")
-
-patterns: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"^password\s+\S+", re.IGNORECASE), "password ***REDACTED***"),
-    (re.compile(r"^(login|user)\s+\S+", re.IGNORECASE), r"\1 ***REDACTED***"),
-    (re.compile(r"(?i)(ftp|ftps|ftpes)://[^@\s/]+@"), r"\1://***REDACTED***@"),
-    (re.compile(r"(?i)(ftp|ftps|ftpes)://[^:]+:[^@]+@"), r"\1://***REDACTED***@"),
-]
-
-if username:
-    patterns.append((re.compile(re.escape(username) + r":\S+"), "***REDACTED***"))
-
-for line in sys.stdin:
-    if password:
-        line = line.replace(password, "***REDACTED***")
-    for regex, repl in patterns:
-        line = regex.sub(repl, line)
-    sys.stdout.write(line)
-    sys.stdout.flush()
-PY
+write_netrc() {
+  # Password only in netrc — never in lftp script or URLs (CI log masking strips those lines).
+  {
+    printf 'machine %s\nlogin %s\npassword %s\n' "$FTP_HOST" "$FTP_USERNAME" "$FTP_PASSWORD"
+    printf 'machine default\nlogin %s\npassword %s\n' "$FTP_USERNAME" "$FTP_PASSWORD"
+  } > "$NETRC"
+  chmod 600 "$NETRC"
 }
 
+# Print safe lftp diagnostics — never emit lines that still contain the password.
 show_lftp_log() {
   local lines="${1:-30}"
   if [[ ! -f "$LFTP_LAST_LOG" ]]; then
@@ -93,27 +74,41 @@ show_lftp_log() {
     debug "lftp log is empty"
     return
   fi
-  debug "lftp log (last ${lines} lines, ${size} bytes):"
-  tail -n "$lines" "$LFTP_LAST_LOG" | redact_secrets >&2 || {
-    debug "redaction failed — showing generic error only"
-  }
-}
-
-# Build lftp "open ...;" with URL-encoded credentials (handles special chars in password).
-lftp_open_line() {
-  local proto="$1"
-  local remote_path="${2:-}"
-  FTP_PROTO="$proto" FTP_HOST="$FTP_HOST" FTP_USER="$FTP_USERNAME" FTP_PASS="$FTP_PASSWORD" FTP_PATH="$remote_path" python3 - <<'PY'
+  debug "lftp diagnostics (${size} bytes, last ${lines} lines sanitized):"
+  LOG_PATH="$LFTP_LAST_LOG" TAIL_LINES="$lines" \
+    FTP_PASSWORD="$FTP_PASSWORD" FTP_USERNAME="$FTP_USERNAME" \
+    python3 -u <<'PY' >&2
 import os
-import urllib.parse
+import re
 
-proto = os.environ["FTP_PROTO"]
-host = os.environ["FTP_HOST"]
-user = urllib.parse.quote(os.environ["FTP_USER"], safe="")
-passwd = urllib.parse.quote(os.environ["FTP_PASS"], safe="")
-path = os.environ.get("FTP_PATH", "").strip("/")
-suffix = f"/{path}" if path else "/"
-print(f"open {proto}://{user}:{passwd}@{host}{suffix};")
+path = os.environ["LOG_PATH"]
+password = os.environ.get("FTP_PASSWORD", "")
+username = os.environ.get("FTP_USERNAME", "")
+n = int(os.environ.get("TAIL_LINES", "30"))
+
+raw = open(path, encoding="utf-8", errors="replace").read().splitlines()
+chunk = raw[-n:]
+printed = 0
+codes = set()
+
+for line in chunk:
+    if password and password in line:
+        print("  [line omitted: contained credential]")
+        continue
+    if username and re.search(rf"{re.escape(username)}[:/]", line):
+        line = re.sub(rf"{re.escape(username)}[:/]\S+", f"{username}:***", line)
+    line = re.sub(r"(?i)(ftp|ftps)://[^@\s]+@", r"\1://***@", line)
+    for code in re.findall(r"\b(220|421|425|426|530|550)\b", line):
+        codes.add(code)
+    if line.strip():
+        print(f"  {line}")
+        printed += 1
+
+if codes:
+    print(f"  FTP response codes seen: {', '.join(sorted(codes))}")
+if printed == 0:
+    print("  (no safe lines to show — typical for login failure with secret masking)")
+    print("  hint: verify FTP_USERNAME, FTP_PASSWORD, and that FTP_SERVER is hostname only")
 PY
 }
 
@@ -132,12 +127,27 @@ lftp_protocol_settings() {
   esac
 }
 
+# open ftp://user@host/path/ — password from netrc only
+lftp_open_line() {
+  local proto="$1"
+  local remote_path="${2:-}"
+  remote_path="${remote_path#/}"
+  remote_path="${remote_path%/}"
+  if [[ -n "$remote_path" && "$remote_path" != "." ]]; then
+    echo "open ${proto}://${FTP_USERNAME}@${FTP_HOST}/${remote_path}/;"
+  else
+    echo "open ${proto}://${FTP_USERNAME}@${FTP_HOST}/;"
+  fi
+}
+
 run_lftp_script() {
   local proto="$1"
   local open_path="${2:-}"
   local script="$WORKDIR/lftp-$$.cmd"
   LFTP_LAST_LOG="$WORKDIR/lftp-run-$$.log"
+  write_netrc
   {
+    echo "set net:netrc-file ${NETRC};"
     echo "set ftp:passive-mode true;"
     echo "set net:timeout ${LFTP_NET_TIMEOUT};"
     echo "set net:max-retries ${LFTP_MAX_RETRIES};"
@@ -148,14 +158,41 @@ run_lftp_script() {
     cat
     echo "bye;"
   } > "$script"
-  local label="${proto}://${FTP_HOST}/${open_path}"
+  local label="${proto}://${FTP_USERNAME}@${FTP_HOST}/${open_path:-}"
   debug "lftp connect (${label})"
   if lftp -f "$script" >"$LFTP_LAST_LOG" 2>&1; then
     ACTIVE_PROTOCOL="$proto"
     return 0
   fi
   debug "lftp connect failed (${label})"
-  show_lftp_log 15
+  show_lftp_log 20
+  return 1
+}
+
+curl_ftp_probe() {
+  local err="$WORKDIR/curl-err.txt"
+  local out="$WORKDIR/curl-out.txt"
+  local url="ftp://${FTP_HOST}/httpdocs/"
+  debug "curl probe: ${url}"
+  if curl -sS --ftp-pasv --list-only -u "$FTP_USERNAME:$FTP_PASSWORD" "$url" >"$out" 2>"$err"; then
+    local count
+    count=$(wc -l < "$out" | tr -d ' ')
+    notice "curl list OK (${count} entries under /httpdocs/)"
+    head -5 "$out" | sed "s/$FTP_PASSWORD/***REDACTED***/g" >&2 || true
+    return 0
+  fi
+  debug "curl probe failed"
+  if [[ -s "$err" ]]; then
+    FTP_PASSWORD="$FTP_PASSWORD" python3 -c "
+import os, sys
+pw = os.environ.get('FTP_PASSWORD','')
+for line in open(sys.argv[1], errors='replace'):
+    if pw and pw in line:
+        print('  curl: [stderr line omitted]')
+    else:
+        print('  curl:', line.rstrip())
+" "$err" >&2
+  fi
   return 1
 }
 
@@ -167,7 +204,6 @@ protocols_to_try() {
   printf '%s\n' ftp
 }
 
-# Remote directory paths to open directly (Netcup: ftp://user@host/httpdocs/).
 open_paths_to_try() {
   if [[ -n "${FTP_REMOTE_DIR:-}" ]]; then
     printf '%s\n' "${FTP_REMOTE_DIR#/}"
@@ -182,7 +218,7 @@ try_connect_and_mirror() {
     for open_path in $(open_paths_to_try); do
       remote_label="/${open_path}"
       [[ -z "$open_path" || "$open_path" == "." ]] && remote_label="/"
-      notice "Connect ${proto} host=${FTP_HOST} path=${remote_label}"
+      notice "Connect ${proto} path=${remote_label}"
       rm -rf "${REMOTE_MIRROR:?}"/*
       mkdir -p "$REMOTE_MIRROR"
       if ! run_lftp_script "$proto" "$open_path" <<EOF
@@ -209,14 +245,14 @@ EOF
 }
 
 notice "FTP sync starting"
-debug "host=${FTP_HOST} (normalized from FTP_SERVER secret)"
+debug "host=${FTP_HOST}"
 debug "timeouts net=${LFTP_NET_TIMEOUT}s cmd=${LFTP_CMD_TIMEOUT}s"
-debug "FTP_PROTOCOL=${FTP_PROTOCOL:-<unset, using ftp>}"
+
+curl_ftp_probe || true
 
 if ! try_connect_and_mirror; then
   error "Failed to connect or mirror httpdocs from FTP"
   debug "Tried open paths: $(open_paths_to_try | tr '\n' ' ')"
-  debug "Set FTP_REMOTE_DIR=httpdocs if your layout differs"
   show_lftp_log 40
   exit 1
 fi
