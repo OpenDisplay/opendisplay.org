@@ -26,8 +26,8 @@ jobs:
           restore-keys: |
             ftp-remote-manifest
 
-      - name: Install lftp
-        run: sudo apt-get update && sudo apt-get install -y lftp rsync curl
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y curl rsync
 
       - name: Download remote httpdocs and apply changes
         id: sync
