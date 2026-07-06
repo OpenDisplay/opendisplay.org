@@ -23,7 +23,7 @@ jobs:
           protocol: ${{ secrets.FTP_PROTOCOL != '' && secrets.FTP_PROTOCOL || 'ftp' }}
           port: 21
           local-dir: ./httpdocs/
-          server-dir: /opendisplay.org/httpdocs/
+          server-dir: /httpdocs/
           dangerous-clean-slate: false
           exclude: |
             **/.ftp-deploy-sync-state.json
