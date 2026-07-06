@@ -3473,9 +3473,14 @@ class OpenDisplayBLE {
             nibblePosition = 1;
           }
         }
-      }
-      if (nibblePosition === 0) {
-        byteData.push(currentByte);
+        // Row-pad to a byte boundary: flush the pending high nibble so each row
+        // starts a new byte. Matches encode_4bpp's per-row padding on the Python
+        // sender and the row-padded firmware. For even widths this is a no-op.
+        if (nibblePosition === 0) {
+          byteData.push(currentByte);
+          currentByte = 0;
+          nibblePosition = 1;
+        }
       }
     } else if (colorScheme === 6) {
       // 16 gray (4bpp): same nibble order as 6-color — even x = high nibble, odd x = low; 0=black .. 15=white (Seeed TFT_GRAY_*).
@@ -3499,9 +3504,14 @@ class OpenDisplayBLE {
             nibblePosition = 1;
           }
         }
-      }
-      if (nibblePosition === 0) {
-        byteData.push(currentByte);
+        // Row-pad to a byte boundary: flush the pending high nibble so each row
+        // starts a new byte. Matches encode_4bpp's per-row padding on the Python
+        // sender and the row-padded firmware. For even widths this is a no-op.
+        if (nibblePosition === 0) {
+          byteData.push(currentByte);
+          currentByte = 0;
+          nibblePosition = 1;
+        }
       }
     } else if (colorScheme === 5) {
       // bb_epaper 4-gray: two concatenated 1bpp controller planes (plane0 then plane1).
@@ -3606,9 +3616,14 @@ class OpenDisplayBLE {
             pixelInByte = 0;
           }
         }
-      }
-      if (pixelInByte > 0) {
-        byteData.push(currentByte);
+        // Row-pad to a byte boundary: flush the partially filled byte so each row
+        // starts a new byte (ceil(w/4) bytes/row). Matches encode_2bpp's per-row
+        // padding on the Python sender and the row-padded firmware. No-op for w%4==0.
+        if (pixelInByte > 0) {
+          byteData.push(currentByte);
+          currentByte = 0;
+          pixelInByte = 0;
+        }
       }
     } else {
       // Monochrome: 1 bit per pixel
@@ -3632,12 +3647,17 @@ class OpenDisplayBLE {
             bitPosition = 7;
           }
         }
-      }
-      if (bitPosition !== 7) {
-        byteData.push(currentByte);
+        // Row-pad to a byte boundary: flush the partially filled byte so each row
+        // starts a new byte (ceil(w/8) bytes/row). Matches np.packbits(axis=1) on
+        // the Python sender and the row-padded firmware. No-op for w%8==0.
+        if (bitPosition !== 7) {
+          byteData.push(currentByte);
+          currentByte = 0;
+          bitPosition = 7;
+        }
       }
     }
-    
+
     return byteData;
   }
 
