@@ -464,7 +464,7 @@
             "ic_type": "2",
             "communication_modes": "0x1",
             "device_flags": "0x1",
-            "pwr_pin": "43",
+            "pwr_pin": "11",
             "reserved": "0x0"
          },
          "manufacturerData": {
@@ -556,7 +556,7 @@
             "ic_type": "2",
             "communication_modes": "0x1",
             "device_flags": "0x1",
-            "pwr_pin": "43",
+            "pwr_pin": "11",
             "reserved": "0x0"
          },
          "manufacturerData": {
