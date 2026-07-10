@@ -179,10 +179,35 @@
       color: var(--foreground);
       margin-bottom: 20px;
       cursor: pointer;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      transition: border-color 0.2s, background 0.2s;
     }
     .device-view-display .device-password-line svg {
       flex-shrink: 0;
       align-self: center;
+    }
+    .device-view-display .device-password-line:hover,
+    .device-view-display .device-password-line:focus-visible {
+      border-color: var(--accent);
+      background: rgba(0, 191, 255, 0.06);
+      outline: none;
+    }
+    .device-password-line .key-copy-icon { color: var(--muted-foreground); }
+    .device-view-display .device-password-line:hover .key-copy-icon,
+    .device-view-display .device-password-line:focus-visible .key-copy-icon { color: var(--accent); }
+    .device-password-line .key-copied-icon { color: var(--accent); }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
     .device-view-display .device-password-line #display-key {
       word-break: break-all;
@@ -372,9 +397,12 @@
             <div class="device-card-content">
               <div class="device-view-display" id="device-view-display">
                 <div class="device-name-hero" id="display-name">—</div>
-<div class="device-password-line" id="display-key-wrap">
+<div class="device-password-line" id="display-key-wrap" role="button" tabindex="0" title="Click to copy encryption key" aria-label="Copy encryption key">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <span id="display-key">—</span>
+              <svg class="key-copy-icon" id="display-key-copy-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <svg class="key-copied-icon" id="display-key-copied-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;"><path d="M20 6 9 17l-5-5"/></svg>
+              <span class="visually-hidden" id="display-key-copy-status" aria-live="polite"></span>
             </div>
                 <div class="device-mfg-line" id="display-mfg">—</div>
               </div>
@@ -701,12 +729,37 @@
 
     var displayKeyWrap = document.getElementById('display-key-wrap');
     if (displayKeyWrap) {
+      var keyCopiedTimer = null;
       displayKeyWrap.addEventListener('click', function () {
         var keyEl = document.getElementById('display-key');
         var text = keyEl ? keyEl.textContent : '';
-        if (text && text !== '—' && text !== '-' && text !== 'X' && navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text.trim());
+        if (!text || text === '—' || text === '-' || text === 'X') return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text.trim()).then(function () {
+            var copyIcon = document.getElementById('display-key-copy-icon');
+            var copiedIcon = document.getElementById('display-key-copied-icon');
+            var status = document.getElementById('display-key-copy-status');
+            copyIcon.style.display = 'none';
+            copiedIcon.style.display = 'inline';
+            status.textContent = 'Copied';
+            if (keyCopiedTimer) clearTimeout(keyCopiedTimer);
+            keyCopiedTimer = setTimeout(function () {
+              copiedIcon.style.display = 'none';
+              copyIcon.style.display = 'inline';
+              status.textContent = '';
+            }, 2000);
+          }).catch(function () {});
+        } else if (keyEl && window.getSelection) {
+          // No clipboard API (insecure context): select the key so it can be copied manually
+          var range = document.createRange();
+          range.selectNodeContents(keyEl);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
         }
+      });
+      displayKeyWrap.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.click(); }
       });
     }
 
