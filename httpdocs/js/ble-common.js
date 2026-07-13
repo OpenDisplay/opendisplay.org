@@ -37,6 +37,8 @@ const PIPE_FLAG_COMPRESSED = 0x01;
 const PIPE_REQ_WINDOW = 16;           // requested max queue size (tokens in flight)
 const PIPE_REQ_ACK_EVERY = 4;         // requested ACK cadence (tighter than python's 8)
 const PIPE_MAX_PTO = 3;               // silent tail/PTO probes before abort
+const PIPE_RETX_ACK_SPACING = 2;      // ACKs a retransmit gets to land before repeating it
+const PIPE_MAX_RETX_FRACTION = 0.5;   // per-transfer retx budget as a fraction of chunk count
 const TRANSMISSION_MODE_PIPE_WRITE = 0x10; // transmission_modes bit 4
 
 // display.partial_update_support (config tool enum)
@@ -4670,6 +4672,7 @@ if (supportsStreamingDecompression) {
       nextToSend: 0,
       acked: new Set(),
       retxQueue: [],
+      pendingRetx: new Map(), // missing idx -> ACKs seen since it was last (re)sent
       retxCount: 0,
       ptoCount: 0,
       stallAcks: 0,
@@ -4946,11 +4949,17 @@ if (supportsStreamingDecompression) {
     state.ackEvery = ackEvery;
     state.frameEff = frameEff;
     state.selective = selective;
-    state.maxRetx = 3 * window;
     state.chunks = this._prepareDirectWriteChunks(state.payload, dataSize);
     // Always keep at least one (possibly empty) frame so the receiver's total
     // check + END handshake run even for an empty payload (mirrors legacy START/END).
     if (state.chunks.length === 0) state.chunks = [new Uint8Array(0)];
+    // Retransmit budget for the whole transfer. A flat 3*window (the python
+    // client's bound) is fine for a few hundred chunks but starves a large
+    // upload: Chrome's writeValueWithoutResponse drops frames silently when the
+    // controller buffer backs up, so a multi-thousand-chunk send legitimately
+    // repairs more than 48 frames and would abort mid-transfer. Scale with the
+    // transfer and keep a floor, so the bound still catches a runaway retx loop.
+    state.maxRetx = Math.max(3 * window, Math.ceil(state.chunks.length * PIPE_MAX_RETX_FRACTION));
     state.phase = 'data';
 
     this.log(
@@ -5031,7 +5040,10 @@ if (supportsStreamingDecompression) {
       state.acked.add(idx);
     }
     const prevBase = state.windowBase;
-    while (state.acked.has(state.windowBase)) state.windowBase++;
+    while (state.acked.has(state.windowBase)) {
+      state.pendingRetx.delete(state.windowBase);
+      state.windowBase++;
+    }
     if (state.windowBase > prevBase) state.stallAcks = 0;
 
     // Everything acked. In 'data' this re-pumps into _checkPipeCompletion (sends
@@ -5060,8 +5072,21 @@ if (supportsStreamingDecompression) {
         return;
       }
     } else if (state.selective) {
-      // Selective repeat: queue each missing chunk (oldest first) once.
+      // Selective repeat, oldest first. pendingRetx counts the ACKs seen since a
+      // chunk was last (re)sent: a retransmit needs roughly a round-trip (the
+      // device ACKs every ackEvery frames) before its ACK can come back, so a
+      // chunk still listed as missing in the very next ACK is almost always one
+      // whose retransmit is simply still in flight. Resending it again there just
+      // burns the retx budget, so wait PIPE_RETX_ACK_SPACING ACKs before repeating.
       for (const m of missing) {
+        const seen = state.pendingRetx.get(m);
+        if (seen === undefined) {
+          state.pendingRetx.set(m, 0); // newly detected hole: send now
+        } else {
+          state.pendingRetx.set(m, seen + 1);
+          if (seen + 1 < PIPE_RETX_ACK_SPACING) continue; // retransmit still in flight
+          state.pendingRetx.set(m, 0);
+        }
         if (!state.retxQueue.includes(m)) {
           state.retxQueue.push(m);
           state.retxCount++;
@@ -5076,6 +5101,7 @@ if (supportsStreamingDecompression) {
       // resend everything from window_base.
       state.nextToSend = state.windowBase;
       state.retxQueue = [];
+      state.pendingRetx.clear();
       state.retxCount++;
       if (state.retxCount > state.maxRetx) {
         this._abortPipeWrite(new Error('PIPE_WRITE aborted: MAX_RETX exceeded (rewind)'));
