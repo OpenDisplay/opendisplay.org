@@ -2871,19 +2871,26 @@ class OpenDisplayBLE {
     }
     
     const getOffset = (fieldName) => offsets[fieldName];
+    const readUint16 = (offset) => packetData[offset] | (packetData[offset + 1] << 8);
     const readUint24 = (offset) => packetData[offset] | (packetData[offset + 1] << 8) | (packetData[offset + 2] << 16);
     const readUint32 = (offset) => packetData[offset] | (packetData[offset + 1] << 8) | (packetData[offset + 2] << 16) | (packetData[offset + 3] << 24);
     
     const batteryCapacityOffset = getOffset('battery_capacity_mah');
     const deepSleepCurrentOffset = getOffset('deep_sleep_current_ua');
     const capacityEstimatorOffset = getOffset('capacity_estimator');
-    
+    const screenTimeoutOffset = getOffset('screen_timeout_seconds');
+    const minWakeTimeOffset = getOffset('min_wake_time_seconds');
+
     const result = {
       powerMode: packetData[getOffset('power_mode')],
       batteryCapacity: batteryCapacityOffset !== null ? readUint24(batteryCapacityOffset) : null,
       capacityEstimator: capacityEstimatorOffset !== null ? packetData[capacityEstimatorOffset] : null,
       deepSleepCurrent: deepSleepCurrentOffset !== null && packetData.length >= deepSleepCurrentOffset + 4 ? 
-                       readUint32(deepSleepCurrentOffset) : null
+                       readUint32(deepSleepCurrentOffset) : null,
+      minWakeTimeSeconds: minWakeTimeOffset !== undefined && packetData.length >= minWakeTimeOffset + 2
+                          ? readUint16(minWakeTimeOffset) : null,
+      screenTimeoutSeconds: screenTimeoutOffset !== undefined && packetData.length > screenTimeoutOffset
+                            ? packetData[screenTimeoutOffset] : null
     };
     
     return result;
