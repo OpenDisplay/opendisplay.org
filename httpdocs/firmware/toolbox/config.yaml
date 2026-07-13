@@ -860,7 +860,8 @@ ble_proto:
             name: direct_write
             description: direct write mode (bufferless)
           4:
-            name: reserved_4
+            name: pipe_write
+            description: pipe write mode. faster transfer using sliding window pipeline
           5:
             name: reserved_5
           6:
