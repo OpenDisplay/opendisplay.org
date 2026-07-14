@@ -3018,8 +3018,9 @@ function getDisplayInfoFromConfig() {
   const colorScheme = parseInt(displayPacket.fields.color_scheme) || 0;
   const rotation = parseInt(displayPacket.fields.rotation) || 0;
   const panelIcType = parseValueToNumber(displayPacket.fields.panel_ic_type);
-  
-  return { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType };
+  const transmissionModes = parseValueToNumber(displayPacket.fields.transmission_modes) || 0;
+
+  return { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType, transmissionModes };
 }
 
 function createTestImageCanvas(width, height, colorScheme) {
@@ -3142,7 +3143,7 @@ async function uploadTestImageAfterReboot() {
       return;
     }
     
-    const { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType } = displayInfo;
+    const { pixelWidth, pixelHeight, colorScheme, rotation, panelIcType, transmissionModes } = displayInfo;
     addLog(`Display info: ${pixelWidth}x${pixelHeight}, color scheme: ${colorScheme}, rotation: ${rotation * 90}°`, 'info');
     
     // Wait for device to reboot and reconnect
@@ -3168,6 +3169,7 @@ async function uploadTestImageAfterReboot() {
         originalWidth: pixelWidth,
         originalHeight: pixelHeight,
         panelIcType: panelIcType,
+        transmissionModes: transmissionModes,
         useFastRefresh: false,
         onProgress: (current, total) => {
           const progress = Math.floor((current / total) * 100);

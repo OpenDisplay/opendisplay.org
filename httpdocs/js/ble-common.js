@@ -25,6 +25,22 @@ const CONFIG_WRITE_ACK_TIMEOUT_MS = 8000;
 // refresh timeout (0x74), so the ack timer is cleared once the end command acks.
 const DIRECT_WRITE_ACK_TIMEOUT_MS = 8000;
 
+// PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
+// 0x0080/0x0081/0x0082 transfer when the device config advertises it
+// (transmission_modes bit 4) and falls back to the legacy 0x70 path if the START
+// draws no response. See _activatePipeWrite / handlePipeWriteNotification below.
+const PIPE_START_TIMEOUT_MS = 2000;   // silence after 0x0080 START => legacy fallback
+const PIPE_ACK_TIMEOUT_MS = 8000;     // data-phase stall bound (mirrors direct write)
+const PIPE_TAIL_FLUSH_MS = 600;       // tail dup-probe delay (< ackEvery unacked at the tail)
+const PIPE_VERSION = 1;
+const PIPE_FLAG_COMPRESSED = 0x01;
+const PIPE_REQ_WINDOW = 16;           // requested max queue size (tokens in flight)
+const PIPE_REQ_ACK_EVERY = 4;         // requested ACK cadence (tighter than python's 8)
+const PIPE_MAX_PTO = 3;               // silent tail/PTO probes before abort
+const PIPE_RETX_ACK_SPACING = 2;      // ACKs a retransmit gets to land before repeating it
+const PIPE_MAX_RETX_FRACTION = 0.5;   // per-transfer retx budget as a fraction of chunk count
+const TRANSMISSION_MODE_PIPE_WRITE = 0x10; // transmission_modes bit 4
+
 // display.partial_update_support (config tool enum)
 const PARTIAL_UPDATE_NONE = 0;
 const PARTIAL_UPDATE_REGION = 1;
@@ -109,6 +125,13 @@ class OpenDisplayBLE {
     };
     
     this.directWriteState = null;
+
+    // Sliding-window (PIPE_WRITE) upload state; null when no pipe transfer is
+    // active. pipeProbe caches the per-connection probe result so a device that
+    // ignores the 0x0080 START (stale config bit) is only probed once — it resets
+    // on disconnect (see resetState).
+    this.pipeWriteState = null;
+    this.pipeProbe = { probed: false, supported: false };
 
     this.partialState = {
       etag: 0,
@@ -885,6 +908,9 @@ class OpenDisplayBLE {
     this.configReadState.chunks = {};
     this.configReadState.receivedLength = 0;
     this.configReadState.totalLength = 0;
+    // The pipe-write probe is per-connection: a device that ignored 0x0080 (or a
+    // reconnect to pipe-capable firmware) must be re-probed on the next transfer.
+    this.pipeProbe = { probed: false, supported: false };
   }
 
   /**
@@ -912,6 +938,14 @@ class OpenDisplayBLE {
       this._abortDirectWrite(err);
     } else {
       this.directWriteState = null;
+    }
+
+    // Pipe write (sliding-window canvas/image upload). _abortPipeWrite settles
+    // onComplete(false, err) and drops pipeWriteState, mirroring _abortDirectWrite.
+    if (this.pipeWriteState && this.pipeWriteState.active) {
+      this._abortPipeWrite(err);
+    } else {
+      this.pipeWriteState = null;
     }
 
     // DFU firmware upload.
@@ -1968,6 +2002,14 @@ class OpenDisplayBLE {
       return;
     }
     
+    // Built-in pipe write (sliding-window) handler. Pipe and legacy direct-write
+    // states are never simultaneously active, so this is checked before the
+    // directWrite branch below.
+    if (this.pipeWriteState && this.pipeWriteState.active && this.handlePipeWriteNotification(bytes, hexString)) {
+      this.log(`BLE< ${hexString}`, 'info');
+      return;
+    }
+
     // Built-in direct write handler
     if (this.directWriteState && this.directWriteState.active && this.handleDirectWriteNotification(bytes, hexString)) {
       // Direct write notification was handled - log it for debugging
@@ -2829,19 +2871,26 @@ class OpenDisplayBLE {
     }
     
     const getOffset = (fieldName) => offsets[fieldName];
+    const readUint16 = (offset) => packetData[offset] | (packetData[offset + 1] << 8);
     const readUint24 = (offset) => packetData[offset] | (packetData[offset + 1] << 8) | (packetData[offset + 2] << 16);
     const readUint32 = (offset) => packetData[offset] | (packetData[offset + 1] << 8) | (packetData[offset + 2] << 16) | (packetData[offset + 3] << 24);
     
     const batteryCapacityOffset = getOffset('battery_capacity_mah');
     const deepSleepCurrentOffset = getOffset('deep_sleep_current_ua');
     const capacityEstimatorOffset = getOffset('capacity_estimator');
-    
+    const screenTimeoutOffset = getOffset('screen_timeout_seconds');
+    const minWakeTimeOffset = getOffset('min_wake_time_seconds');
+
     const result = {
       powerMode: packetData[getOffset('power_mode')],
       batteryCapacity: batteryCapacityOffset !== null ? readUint24(batteryCapacityOffset) : null,
       capacityEstimator: capacityEstimatorOffset !== null ? packetData[capacityEstimatorOffset] : null,
       deepSleepCurrent: deepSleepCurrentOffset !== null && packetData.length >= deepSleepCurrentOffset + 4 ? 
-                       readUint32(deepSleepCurrentOffset) : null
+                       readUint32(deepSleepCurrentOffset) : null,
+      minWakeTimeSeconds: minWakeTimeOffset !== undefined && packetData.length >= minWakeTimeOffset + 2
+                          ? readUint16(minWakeTimeOffset) : null,
+      screenTimeoutSeconds: screenTimeoutOffset !== undefined && packetData.length > screenTimeoutOffset
+                            ? packetData[screenTimeoutOffset] : null
     };
     
     return result;
@@ -3993,7 +4042,9 @@ class OpenDisplayBLE {
     }
     this.log('Falling back to full upload', 'info');
     fallback.statusMessage = 'Partial unavailable, uploading full frame...';
-    return this._activateFullDirectWrite(fallback);
+    // Route through _startFullUpload so a pipe-capable device uses the fast
+    // sliding-window path for the full frame too (pipe is full-frame only).
+    return this._startFullUpload(fallback);
   }
 
   /**
@@ -4019,7 +4070,11 @@ class OpenDisplayBLE {
     if (this.directWriteState && this.directWriteState.active) {
       throw new Error('Direct write already in progress');
     }
-    
+
+    if (this.pipeWriteState && this.pipeWriteState.active) {
+      throw new Error('Pipe write already in progress');
+    }
+
     const {
       rotation = 0,
       originalWidth = null,
@@ -4157,6 +4212,16 @@ if (supportsStreamingDecompression) {
         supportsStreamingDecompression,
         STREAMING_ZLIB_WINDOW_BITS,
         maxStartPayload,
+        // Pipe-write (0x0080) inputs. These leave every legacy field above
+        // untouched so a START-silence fallback re-enters _activateFullDirectWrite
+        // with zero recomputation. rawData is the compressed-or-raw byte stream the
+        // pipe sender rechunks at its negotiated frame size; rawUncompressed backs
+        // the one-shot uncompressed retry after a compressed START NACK (err 0x02).
+        transmissionModes,
+        rawData: useCompressed ? compressedBytes : byteDataUint8,
+        rawUncompressed: byteDataUint8,
+        uncompressedSize,
+        useCompressed,
         statusMessage: `Starting upload: ${canvas.width}x${canvas.height} pixels, ${chunks.length} chunks`
       };
 
@@ -4176,8 +4241,8 @@ if (supportsStreamingDecompression) {
         this.log('Partial update unavailable (first upload or size mismatch); using full upload', 'info');
       }
 
-      await this._activateFullDirectWrite(prepared);
-      
+      await this._startFullUpload(prepared);
+
     } catch (error) {
       this._clearDirectWriteAckTimer();
       this.directWriteState = null;
@@ -4487,8 +4552,653 @@ if (supportsStreamingDecompression) {
       }
       return true;
     }
-    
+
     return false;
+  }
+
+  // ─── PIPE_WRITE (sliding-window) upload ──────────────────────────────────
+  //
+  // A QUIC-style windowed transfer negotiated via 0x0080, streamed as 0x0081
+  // DATA frames (up to `window` unacked in flight, selective-repeat ACKs), and
+  // finished by an explicit 0x0082 END (compressed) or an unsolicited END_ACK
+  // (uncompressed auto-complete). Gated on transmission_modes bit 4 plus the
+  // per-connection probe (pipeProbe); a START that draws no response within 2s
+  // marks the connection pipe-unsupported and falls back to the legacy 0x70 path
+  // reusing the already-prepared data. Mirrors the python client (_negotiate_pipe
+  // / _send_pipe_chunks) and firmware (display_service.cpp pipe handlers).
+
+  /**
+   * True when the device advertises PIPE_WRITE (config bit 4) and this connection
+   * has not already probed the device as pipe-unsupported.
+   */
+  _pipeEligible(prepared) {
+    return prepared.transmissionModes != null &&
+           (prepared.transmissionModes & TRANSMISSION_MODE_PIPE_WRITE) !== 0 &&
+           !(this.pipeProbe.probed && !this.pipeProbe.supported);
+  }
+
+  /**
+   * Start a full-frame upload via the fast pipe path when eligible, else the
+   * legacy 0x70 direct-write path. Both accept the same `prepared` object.
+   */
+  _startFullUpload(prepared) {
+    return this._pipeEligible(prepared)
+      ? this._activatePipeWrite(prepared)
+      : this._activateFullDirectWrite(prepared);
+  }
+
+  /**
+   * Build a PIPE_WRITE_START (0x0080) command hex string.
+   * Wire: [00][80][ver][flags][req_w][req_n][client_max_frame:2 LE][total_size:4 LE]
+   *
+   * NOTE: this header is LITTLE-endian, unlike the legacy 0x70 START which packs
+   * its size fields big-endian. The byte order is deliberately not reused — see
+   * build_pipe_write_start_command in py-opendisplay commands.py.
+   */
+  _buildPipeStartHex(compressed, totalSize, reqW, reqN, clientMaxFrame) {
+    const flags = compressed ? PIPE_FLAG_COMPRESSED : 0;
+    const p = [
+      PIPE_VERSION,
+      flags & 0xFF,
+      reqW & 0xFF,
+      reqN & 0xFF,
+      clientMaxFrame & 0xFF, (clientMaxFrame >>> 8) & 0xFF,
+      totalSize & 0xFF, (totalSize >>> 8) & 0xFF, (totalSize >>> 16) & 0xFF, (totalSize >>> 24) & 0xFF
+    ];
+    return '0080' + this.bytesToHex(p).replace(/\s+/g, '');
+  }
+
+  /**
+   * Build a PIPE_WRITE_END (0x0082) command hex string.
+   * Wire: [00][82][refresh:1] (+ [new_etag:4 BE] when provided).
+   * The etag tail is BIG-endian, mirroring buildDirectWriteEndHex (legacy 0x72).
+   */
+  _buildPipeEndHex(refreshMode, etag = null) {
+    const payload = [refreshMode & 0xFF];
+    if (etag != null) {
+      payload.push(
+        (etag >>> 24) & 0xFF,
+        (etag >>> 16) & 0xFF,
+        (etag >>> 8) & 0xFF,
+        etag & 0xFF
+      );
+    }
+    return '0082' + this.bytesToHex(payload).replace(/\s+/g, '');
+  }
+
+  /**
+   * Expand a QUIC-style DATA ACK into the set of absolute chunk indexes it
+   * reports as received. Port of unpack_ack_ranges (py-opendisplay responses.py).
+   *
+   * `highestSeen` is a rolling mod-256 seq resolved against `windowBase` (the
+   * lowest unacked absolute index); because the in-flight range is <= 32 « 256 the
+   * resolution is unambiguous, including a stale ACK just below windowBase.
+   * `ackMask` bit i (LSB first) marks chunk `highestSeen - 1 - i` as received.
+   */
+  _unpackPipeAckRanges(highestSeen, ackMask, windowBase) {
+    const baseMod = windowBase % 256;
+    let delta = (highestSeen - baseMod) % 256;
+    if (delta < 0) delta += 256;       // JS % can be negative; force 0..255
+    if (delta > 128) delta -= 256;     // highest_seen sits behind window_base (stale)
+    const hAbs = windowBase + delta;
+
+    const acked = new Set();
+    if (hAbs >= 0) acked.add(hAbs);
+    for (let i = 0; i < 32; i++) {
+      // >>> keeps ackMask unsigned (bit 31 would otherwise read as negative).
+      if (((ackMask >>> i) & 1) === 1) {
+        const idx = hAbs - 1 - i;
+        if (idx >= 0) acked.add(idx);
+      }
+    }
+    return acked;
+  }
+
+  /**
+   * Begin a pipe-write transfer: send the 0x0080 START and arm the 2s probe timer.
+   * The transfer stays in phase 'start' until the device ACKs (negotiation),
+   * NACKs, or the timer fires (=> legacy fallback).
+   */
+  _activatePipeWrite(prepared) {
+    const state = {
+      active: true,
+      phase: 'start',
+      compressed: !!prepared.useCompressed,
+      totalSize: prepared.uncompressedSize,
+      payload: prepared.rawData,
+      clientMaxFrame: this.encryptionSession.authenticated ? 185 : 232,
+      // Negotiated (post-min-rule) parameters, filled in _processPipeStartAck.
+      window: 0,
+      ackEvery: 0,
+      frameEff: 0,
+      selective: false,
+      maxRetx: 0,
+      chunks: [],
+      // Sender bookkeeping.
+      windowBase: 0,
+      nextToSend: 0,
+      acked: new Set(),
+      retxQueue: [],
+      pendingRetx: new Map(), // missing idx -> ACKs seen since it was last (re)sent
+      retxCount: 0,
+      ptoCount: 0,
+      stallAcks: 0,
+      bytesSent: 0,
+      sending: false,
+      retriedUncompressed: false,
+      // Carried through so a START-silence fallback re-enters the legacy path.
+      legacyPrepared: prepared,
+      onProgress: prepared.onProgress,
+      onComplete: prepared.onComplete,
+      onStatusChange: prepared.onStatusChange,
+      useFastRefresh: prepared.useFastRefresh,
+      trackPartial: prepared.trackPartial,
+      newEtag: prepared.newEtag,
+      paletteBuffer: prepared.paletteBuffer,
+      paletteWidth: prepared.paletteWidth,
+      paletteHeight: prepared.paletteHeight,
+      uploadStartTime: Date.now(),
+      uploadEndTime: null,
+      refreshStartTime: null,
+      ackTimeoutId: null
+    };
+    this.pipeWriteState = state;
+    if (prepared.onStatusChange) {
+      prepared.onStatusChange(prepared.statusMessage || 'Starting pipe upload...');
+    }
+    const startHex = this._buildPipeStartHex(
+      state.compressed, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY, state.clientMaxFrame
+    );
+    this.log(`PIPE_WRITE probe: START compressed=${state.compressed} total=${state.totalSize}B frame=${state.clientMaxFrame}`, 'info');
+    const sendPromise = this.sendHexCommand(startHex).catch(err => this._abortPipeWrite(err));
+    this._armPipeTimer('start', PIPE_START_TIMEOUT_MS);
+    return sendPromise;
+  }
+
+  /**
+   * Fall back to the legacy 0x70 direct-write path, reusing the already-prepared
+   * data. When markUnsupported is set (START silence / non-recoverable START NACK)
+   * the probe is cached negative so the rest of the connection skips 0x0080.
+   */
+  _fallbackToLegacyFromPipe(markUnsupported) {
+    const state = this.pipeWriteState;
+    if (!state) return;
+    this._clearPipeTimer();
+    const prepared = state.legacyPrepared;
+    this.pipeWriteState = null;
+    if (markUnsupported) {
+      this.pipeProbe = { probed: true, supported: false };
+    }
+    // Often invoked from the START-silence timer, where nothing awaits the
+    // returned promise — a failed legacy START must still settle onComplete.
+    return this._activateFullDirectWrite(prepared).catch(err => {
+      this._abortDirectWrite(err);
+    });
+  }
+
+  /** Clear the pending pipe ack/probe timer, if any. */
+  _clearPipeTimer() {
+    if (this.pipeWriteState && this.pipeWriteState.ackTimeoutId) {
+      clearTimeout(this.pipeWriteState.ackTimeoutId);
+      this.pipeWriteState.ackTimeoutId = null;
+    }
+  }
+
+  /**
+   * (Re)arm the pipe timer. In phase 'start' a timeout is the legacy-fallback
+   * trigger; in the data/end phases it is a stall bound that dup-probes the oldest
+   * unacked chunk before aborting.
+   */
+  _armPipeTimer(label, ms) {
+    if (!this.pipeWriteState || !this.pipeWriteState.active) return;
+    this._clearPipeTimer();
+    const timeout = ms != null ? ms : PIPE_ACK_TIMEOUT_MS;
+    this.pipeWriteState.ackTimeoutId = setTimeout(() => {
+      this._onPipeTimeout(label);
+    }, timeout);
+  }
+
+  /**
+   * Arm the data-phase timer, using the short tail-flush delay when the only
+   * outstanding frames are a sub-ackEvery tail with no known holes (that tail will
+   * never earn a cadence ACK, so we dup-probe quickly instead of stalling 8s).
+   */
+  _armPipeDataTimer() {
+    const state = this.pipeWriteState;
+    if (!state || !state.active || state.phase !== 'data') return;
+    const unacked = state.chunks.length - state.windowBase;
+    const allSent = state.nextToSend >= state.chunks.length;
+    const highestRecv = state.acked.size ? Math.max(...state.acked) : state.windowBase - 1;
+    const noHoles = highestRecv < state.windowBase;
+    const tailFlush = allSent && unacked > 0 && unacked < state.ackEvery && noHoles;
+    this._armPipeTimer(tailFlush ? 'tail-flush' : 'data', tailFlush ? PIPE_TAIL_FLUSH_MS : PIPE_ACK_TIMEOUT_MS);
+  }
+
+  _onPipeTimeout(label) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    if (state.phase === 'start') {
+      // 2s of silence after 0x0080 START => stale config bit / pipe-less firmware.
+      // Fall back to the legacy 0x70 path and skip the probe for this connection.
+      this.log('No PIPE_WRITE START response within 2s; falling back to legacy direct write', 'warning');
+      this._fallbackToLegacyFromPipe(true);
+      return;
+    }
+    // Data/end stall: dup-probe the oldest unacked chunk (fresh nonce) to draw an
+    // ACK, then abort after PIPE_MAX_PTO silent probes (mirrors _send_pipe_chunks).
+    state.ptoCount++;
+    if (state.ptoCount >= PIPE_MAX_PTO) {
+      this._abortPipeWrite(new Error(`PIPE_WRITE stalled: no ACK after ${PIPE_MAX_PTO} probes (${label})`));
+      return;
+    }
+    if (state.windowBase < state.chunks.length) {
+      this.log(`PIPE_WRITE tail/PTO probe: resending chunk ${state.windowBase} (probe ${state.ptoCount})`, 'info');
+      this._sendPipeChunk(state.windowBase);
+      state.retxCount++;
+      if (state.retxCount > state.maxRetx) {
+        this._abortPipeWrite(new Error('PIPE_WRITE aborted: MAX_RETX exceeded (PTO)'));
+        return;
+      }
+    }
+    this._armPipeTimer(label, PIPE_TAIL_FLUSH_MS);
+  }
+
+  /** Abort an in-flight pipe write and surface the error to onComplete. */
+  _abortPipeWrite(err) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    this._clearPipeTimer();
+    state.active = false;
+    const onComplete = state.onComplete;
+    this.pipeWriteState = null;
+    this.log(`PIPE_WRITE aborted: ${err && err.message ? err.message : err}`, 'error');
+    if (state.onStatusChange) state.onStatusChange('Upload failed');
+    if (onComplete) onComplete(false, err);
+  }
+
+  /** Send one 0x0081 DATA frame (fire-and-forget; used by the PTO dup-probe). */
+  _sendPipeChunk(idx) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    // DATA frame: [00][81][seq mod 256][data]. Write-without-response; when
+    // authenticated the CCM envelope wraps [seq][data] downstream via sendCommand.
+    const seqHex = (idx % 256).toString(16).padStart(2, '0');
+    const dataHex = this.bytesToHex(state.chunks[idx]).replace(/\s+/g, '');
+    this.sendHexCommand('0081' + seqHex + dataHex).catch(err => {
+      this.log('Error sending pipe data frame: ' + err.message, 'error');
+      this._abortPipeWrite(err);
+    });
+  }
+
+  /** Send one 0x0081 DATA frame and await the write (used by the pump loop). */
+  async _sendPipeChunkAwait(idx) {
+    const state = this.pipeWriteState;
+    const seqHex = (idx % 256).toString(16).padStart(2, '0');
+    const dataHex = this.bytesToHex(state.chunks[idx]).replace(/\s+/g, '');
+    await this.sendHexCommand('0081' + seqHex + dataHex);
+  }
+
+  /**
+   * Dispatch an inbound frame during a pipe transfer. Returns true when handled.
+   */
+  handlePipeWriteNotification(bytes, hexString) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active || bytes.length < 2) return false;
+    const b0 = bytes[0], b1 = bytes[1];
+
+    // START ACK: [00][80][ver][dev_w][dev_n][dev_frame:2 LE][flags] (>= 8B)
+    if (b0 === 0x00 && b1 === 0x80) {
+      if (state.phase !== 'start') return true; // stray echo after negotiation
+      if (bytes.length < 8) {
+        this.log('PIPE_WRITE START ACK too short; falling back to legacy', 'warning');
+        this._fallbackToLegacyFromPipe(true);
+        return true;
+      }
+      this.pipeProbe = { probed: true, supported: true };
+      this._processPipeStartAck(bytes);
+      return true;
+    }
+
+    // START NACK: [FF][80][err][00]
+    if (b0 === 0xFF && b1 === 0x80) {
+      if (state.phase !== 'start') return true;
+      const err = bytes.length >= 3 ? bytes[2] : 0;
+      // err 0x02 = compressed flag unsupported: the device answered 0x0080 (pipe
+      // works), so retry the START once uncompressed reusing the raw bytes.
+      if (err === 0x02 && state.compressed && !state.retriedUncompressed) {
+        this.pipeProbe = { probed: true, supported: true };
+        this.log('Device rejected compressed PIPE_WRITE (err 0x02); retrying uncompressed', 'info');
+        state.retriedUncompressed = true;
+        state.compressed = false;
+        state.payload = state.legacyPrepared.rawUncompressed;
+        this._clearPipeTimer();
+        const startHex = this._buildPipeStartHex(
+          false, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY, state.clientMaxFrame
+        );
+        this.sendHexCommand(startHex).catch(e => this._abortPipeWrite(e));
+        this._armPipeTimer('start', PIPE_START_TIMEOUT_MS);
+        return true;
+      }
+      this.log(`PIPE_WRITE START NACK (err 0x${err.toString(16)}); falling back to legacy`, 'info');
+      this._fallbackToLegacyFromPipe(true);
+      return true;
+    }
+
+    // DATA ACK: [00][81][highest_seen][ack_mask:4 LE] (>= 7B)
+    if (b0 === 0x00 && b1 === 0x81 && bytes.length >= 7) {
+      const highestSeen = bytes[2];
+      const mask = (bytes[3] | (bytes[4] << 8) | (bytes[5] << 16) | (bytes[6] << 24)) >>> 0;
+      this._processPipeAck(highestSeen, mask);
+      return true;
+    }
+
+    // DATA NACK (fatal): [FF][81][err][highest_seen][ack_mask:4 LE] (>= 8B)
+    if (b0 === 0xFF && b1 === 0x81 && bytes.length >= 8) {
+      const err = bytes[2];
+      this._abortPipeWrite(new Error(`PIPE_WRITE data NACK err=0x${err.toString(16)} (fatal)`));
+      return true;
+    }
+
+    // END_ACK: [00][82] — explicit reply (compressed) or unsolicited auto-complete
+    // (uncompressed full-frame). Either way the data phase is done; wait for 0x73.
+    if (b0 === 0x00 && b1 === 0x82) {
+      if (state.phase !== 'refresh') this._onPipeEndAck();
+      return true;
+    }
+
+    // END_NACK: [FF][82]
+    if (b0 === 0xFF && b1 === 0x82) {
+      this._abortPipeWrite(new Error('PIPE_WRITE END NACK (byte-total mismatch or incomplete transfer)'));
+      return true;
+    }
+
+    // Refresh complete / timeout — shared opcodes with the legacy path.
+    if (b0 === 0x00 && b1 === 0x73) {
+      if (state.phase === 'refresh') this._onPipeRefreshComplete();
+      return true;
+    }
+    if (b0 === 0x00 && b1 === 0x74) {
+      this._abortPipeWrite(new Error('Display refresh timed out'));
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Apply the negotiation min-rule from the START ACK, split the payload into
+   * frames, and begin streaming.
+   */
+  _processPipeStartAck(bytes) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    const ver = bytes[2];
+    const devMaxWindow = bytes[3];
+    const devMaxAckEvery = bytes[4];
+    const devMaxFrame = bytes[5] | (bytes[6] << 8); // LE
+    const flags = bytes[7];
+
+    // Min-rule — computed identically to firmware and python _negotiate_pipe.
+    const window = Math.max(1, Math.min(PIPE_REQ_WINDOW, devMaxWindow, 32));
+    const ackEvery = Math.max(1, Math.min(PIPE_REQ_ACK_EVERY, devMaxAckEvery, window));
+    const frameEff = Math.min(state.clientMaxFrame, devMaxFrame);
+    const selective = (flags & 0x01) !== 0;
+
+    // Chunk data cap: frame_eff - CCM envelope (31) - seq (1) when authenticated,
+    // else frame_eff - cmd (2) - seq (1). Matches device._pipe_data_size.
+    const dataSize = this.encryptionSession.authenticated ? (frameEff - 32) : (frameEff - 3);
+    if (dataSize < 1) {
+      this._abortPipeWrite(new Error(`Negotiated pipe frame ${frameEff} too small for a data byte`));
+      return;
+    }
+
+    state.window = window;
+    state.ackEvery = ackEvery;
+    state.frameEff = frameEff;
+    state.selective = selective;
+    state.chunks = this._prepareDirectWriteChunks(state.payload, dataSize);
+    // Always keep at least one (possibly empty) frame so the receiver's total
+    // check + END handshake run even for an empty payload (mirrors legacy START/END).
+    if (state.chunks.length === 0) state.chunks = [new Uint8Array(0)];
+    // Retransmit budget for the whole transfer. A flat 3*window (the python
+    // client's bound) is fine for a few hundred chunks but starves a large
+    // upload: Chrome's writeValueWithoutResponse drops frames silently when the
+    // controller buffer backs up, so a multi-thousand-chunk send legitimately
+    // repairs more than 48 frames and would abort mid-transfer. Scale with the
+    // transfer and keep a floor, so the bound still catches a runaway retx loop.
+    state.maxRetx = Math.max(3 * window, Math.ceil(state.chunks.length * PIPE_MAX_RETX_FRACTION));
+    state.phase = 'data';
+
+    this.log(
+      `PIPE_WRITE negotiated: W=${window} N=${ackEvery} frame=${frameEff} selective=${selective} ` +
+      `compressed=${state.compressed} (dev max ${devMaxWindow}/${devMaxAckEvery}/${devMaxFrame}, ver ${ver}), ` +
+      `${state.chunks.length} chunks`,
+      'info'
+    );
+    this._pumpPipeWindow();
+  }
+
+  /**
+   * Sliding-window sender. Sends selective retransmits first, then advances the
+   * window with fresh chunks while span-tokens are available. Re-entrancy-guarded
+   * (state.sending): an ACK arriving mid-await updates state and re-pumps once this
+   * loop yields. On completion checks for END and re-arms the data-phase timer.
+   */
+  async _pumpPipeWindow() {
+    const state = this.pipeWriteState;
+    if (!state || !state.active || state.phase !== 'data') return;
+    if (state.sending) return; // an ACK will re-pump after the running loop yields
+    state.sending = true;
+    try {
+      while (state.active && state.phase === 'data') {
+        let idx = -1;
+        let advance = false;
+        // 1. Selective retransmits (drop stale entries already acked or below base).
+        while (state.retxQueue.length > 0) {
+          const cand = state.retxQueue.shift();
+          if (cand >= state.windowBase && !state.acked.has(cand)) { idx = cand; break; }
+        }
+        // 2. Otherwise the next sequential chunk while a span-token is free.
+        if (idx < 0 && state.nextToSend < state.chunks.length &&
+            (state.nextToSend - state.windowBase) < state.window) {
+          idx = state.nextToSend;
+          advance = true;
+        }
+        if (idx < 0) break; // window full or nothing left to send; wait for ACKs
+        await this._sendPipeChunkAwait(idx);
+        if (this.pipeWriteState !== state || !state.active) return; // aborted mid-await
+        if (advance) {
+          state.nextToSend++;
+          state.bytesSent += state.chunks[idx].length;
+          if (idx % 10 === 0 || idx === state.chunks.length - 1) {
+            if (state.onProgress) state.onProgress(idx + 1, state.chunks.length);
+            if (state.onStatusChange) {
+              const pct = Math.floor((idx / state.chunks.length) * 100);
+              state.onStatusChange(`Uploading: ${pct}% (${idx + 1}/${state.chunks.length} chunks)`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      state.sending = false;
+      this._abortPipeWrite(err);
+      return;
+    }
+    state.sending = false;
+    if (!state.active || state.phase !== 'data') return;
+    this._checkPipeCompletion();
+    if (this.pipeWriteState === state && state.active && state.phase === 'data') {
+      this._armPipeDataTimer();
+    }
+  }
+
+  /**
+   * Process a DATA ACK: expand the SACK, advance windowBase over the contiguous
+   * acked prefix, queue any holes below the highest received for retransmit (or
+   * rewind when the device doesn't buffer out-of-order), then re-pump.
+   */
+  _processPipeAck(highestSeen, mask) {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    if (state.phase !== 'data' && state.phase !== 'end') return; // stray after refresh
+    state.ptoCount = 0;
+
+    for (const idx of this._unpackPipeAckRanges(highestSeen, mask, state.windowBase)) {
+      state.acked.add(idx);
+    }
+    const prevBase = state.windowBase;
+    while (state.acked.has(state.windowBase)) {
+      state.pendingRetx.delete(state.windowBase);
+      state.windowBase++;
+    }
+    if (state.windowBase > prevBase) state.stallAcks = 0;
+
+    // Everything acked. In 'data' this re-pumps into _checkPipeCompletion (sends
+    // END or waits for auto-complete); in 'end' a tail-flush ACK preceding the
+    // END_ACK is simply ignored.
+    if (state.windowBase >= state.chunks.length) {
+      if (state.phase === 'data') {
+        this._clearPipeTimer();
+        this._pumpPipeWindow();
+      }
+      return;
+    }
+
+    // Loss handling — holes below the highest received are definite losses.
+    const highestRecv = state.acked.size ? Math.max(...state.acked) : state.windowBase - 1;
+    const upper = Math.min(highestRecv, state.nextToSend);
+    const missing = [];
+    for (let i = state.windowBase; i < upper; i++) {
+      if (!state.acked.has(i)) missing.push(i);
+    }
+
+    if (missing.length === 0) {
+      state.stallAcks++;
+      if (state.stallAcks > state.maxRetx) {
+        this._abortPipeWrite(new Error(`PIPE_WRITE aborted: ${state.stallAcks} ACKs without progress`));
+        return;
+      }
+    } else if (state.selective) {
+      // Selective repeat, oldest first. pendingRetx counts the ACKs seen since a
+      // chunk was last (re)sent: a retransmit needs roughly a round-trip (the
+      // device ACKs every ackEvery frames) before its ACK can come back, so a
+      // chunk still listed as missing in the very next ACK is almost always one
+      // whose retransmit is simply still in flight. Resending it again there just
+      // burns the retx budget, so wait PIPE_RETX_ACK_SPACING ACKs before repeating.
+      for (const m of missing) {
+        const seen = state.pendingRetx.get(m);
+        if (seen === undefined) {
+          state.pendingRetx.set(m, 0); // newly detected hole: send now
+        } else {
+          state.pendingRetx.set(m, seen + 1);
+          if (seen + 1 < PIPE_RETX_ACK_SPACING) continue; // retransmit still in flight
+          state.pendingRetx.set(m, 0);
+        }
+        if (!state.retxQueue.includes(m)) {
+          state.retxQueue.push(m);
+          state.retxCount++;
+          if (state.retxCount > state.maxRetx) {
+            this._abortPipeWrite(new Error(`PIPE_WRITE aborted: MAX_RETX (${state.maxRetx}) exceeded`));
+            return;
+          }
+        }
+      }
+    } else {
+      // Device doesn't buffer out-of-order (selective bit clear): rewind and
+      // resend everything from window_base.
+      state.nextToSend = state.windowBase;
+      state.retxQueue = [];
+      state.pendingRetx.clear();
+      state.retxCount++;
+      if (state.retxCount > state.maxRetx) {
+        this._abortPipeWrite(new Error('PIPE_WRITE aborted: MAX_RETX exceeded (rewind)'));
+        return;
+      }
+    }
+
+    this._clearPipeTimer();
+    this._pumpPipeWindow();
+  }
+
+  /**
+   * All chunks acked. Compressed transfers send an explicit 0x0082 END (committing
+   * the new etag when tracking partial). Uncompressed full-frame transfers AUTO-
+   * complete — the firmware sends an unsolicited END_ACK once total_size is
+   * reached, so we send NOTHING and just wait. Either way phase moves to 'end'.
+   */
+  _checkPipeCompletion() {
+    const state = this.pipeWriteState;
+    if (!state || !state.active || state.phase !== 'data') return;
+    if (state.windowBase < state.chunks.length) return;
+    state.phase = 'end';
+    if (!state.uploadEndTime) state.uploadEndTime = Date.now();
+    if (state.compressed) {
+      const refreshMode = state.useFastRefresh ? 1 : 0;
+      const endHex = this._buildPipeEndHex(refreshMode, state.trackPartial ? state.newEtag : null);
+      this.log('PIPE_WRITE all chunks acked, sending explicit END', 'info');
+      this.sendHexCommand(endHex).catch(err => this._abortPipeWrite(err));
+      this._armPipeTimer('end', PIPE_ACK_TIMEOUT_MS);
+    } else {
+      this.log('PIPE_WRITE all chunks acked (uncompressed); awaiting auto-complete END_ACK', 'info');
+      this._armPipeTimer('auto-complete', PIPE_ACK_TIMEOUT_MS);
+    }
+  }
+
+  /** END_ACK received (explicit or auto-complete): move into the refresh wait. */
+  _onPipeEndAck() {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    state.phase = 'refresh';
+    this._clearPipeTimer();
+    if (!state.uploadEndTime) state.uploadEndTime = Date.now();
+    if (!state.refreshStartTime) state.refreshStartTime = state.uploadEndTime;
+    const uploadTime = state.uploadStartTime
+      ? ((state.uploadEndTime - state.uploadStartTime) / 1000).toFixed(2)
+      : '?';
+    this.log('PIPE_WRITE data complete, display refreshing...', 'info');
+    if (state.onStatusChange) {
+      state.onStatusChange(`Upload complete (${uploadTime}s), refreshing display...`);
+    }
+    // The refresh phase (0x73) is bounded by the firmware's own 0x74 timeout.
+  }
+
+  /** 0x73 refresh-complete during a pipe transfer: finish and settle onComplete. */
+  _onPipeRefreshComplete() {
+    const state = this.pipeWriteState;
+    if (!state || !state.active) return;
+    const refreshEndTime = Date.now();
+    const refreshTime = state.refreshStartTime
+      ? ((refreshEndTime - state.refreshStartTime) / 1000).toFixed(2)
+      : '?';
+    const uploadTime = state.uploadEndTime && state.uploadStartTime
+      ? ((state.uploadEndTime - state.uploadStartTime) / 1000).toFixed(2)
+      : '?';
+    const totalTime = state.uploadStartTime
+      ? ((refreshEndTime - state.uploadStartTime) / 1000).toFixed(2)
+      : '?';
+    this.log(`PIPE_WRITE completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s, Total: ${totalTime}s`, 'success');
+    if (state.onStatusChange) {
+      state.onStatusChange(`Pipe upload completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s`);
+    }
+
+    // Partial-tracking interplay. A compressed transfer carried the new etag in the
+    // explicit END, so record it as the legacy path does. An uncompressed transfer
+    // AUTO-completed with NO etag committed (firmware displayed_etag unchanged), so
+    // the tracked baseline is stale — reset it so the next partial does a full frame
+    // first instead of silently etag-mismatching.
+    if (state.trackPartial) {
+      if (state.compressed && state.newEtag && state.paletteBuffer) {
+        this._commitPartialState(state.newEtag, state.paletteBuffer, state.paletteWidth, state.paletteHeight);
+      } else {
+        this.resetPartialState();
+      }
+    }
+
+    const onComplete = state.onComplete;
+    this._clearPipeTimer();
+    state.active = false;
+    this.pipeWriteState = null;
+    if (onComplete) onComplete(true, null);
   }
 }
 

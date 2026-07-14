@@ -20,7 +20,7 @@ ble_proto:
 
         '
   version: 1
-  minor_version: 3
+  minor_version: 4
   packet_structure:
     description: 'outer_packet wraps the overall transfer and contains a sequence of single_packet entries. single_packet
       defines the structure of each entry contained in the packets field of outer_packet.
@@ -391,8 +391,14 @@ ble_proto:
             name: reserved_6
           7:
             name: reserved_7
+      - name: min_wake_time_seconds
+        size: 2
+        description: Min awake window after first boot or button wake; 0 = default 120 s
+      - name: screen_timeout_seconds
+        size: 1
+        description: debounce timer for display power for rapid update cycles (0-255 s; 0 = disabled, power down immediately)
       - name: reserved
-        size: 7
+        size: 4
         description: Reserved bytes for future use
     32:
       name: display
@@ -860,7 +866,8 @@ ble_proto:
             name: direct_write
             description: direct write mode (bufferless)
           4:
-            name: reserved_4
+            name: pipe_write
+            description: pipe write mode. faster transfer using sliding window pipeline
           5:
             name: reserved_5
           6:
