@@ -513,7 +513,8 @@
             "battery_sense_pin": "1",
             "battery_sense_enable_pin": "21",
             "voltage_scaling_factor": "0xb1",
-            "deep_sleep_current_ua": "0"
+            "deep_sleep_current_ua": "0",
+            "capacity_estimator": "5"
          },
          "buttons": {
             "instance_number": "0x0",
@@ -605,7 +606,8 @@
             "battery_sense_pin": "1",
             "battery_sense_enable_pin": "21",
             "voltage_scaling_factor": "0xb1",
-            "deep_sleep_current_ua": "0"
+            "deep_sleep_current_ua": "0",
+            "capacity_estimator": "5"
          },
          "buttons": {
             "instance_number": "0x0",
@@ -669,7 +671,8 @@
          "powerDefaults": {
             "battery_sense_pin": "1",
             "battery_sense_enable_pin": "40",
-            "voltage_scaling_factor": "0xa1"
+            "voltage_scaling_factor": "0xa1",
+            "capacity_estimator": "5"
          },
          "led": {
             "instance_number": "0x0",

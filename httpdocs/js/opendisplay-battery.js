@@ -9,7 +9,8 @@
     LI_ION: 1,
     LIFEPO4: 2,
     SUPERCAP: 3,
-    LITHIUM_PRIMARY: 4
+    LITHIUM_PRIMARY: 4,
+    SEEED_LI_ION: 5
   };
 
   var SOC_LI_ION = [
@@ -32,11 +33,21 @@
     [4500, 100], [3000, 0]
   ];
 
+  // Seeed reTerminal E-series (E1001/E1002/E1003) single-cell LiPo, Seeed's own
+  // ESPHome reference discharge curve.
+  var SOC_SEEED_LI_ION = [
+    [4150, 100], [4055, 95], [3960, 90], [3935, 85], [3910, 80], [3880, 75],
+    [3850, 70], [3825, 65], [3800, 60], [3775, 55], [3750, 50], [3715, 45],
+    [3680, 40], [3630, 35], [3580, 30], [3535, 25], [3490, 20], [3450, 15],
+    [3410, 10], [3300, 5], [3270, 0]
+  ];
+
   var CHEMISTRY_LABELS = {
     1: 'Li-Ion',
     2: 'LiFePO4',
     3: 'Supercap',
-    4: 'Lithium primary'
+    4: 'Lithium primary',
+    5: 'Seeed Li-Ion'
   };
 
   function interpolate(table, voltageMv) {
@@ -66,6 +77,8 @@
         return interpolate(SOC_LITHIUM_PRIMARY, voltageMv);
       case CapacityEstimator.SUPERCAP:
         return interpolate(SOC_SUPERCAP, voltageMv);
+      case CapacityEstimator.SEEED_LI_ION:
+        return interpolate(SOC_SEEED_LI_ION, voltageMv);
       default:
         return null;
     }
