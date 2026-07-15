@@ -396,7 +396,7 @@ ble_proto:
         description: Min awake window after first boot or button wake; 0 = default 120 s
       - name: screen_timeout_seconds
         size: 1
-        description: debounce timer for display power for rapid update cycles (0-255 s; 0 = disabled, power down immediately)
+        description: EPD keep-alive; seconds the panel stays powered after a refresh before shutdown (0-30, values above 30 clamped; 0 = power off immediately; forced 0 when an AXP2101 PMIC is present)
       - name: reserved
         size: 4
         description: Reserved bytes for future use
