@@ -69,7 +69,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 1
       },
       {
@@ -309,7 +309,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 2
       },
       {
@@ -380,7 +380,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 3
       },
       {
@@ -451,7 +451,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 4
       },
       {
@@ -542,7 +542,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 5
       },
       {
@@ -634,7 +634,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 6
       },
       {
@@ -745,7 +745,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 7
       },
       {
@@ -894,7 +894,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 20
       },
       {
@@ -934,7 +934,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 8
       },
       {
@@ -985,7 +985,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 9
       },
       {
@@ -1036,7 +1036,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 10
       },
       {
@@ -1077,7 +1077,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 11
       },
       {
@@ -1118,7 +1118,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 12
       },
       {
@@ -1159,7 +1159,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 13
       },
       {
@@ -1571,7 +1571,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 18
       },
       {
@@ -1617,7 +1617,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 19
       },
       {
@@ -1690,7 +1690,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 21
       },
       {
@@ -1764,7 +1764,7 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 22
       }
    ],
