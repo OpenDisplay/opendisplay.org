@@ -29,7 +29,7 @@ const DIRECT_WRITE_ACK_TIMEOUT_MS = 8000;
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
 // (transmission_modes bit 4) and falls back to the legacy 0x70 path if the START
 // draws no response. See _activatePipeWrite / handlePipeWriteNotification below.
-const PIPE_START_TIMEOUT_MS = 2000;   // silence after 0x0080 START => legacy fallback
+const PIPE_START_TIMEOUT_MS = 8000;   // silence after 0x0080 START => legacy fallback
 const PIPE_ACK_TIMEOUT_MS = 8000;     // data-phase stall bound (mirrors direct write)
 const PIPE_TAIL_FLUSH_MS = 600;       // tail dup-probe delay (< ackEvery unacked at the tail)
 const PIPE_VERSION = 1;
