@@ -356,6 +356,9 @@ ble_proto:
           4:
             name: lithium_primary
             description: Lithium primary battery
+          5:
+            name: seeed_li_ion
+            description: 1s li-ion, Seeed reTerminal E-series (E1001-E1003) discharge curve
       - name: voltage_scaling_factor
         size: 2
         description: Voltage scaling / divider factor (implementation-specific)
