@@ -640,6 +640,114 @@
          "index": 6
       },
       {
+         "id": "reterminal-e1004",
+         "name": "Seeed reTerminal E1004 (ESP32-S3)",
+         "connectorPins": [
+            133
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x1",
+            "pwr_pin": "12",
+            "reserved": "0x0",
+            "pwr_pin_2": "0",
+            "pwr_pin_3": "0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "14",
+            "board_revision": "1",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "38",
+            "busy": "13",
+            "dc": "11",
+            "cs": "10",
+            "data": "9",
+            "clk": "7",
+            "cs2": "2"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "38",
+            "led_2_g": "6",
+            "led_3_b": "16",
+            "led_4": "0",
+            "led_flags": "0x2"
+         },
+         "buzzerConfig": {
+            "instance_number": "0x0",
+            "drive_pin": "45",
+            "enable_pin": "0xff",
+            "flags": "0x1",
+            "duty_percent": "0x32"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "20",
+            "pin_2": "19",
+            "pin_3": "0",
+            "pin_4": "0",
+            "pin_5": "0",
+            "pin_6": "0",
+            "pin_7": "0",
+            "bus_speed_hz": "0",
+            "bus_flags": "0",
+            "pullups": "0",
+            "pulldowns": "0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "sensor_type": "4",
+            "instance_number": "0",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x44",
+            "msd_data_start_byte": "1"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "1",
+            "battery_sense_enable_pin": "21",
+            "voltage_scaling_factor": "0xb1",
+            "deep_sleep_current_ua": "0",
+            "capacity_estimator": "5"
+         },
+         "buttons": {
+            "instance_number": "0x0",
+            "input_type": "1",
+            "display_as": "1",
+            "inputpin1": "0x3",
+            "inputpin2": "0x4",
+            "inputpin3": "0x5",
+            "inputpin4": "0xff",
+            "inputpin5": "0xff",
+            "inputpin6": "0xff",
+            "inputpin7": "0xff",
+            "inputpin8": "0xff",
+            "isused": "0x7",
+            "invert": "0x7",
+            "pullups": "0x0",
+            "pulldowns": "0x0",
+            "button_data_byte_index": "0",
+            "power_off_flags": "0x0",
+            "power_off_hold_sec": "0x0",
+            "reserved": "0x0"
+         },
+         "defaultDisplay": "ep133a-spectra-1200x1600",
+         "defaultPower": "battery-2000",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-E1004_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "25",
+         "index": 24
+      },
+      {
          "id": "reterminal-e1003",
          "name": "Seeed reTerminal E1003 (ESP32-S3)",
          "connectorPins": [
@@ -2462,6 +2570,24 @@
             "full_update_mC": "0"
          },
          "index": 32
+      },
+      {
+         "id": "ep133a-spectra-1200x1600",
+         "name": "13.3\" Spectra 6 Color dual-CS (1200\u00d71600, bwgbry_split)",
+         "connectorPins": [
+            133
+         ],
+         "panelIcType": "66",
+         "config": {
+            "pixel_width": "1200",
+            "pixel_height": "1600",
+            "active_width_mm": "160",
+            "active_height_mm": "96",
+            "partial_update_support": "0",
+            "color_scheme": "8",
+            "full_update_mC": "400"
+         },
+         "index": 37
       }
    ],
    "powerOptions": [

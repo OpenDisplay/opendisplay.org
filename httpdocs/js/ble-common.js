@@ -3236,13 +3236,13 @@ class OpenDisplayBLE {
     
     availableColors.push({ color: colorBlack, name: 'black' });
     availableColors.push({ color: colorWhite, name: 'white' });
-    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4) {
+    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorRed, name: 'red' });
     }
-    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4) {
+    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorYellow, name: 'yellow' });
     }
-    if (colorScheme === 4) {
+    if (colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorGreen, name: 'green' });
       availableColors.push({ color: colorBlue, name: 'blue' });
     }
@@ -3299,13 +3299,13 @@ class OpenDisplayBLE {
     const availableColors = [];
     availableColors.push({ color: colorBlack, name: 'black' });
     availableColors.push({ color: colorWhite, name: 'white' });
-    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4) {
+    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorRed, name: 'red' });
     }
-    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4) {
+    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorYellow, name: 'yellow' });
     }
-    if (colorScheme === 4) {
+    if (colorScheme === 4 || colorScheme === 8) {
       availableColors.push({ color: colorGreen, name: 'green' });
       availableColors.push({ color: colorBlue, name: 'blue' });
     }
@@ -3504,44 +3504,51 @@ class OpenDisplayBLE {
     
     const byteData = [];
     
-    if (colorScheme === 4) {
-      // 6-color scheme: 2 pixels per byte (nibbles)
-      let currentByte = 0;
-      let nibblePosition = 1;
-      
-      for (let y = 0; y < imageHeight; y++) {
-        for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const r = pixels[i];
-          const g = pixels[i + 1];
-          const b = pixels[i + 2];
-          const color = this.detectColor(r, g, b, colorScheme);
-          let colorValue = 0;
-          if (color === 'black') colorValue = 0;
-          else if (color === 'white') colorValue = 1;
-          else if (color === 'yellow') colorValue = 2;
-          else if (color === 'red') colorValue = 3;
-          else if (color === 'green') colorValue = 6;
-          else if (color === 'blue') colorValue = 5;
-          
-          if (nibblePosition === 1) {
-            currentByte = (colorValue << 4);
-            nibblePosition = 0;
-          } else {
-            currentByte |= colorValue;
+    if (colorScheme === 4 || colorScheme === 8) {
+      // 6-color scheme: 2 pixels per byte (nibbles). Scheme 8 (bwgbry_split) packs
+      // the left half-plane first (all rows' left bytes), then the right half-plane,
+      // so dual-CS panels can stream CS1 then CS2 with no framebuffer.
+      const packRowMajor = (x0, x1) => {
+        let currentByte = 0;
+        let nibblePosition = 1;
+        for (let y = 0; y < imageHeight; y++) {
+          for (let x = x0; x < x1; x++) {
+            const i = (y * imageWidth + x) * 4;
+            const r = pixels[i];
+            const g = pixels[i + 1];
+            const b = pixels[i + 2];
+            const color = this.detectColor(r, g, b, colorScheme);
+            let colorValue = 0;
+            if (color === 'black') colorValue = 0;
+            else if (color === 'white') colorValue = 1;
+            else if (color === 'yellow') colorValue = 2;
+            else if (color === 'red') colorValue = 3;
+            else if (color === 'green') colorValue = 6;
+            else if (color === 'blue') colorValue = 5;
+
+            if (nibblePosition === 1) {
+              currentByte = (colorValue << 4);
+              nibblePosition = 0;
+            } else {
+              currentByte |= colorValue;
+              byteData.push(currentByte);
+              currentByte = 0;
+              nibblePosition = 1;
+            }
+          }
+          if (nibblePosition === 0) {
             byteData.push(currentByte);
             currentByte = 0;
             nibblePosition = 1;
           }
         }
-        // Row-pad to a byte boundary: flush the pending high nibble so each row
-        // starts a new byte. Matches encode_4bpp's per-row padding on the Python
-        // sender and the row-padded firmware. For even widths this is a no-op.
-        if (nibblePosition === 0) {
-          byteData.push(currentByte);
-          currentByte = 0;
-          nibblePosition = 1;
-        }
+      };
+      if (colorScheme === 8) {
+        const mid = Math.floor(imageWidth / 2);
+        packRowMajor(0, mid);
+        packRowMajor(mid, imageWidth);
+      } else {
+        packRowMajor(0, imageWidth);
       }
     } else if (colorScheme === 6) {
       // 16 gray (4bpp): same nibble order as 6-color — even x = high nibble, odd x = low; 0=black .. 15=white (Seeed TFT_GRAY_*).
@@ -5295,7 +5302,8 @@ const PREMADE_SIMPLE_PRESETS = [
   { stem: 'xiao-75-c3', name: 'XIAO 75 C3', driverBoardId: 'xiao-75-c3', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'xiao-75-s3-og', name: 'XIAO 75 S3 OG', driverBoardId: 'ee04', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1001', name: 'ReTerminal E1001', driverBoardId: 'reterminal-e1001', displayId: 'ep75-800x480', powerId: 'battery-2000' },
-  { stem: 'reterminal-e1002', name: 'ReTerminal E1002', driverBoardId: 'reterminal-e1002', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' }
+  { stem: 'reterminal-e1002', name: 'ReTerminal E1002', driverBoardId: 'reterminal-e1002', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
+  { stem: 'reterminal-e1004', name: 'ReTerminal E1004', driverBoardId: 'reterminal-e1004', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-2000' }
 ];
 
 function extractLegacyPremadeConfigStem(configParam) {

@@ -223,6 +223,9 @@ ble_proto:
               13:
                 name: reTerminal_E1002
                 description: reTerminal E1002
+              14:
+                name: reTerminal_E1004
+                description: reTerminal E1004
             2:
               0:
                 name: ESP32_S3:PhotoPainter
@@ -843,6 +846,9 @@ ble_proto:
           7:
             name: 7color
             description: 7color
+          8:
+            name: bwgbry_split
+            description: Spectra 6 same nibbles as bwgbry, packed left-half plane then right-half plane (dual-CS panels, no device framebuffer)
           100:
             name: RGB565
             description: RGB565

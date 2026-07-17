@@ -236,7 +236,12 @@
         </div>
         <label style="font-weight: 500; font-size: 14px; margin: 0; padding: 12px; text-align: center; color: var(--foreground); cursor: pointer;">reTerminal E1003</label>
       </div>
-      
+      <div class="preset-option" data-preset="reterminal-e1004" style="border-radius: 8px; border: 1px solid var(--border-color); padding: 0; background: var(--card-background); transition: all 0.2s ease; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); overflow: hidden;">
+        <div style="width: 100%; aspect-ratio: 16 / 9; background: var(--card-background); display: block; overflow: hidden; position: relative;">
+          <img src="img/RTE1004.jpg" alt="reTerminal E1004" style="width: 100%; height: 100%; object-fit: cover; object-position: center; display: block;">
+        </div>
+        <label style="font-weight: 500; font-size: 14px; margin: 0; padding: 12px; text-align: center; color: var(--foreground); cursor: pointer;">reTerminal E1004</label>
+      </div>
       <div class="preset-option" data-preset="reterminal-sticky" style="border-radius: 8px; border: 1px solid var(--border-color); padding: 0; background: var(--card-background); transition: all 0.2s ease; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); overflow: hidden;">
         <div style="width: 100%; aspect-ratio: 16 / 9; background: var(--card-background); display: block; overflow: hidden; position: relative;">
           <img src="img/RTsticky.jpg" alt="reTerminal sticky" style="width: 100%; height: 100%; object-fit: cover; object-position: center; display: block;">
@@ -1469,6 +1474,11 @@ const presetMappings = {
   'reterminal-e1002': {
     driverBoard: 'reterminal-e1002',
     display: 'ep73-spectra-800x480',
+    power: 'battery-2000'
+  },
+  'reterminal-e1004': {
+    driverBoard: 'reterminal-e1004',
+    display: 'ep133a-spectra-1200x1600',
     power: 'battery-2000'
   },
   'reterminal-e1003': {
@@ -3664,7 +3674,7 @@ function createDisplayConfig(display, driverBoardId) {
     color_scheme: config.color_scheme,
     transmission_modes: transmission_modes,
     clk_pin: pins.clk,
-    reserved_pin_2: '0x0',
+    cs_pin_2: (pins.cs2 != null && `${pins.cs2}` !== '') ? `${pins.cs2}` : '0x0',
     reserved_pin_3: '0x0',
     reserved_pin_4: '0x0',
     reserved_pin_5: '0x0',

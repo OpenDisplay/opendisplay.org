@@ -378,6 +378,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     <option value="2">B/W + Yellow</option>
                     <option value="3">B/W + Red + Yellow</option>
                     <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
+                    <option value="8">6-color split (left half-plane then right; dual-CS)</option>
                     <option value="5">4 Grayscale</option>
                     <option value="6">16 Grayscale (4bpp)</option>
                 </select>
@@ -663,6 +664,26 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 return '#' + h + h + h;
             })
         ];
+        PALETTE[8] = PALETTE[4]; // bwgbry_split — same Spectra 6 swatches
+        const SCHEME_SHORT = {
+            0: 'BW', 1: 'BWR', 2: 'BWY', 3: 'BWRY', 4: '6C', 5: '4G', 6: '16G', 8: '6Cs'
+        };
+        const SCHEME_NAMES = {
+            0: 'Monochrome (B/W)',
+            1: 'B/W + Red',
+            2: 'B/W + Yellow',
+            3: 'B/W + Red + Yellow',
+            4: 'B/W + Green + Blue + Red + Yellow (6-color)',
+            5: '4 Grayscale',
+            6: '16 Grayscale (4bpp)',
+            8: '6-color split (left half-plane then right; dual-CS)'
+        };
+        function clampScheme(cs) {
+            const n = parseInt(cs, 10);
+            if (n === 8) return 8;
+            if (Number.isNaN(n)) return 0;
+            return Math.min(Math.max(n, 0), 6);
+        }
         function setConnectedUI(connected) {
             const connectBtn = document.getElementById('connectbutton');
             const uploadBtn = document.getElementById('uploadButton');
@@ -1449,7 +1470,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (bar) bar.style.width = (value == null ? 0 : value) + '%';
         }
         function getScheme() {
-            return Math.min(Math.max(parseInt(document.getElementById('colorSchemeSelect')?.value || '0', 10), 0), 6);
+            return clampScheme(document.getElementById('colorSchemeSelect')?.value || '0');
         }
         function fillColorSwatches(container, currentColor, onSelect) {
             if (!container) return;
@@ -1942,7 +1963,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 ctx.fillStyle = 'rgb(255, 255, 0)';  // Pure yellow - exact display color
                 ctx.fillText(text, x, y2);
             }
-            if (colorScheme === 4) {
+            if (colorScheme === 4 || colorScheme === 8) {
                 let y3 = y + fontSize * 1.4;
                 ctx.fillStyle = 'rgb(0, 255, 0)';  // Pure green - exact display color
                 ctx.fillText(text, x, y3);
@@ -2424,18 +2445,17 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                         addLog('Partial updates supported for this display', 'info');
                     }
                     const colorSchemeSelect = document.getElementById('colorSchemeSelect');
-                    const schemeShort = ['BW', 'BWR', 'BWY', 'BWRY', '6C', '4G', '16G'];
-                    const validScheme = Math.min(Math.max(colorScheme, 0), 6);
+                    const validScheme = clampScheme(colorScheme);
                     if (colorSchemeSelect) {
                         colorSchemeSelect.value = validScheme.toString();
-                        const schemeNames = ['Monochrome (B/W)', 'B/W + Red', 'B/W + Yellow', 'B/W + Red + Yellow', 'B/W + Green + Blue + Red + Yellow (6-color)', '4 Grayscale', '16 Grayscale (4bpp)'];
-                        addLog(`Color scheme automatically set to: ${schemeNames[validScheme]} (${validScheme})`, 'success');
+                        addLog(`Color scheme automatically set to: ${SCHEME_NAMES[validScheme] || validScheme} (${validScheme})`, 'success');
                     }
                     updatePreviewLine(validScheme);
                     updateDrawPalette();
                     updateTextColorSwatches();
                     updateQRColorSwatches();
                     doAll();
+                    addLog(`Canvas size set from device: ${widthInput}x${heightInput}`, 'success');
                 }
                 deviceLedCount = (parsedConfig.packets || []).filter(function(p) { return p.id === 0x21; }).length;
                 setLedUI(deviceLedCount > 0);
@@ -2453,14 +2473,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
         }
         function updatePreviewLine(validScheme) {
-            const schemeShort = ['BW', 'BWR', 'BWY', 'BWRY', '6C', '4G', '16G'];
-            const scheme = validScheme != null ? validScheme : Math.min(Math.max(parseInt(document.getElementById('colorSchemeSelect')?.value || '0', 10), 0), 6);
+            const scheme = validScheme != null ? clampScheme(validScheme) : getScheme();
             const previewMeta = document.getElementById('previewMeta');
             const previewLockIcon = document.getElementById('previewLockIcon');
             if (previewMeta) {
                 const diagonal = screenDiagonalInches(activeWidthMm, activeHeightMm);
                 const resolution = widthInput + '×' + heightInput + (diagonal != null ? ' (' + diagonal.toFixed(1) + '")' : '');
-                previewMeta.textContent = ' · ' + resolution + ' · ' + schemeShort[scheme] + (firmwareVersionPreview ? ' · v' + firmwareVersionPreview : '');
+                previewMeta.textContent = ' · ' + resolution + ' · ' + (SCHEME_SHORT[scheme] || ('S' + scheme)) + (firmwareVersionPreview ? ' · v' + firmwareVersionPreview : '');
             }
             if (previewLockIcon) {
                 const enc = bleLib && bleLib.encryptionSession && bleLib.encryptionSession.authenticated;
