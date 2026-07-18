@@ -1272,9 +1272,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 addLog('Not connected', 'error');
                 return;
             }
-            addLog('Requesting NFC content (0x0082/read)...', 'info');
+            addLog('Requesting NFC content (0x0083/read)...', 'info');
             try {
-                await bleLib.sendHexCommand('008200');
+                await bleLib.sendHexCommand('008300');
             } catch (e) {
                 addLog('NFC read error: ' + e.message, 'error');
             }
@@ -1335,20 +1335,20 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const lenLo = payloadLen & 0xFF;
             const typeLabels = ['Text', 'URI', 'Well-known', 'MIME', 'Raw_NDEF'];
             const typeLabel = typeLabels[typeValue] || 'NFC';
-            addLog('Writing NFC via 0x0082 (' + typeLabel + ', ' + payloadLen + ' bytes)...', 'info');
+            addLog('Writing NFC via 0x0083 (' + typeLabel + ', ' + payloadLen + ' bytes)...', 'info');
             try {
                 const MAX_NFC_CHUNK = 120;
                 if (payloadLen <= MAX_NFC_CHUNK) {
-                    const cmdHex = '008201' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo) + payloadHex;
+                    const cmdHex = '008301' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo) + payloadHex;
                     await bleLib.sendHexCommand(cmdHex);
                     return;
                 }
-                await bleLib.sendHexCommand('008210' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo));
+                await bleLib.sendHexCommand('008310' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo));
                 for (let i = 0; i < payloadHex.length; i += (MAX_NFC_CHUNK * 2)) {
                     const chunkHex = payloadHex.slice(i, i + (MAX_NFC_CHUNK * 2));
-                    await bleLib.sendHexCommand('008211' + chunkHex);
+                    await bleLib.sendHexCommand('008311' + chunkHex);
                 }
-                await bleLib.sendHexCommand('008212');
+                await bleLib.sendHexCommand('008312');
             } catch (e) {
                 addLog('NFC write error: ' + e.message, 'error');
             }
@@ -2174,7 +2174,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF77") {
                     const err = continuousHex.length >= 6 ? continuousHex.substring(4, 6) : "??";
                     addLog("Buzzer error (0x" + err + ")", 'error');
-                } else if (cmdHex === "0082") {
+                } else if (cmdHex === "0083") {
                     const bytesArr = (bytes && bytes.length) ? bytes : new Uint8Array();
                     if (bytesArr.length >= 3) {
                         const op = bytesArr[2];
@@ -2218,12 +2218,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                             if (contentInput) contentInput.value = decoded;
                             addLog('NFC read: type=' + nfcType + ', len=' + nfcLen + ', content="' + decoded + '"', 'success');
                         } else if (op === 0x81) {
-                            addLog('NFC write acknowledged (0x0082/0x81)', 'success');
+                            addLog('NFC write acknowledged (0x0083/0x81)', 'success');
                         } else if (op === 0xFF) {
                             const err = bytesArr.length >= 4 ? hexByte(bytesArr[3]) : '??';
                             addLog('NFC error (0x' + err + ')', 'error');
                         } else {
-                            addLog('NFC endpoint response (0x0082 op=0x' + hexByte(op) + ')', 'info');
+                            addLog('NFC endpoint response (0x0083 op=0x' + hexByte(op) + ')', 'info');
                         }
                     } else {
                         addLog('NFC endpoint response too short', 'warning');

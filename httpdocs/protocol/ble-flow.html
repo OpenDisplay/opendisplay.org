@@ -872,6 +872,34 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
     </p>
   </div>
 
+  <div class="col panel" id="nfc-endpoint">
+    <h2>NFC endpoint (<code>0x0083</code>)</h2>
+    <p class="intro-text">
+      BG22 firmware only (requires Flex NFC config <code>0x2A</code>). Opcode is <strong><code>0x0083</code></strong> — 
+      do not use <code>0x0082</code> (that is PIPE_WRITE end).
+    </p>
+    <div class="flow-step">
+      <h4>Sub-opcodes</h4>
+      <ul class="command-list">
+        <li><code>0x00</code> — Read current NDEF record</li>
+        <li><code>0x01</code> — Inline write: <code>[rec_type][len16 BE][payload…]</code> (payload ≤ 120 B)</li>
+        <li><code>0x10</code> — Chunked write start: <code>[rec_type][total_len16 BE]</code> (total ≤ 512 B)</li>
+        <li><code>0x11</code> — Chunked write data: payload bytes (≤ 120 B per frame)</li>
+        <li><code>0x12</code> — Chunked write end / commit</li>
+      </ul>
+      <p style="margin-top: 12px;"><code>rec_type</code>: <code>0</code> Text, <code>1</code> URI, <code>2</code> Well-known raw, <code>3</code> MIME, <code>4</code> Raw NDEF.</p>
+    </div>
+    <div class="flow-step">
+      <h4>Responses</h4>
+      <ul class="command-list">
+        <li>Read OK: <code>0x00 0x83 0x80 [rec_type][len16 BE][payload…]</code></li>
+        <li>Write committed: <code>0x00 0x83 0x81</code> (inline write or chunked end)</li>
+        <li>Chunk stage ACK: <code>0x00 0x83 0x82</code> (start / data accepted)</li>
+        <li>Error: <code>0xFF 0x83 0xFF [err]</code> — <code>1</code> malformed, <code>2</code> read fail, <code>3</code> write fail, <code>4</code> unknown sub, <code>5</code> bad type, <code>6</code> bad length, <code>7</code> no session, <code>8</code> overflow, <code>9</code> length mismatch</li>
+      </ul>
+    </div>
+  </div>
+
   <div class="col panel">
     <h2>Command Reference</h2>
     <p class="intro-text">Commands are 2-byte big-endian opcodes followed by payload. Direction notes apply where the same low byte appears in responses.</p>
@@ -893,7 +921,10 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
       <li><code>0x0075</code> — LED stop</li>
       <li><code>0x0076</code> — Partial region write start (main firmware, 1 bpp)</li>
       <li><code>0x0077</code> — Buzzer activate (main firmware)</li>
-      <li><code>0x0082</code> — NFC endpoint (BG22 firmware only)</li>
+      <li><code>0x0080</code> — PIPE_WRITE start (sliding-window image transfer)</li>
+      <li><code>0x0081</code> — PIPE_WRITE data (also device→client SACK)</li>
+      <li><code>0x0082</code> — PIPE_WRITE end</li>
+      <li><code>0x0083</code> — NFC endpoint (BG22 only; see <a href="#nfc-endpoint" style="color: var(--accent);">NFC endpoint</a>)</li>
       <li><code>0x0064</code> — Send data info (block-based; not implemented)</li>
       <li><code>0x0065</code> — Send block part (block-based; not implemented)</li>
     </ul>
