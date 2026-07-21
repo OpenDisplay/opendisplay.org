@@ -1655,6 +1655,7 @@
          },
          "defaultDisplay": "ep73-spectra-800x480",
          "defaultPower": "battery-2000",
+         "defaultRotation": "2",
          "dataBus": {
             "instance_number": "0x0",
             "bus_type": "0x1",
