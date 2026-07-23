@@ -3417,6 +3417,12 @@ function mergeSimpleConfigToFull() {
       if (simpleConfigSelections.driverBoard.powerDefaults.charger_flags !== undefined) {
         powerOptionFields.charger_flags = simpleConfigSelections.driverBoard.powerDefaults.charger_flags;
       }
+      if (simpleConfigSelections.driverBoard.powerDefaults.sleep_timeout_ms !== undefined) {
+        powerOptionFields.sleep_timeout_ms = simpleConfigSelections.driverBoard.powerDefaults.sleep_timeout_ms;
+      }
+      if (simpleConfigSelections.driverBoard.powerDefaults.tx_power !== undefined) {
+        powerOptionFields.tx_power = simpleConfigSelections.driverBoard.powerDefaults.tx_power;
+      }
     }
     if (isEsp32DriverBoard(simpleConfigSelections.driverBoard)) {
       powerOptionFields.deep_sleep_time_seconds = String(getEspDeepSleepSeconds());

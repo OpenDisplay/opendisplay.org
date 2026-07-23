@@ -73,99 +73,21 @@
          "index": 1
       },
       {
-         "id": "nrf54l15-en04",
-         "name": "Seeed EN04 (nRF54L15)",
-         "connectorPins": [24, 50],
-         "systemConfig": {
-            "ic_type": "7",
-            "communication_modes": "0x1",
-            "device_flags": "0x3",
-            "pwr_pin": "0x2b",
-            "reserved": "0x0"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "1",
-            "board_revision": "0x2",
-            "reserved": "0x0"
-         },
-         "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
-         },
-         "powerDefaults": {
-            "battery_sense_pin": "0x2",
-            "battery_sense_enable_pin": "0x5",
-            "voltage_scaling_factor": "706",
-            "deep_sleep_current_ua": "160"
-         },
-         "installConfig": {
-            "type": "nrf54l15",
-            "downloadFile": "",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware"
-         },
-         "transmission_modes": "9",
-         "index": 20
-      },
-      {
-         "id": "nrf54lm20-en04",
-         "name": "Seeed EN04 (nRF54LM20A)",
-         "connectorPins": [24, 50],
-         "systemConfig": {
-            "ic_type": "8",
-            "communication_modes": "0x1",
-            "device_flags": "0x3",
-            "pwr_pin": "0x2b",
-            "reserved": "0x0"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "1",
-            "board_revision": "0x3",
-            "reserved": "0x0"
-         },
-         "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
-         },
-         "powerDefaults": {
-            "battery_sense_pin": "0x18",
-            "battery_sense_enable_pin": "0x17",
-            "voltage_scaling_factor": "706",
-            "deep_sleep_current_ua": "80"
-         },
-         "installConfig": {
-            "type": "nrf54lm20",
-            "downloadFile": "",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware"
-         },
-         "transmission_modes": "9",
-         "index": 21
-      },
-      {
          "id": "nrf54l15-xiao",
-         "name": "Seeed XIAO ePaper Breakout — nRF54L15",
-         "connectorPins": [24],
+         "name": "Seeed XIAO ePaper Breakout \u2014 nRF54L15",
+         "connectorPins": [
+            24
+         ],
          "systemConfig": {
             "ic_type": "7",
             "communication_modes": "0x1",
-            "device_flags": "0x1",
+            "device_flags": "0x21",
             "pwr_pin": "0xff",
             "reserved": "0x0"
          },
          "manufacturerData": {
             "manufacturer_id": "1",
-            "board_type": "5",
+            "board_type": "15",
             "board_revision": "0x2",
             "reserved": "0x0"
          },
@@ -198,38 +120,76 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware-nrf54"
          },
-         "transmission_modes": "9",
+         "transmission_modes": "25",
          "index": 22
       },
       {
          "id": "nrf54lm20-xiao",
          "name": "Seeed XIAO ePaper Breakout nRF54LM20A",
-         "connectorPins": [24],
+         "connectorPins": [
+            24
+         ],
          "systemConfig": {
             "ic_type": "8",
             "communication_modes": "0x1",
-            "device_flags": "0x1",
+            "device_flags": "0x21",
             "pwr_pin": "0xff",
             "reserved": "0x0"
          },
          "manufacturerData": {
             "manufacturer_id": "1",
-            "board_type": "5",
+            "board_type": "16",
             "board_revision": "3",
             "reserved": "0x0"
          },
          "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
+            "reset": "0x10",
+            "busy": "0x17",
+            "dc": "0xbd",
+            "cs": "0xbf",
+            "data": "0x16",
+            "clk": "0x14"
          },
          "powerDefaults": {
             "battery_sense_pin": "0xFF",
             "battery_sense_enable_pin": "0xFF",
-            "voltage_scaling_factor": "0x0"
+            "voltage_scaling_factor": "0x0",
+            "sleep_timeout_ms": "40000",
+            "tx_power": "0x0"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "0xB6",
+            "led_2_g": "0xB8",
+            "led_3_b": "0xB7",
+            "led_4": "0xff",
+            "led_flags": "0x7",
+            "reserved": "0x0"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0xb1",
+            "pin_2": "0xb2",
+            "pin_3": "0x0",
+            "pin_4": "0x0",
+            "pin_5": "0x0",
+            "pin_6": "0x0",
+            "pin_7": "0x0",
+            "bus_speed_hz": "0x186a0",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "instance_number": "0x0",
+            "sensor_type": "6",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x6b",
+            "msd_data_start_byte": "10",
+            "reserved": "000000000000000000000000000000000000000000000000"
          },
          "installConfig": {
             "type": "nrf54lm20",
@@ -237,7 +197,8 @@
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
-         "transmission_modes": "9",
+         "defaultPower": "battery-2000",
+         "transmission_modes": "25",
          "index": 23
       },
       {

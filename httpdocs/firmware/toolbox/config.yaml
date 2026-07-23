@@ -129,7 +129,8 @@ ble_proto:
             name: pwr_latch_dff
             description: 74AHC1G79 D-FF power latch; pwr_pin_2=D (hold data), pwr_pin_3=CP (clock). No power-button poll; command 0x0052 releases latch
           5:
-            name: reserved_5
+            name: channel_sounding
+            description: BLE Channel Sounding (RAS reflector) enabled when firmware supports it (nRF54)
           6:
             name: reserved_6
           7:
@@ -226,6 +227,12 @@ ble_proto:
               14:
                 name: reTerminal_E1004
                 description: reTerminal E1004
+              15:
+                name: NRF54L15
+                description: XIAO nRF54L15
+              16:
+                name: NRF54LM20
+                description: XIAO nRF54LM20A
             2:
               0:
                 name: ESP32_S3:PhotoPainter
@@ -1002,15 +1009,18 @@ ble_proto:
           5:
             name: bq27220
             description: TI BQ27220 fuel gauge (I2C 0x55). Voltage in MSD bytes 14–15; one packed dynamic byte at msd_data_start_byte (bits 0–6 = SOC %, bit 7 = charging; 0xFF index = skip)
+          6:
+            name: npm1300
+            description: Nordic nPM1300 PMIC. Bit-bang I2C via data_bus (bus_id); default addr 0x6B. Voltage in MSD 14–15; packed SOC/charging byte like BQ27220 (SOC estimated from VBAT)
       - name: bus_id
         size: 1
         description: Instance id of the bus to use for this sensor
       - name: i2c_addr_7bit
         size: 1
-        description: I2C 7-bit address; 0 or 0xFF = default for sensor (SHT40 0x44, BQ27220 0x55)
+        description: I2C 7-bit address; 0 or 0xFF = default for sensor (SHT40 0x44, BQ27220 0x55, NPM1300 0x6B)
       - name: msd_data_start_byte
         size: 1
-        description: First dynamicreturndata index. SHT40 uses 3 bytes (0 or 0xFF = default 7). BQ27220 uses 1 packed byte (0xFF = do not publish)
+        description: First dynamicreturndata index. SHT40 uses 3 bytes (0 or 0xFF = default 7). BQ27220/NPM1300 uses 1 packed byte (0xFF = do not publish)
       - name: reserved
         size: 24
         description: Reserved bytes for future use
