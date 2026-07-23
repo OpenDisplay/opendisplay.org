@@ -3654,14 +3654,7 @@ function createDisplayConfig(display, driverBoardId) {
     : ((config.transmission_modes != null && `${config.transmission_modes}` !== '')
       ? `${config.transmission_modes}`
       : '10');
-  // The enclosure decides the viewing orientation, so a driver board's
-  // defaultRotation wins over a panel preset's own rotation quirk.
-  const rotation = (driverBoard && driverBoard.defaultRotation != null && `${driverBoard.defaultRotation}` !== '')
-    ? `${driverBoard.defaultRotation}`
-    : ((config.rotation != null && `${config.rotation}` !== '')
-      ? `${config.rotation}`
-      : '0');
-
+  
   return {
     instance_number: '0x0',
     display_technology: '1',
@@ -3671,7 +3664,7 @@ function createDisplayConfig(display, driverBoardId) {
     active_width_mm: config.active_width_mm,
     active_height_mm: config.active_height_mm,
     legacy_tagtype: '0x0',
-    rotation: rotation,
+    rotation: '0',
     reset_pin: pins.reset,
     busy_pin: pins.busy,
     dc_pin: pins.dc,
