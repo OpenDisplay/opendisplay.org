@@ -130,18 +130,42 @@
             "reserved": "0x0"
          },
          "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
+            "reset": "0x10",
+            "busy": "0x17",
+            "dc": "0x1d",
+            "cs": "0x1f",
+            "data": "0x16",
+            "clk": "0x14"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0x11",
+            "pin_2": "0x12",
+            "pin_3": "0x0",
+            "pin_4": "0x0",
+            "pin_5": "0x0",
+            "pin_6": "0x0",
+            "pin_7": "0x0",
+            "bus_speed_hz": "0x186a0",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
          },
          "powerDefaults": {
-            "battery_sense_pin": "0x18",
-            "battery_sense_enable_pin": "0x17",
-            "voltage_scaling_factor": "706",
+            "battery_sense_pin": "255",
+            "battery_sense_enable_pin": "255",
+            "voltage_scaling_factor": "0",
             "deep_sleep_current_ua": "80"
+         },
+         "sensorData": {
+            "instance_number": "0x0",
+            "sensor_type": "6",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x6b",
+            "msd_data_start_byte": "10",
+            "reserved": "000000000000000000000000000000000000000000000000"
          },
          "installConfig": {
             "type": "nrf54lm20",
@@ -219,17 +243,43 @@
             "reserved": "0x0"
          },
          "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
+            "reset": "0x10",
+            "busy": "0x17",
+            "dc": "0xbd",
+            "cs": "0xbf",
+            "data": "0x16",
+            "clk": "0x14"
          },
          "powerDefaults": {
             "battery_sense_pin": "0xFF",
             "battery_sense_enable_pin": "0xFF",
-            "voltage_scaling_factor": "0x0"
+            "voltage_scaling_factor": "0x0",
+            "sleep_timeout_ms": "40000",
+            "tx_power": "0x0"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0xb1",
+            "pin_2": "0xb2",
+            "pin_3": "0x0",
+            "pin_4": "0x0",
+            "pin_5": "0x0",
+            "pin_6": "0x0",
+            "pin_7": "0x0",
+            "bus_speed_hz": "0x186a0",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "instance_number": "0x0",
+            "sensor_type": "6",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x6b",
+            "msd_data_start_byte": "10",
+            "reserved": "000000000000000000000000000000000000000000000000"
          },
          "installConfig": {
             "type": "nrf54lm20",
@@ -1655,7 +1705,6 @@
          },
          "defaultDisplay": "ep73-spectra-800x480",
          "defaultPower": "battery-2000",
-         "defaultRotation": "2",
          "dataBus": {
             "instance_number": "0x0",
             "bus_type": "0x1",
