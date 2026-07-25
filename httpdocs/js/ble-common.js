@@ -89,6 +89,7 @@ class OpenDisplayBLE {
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.reconnectTimer = null;
+    this._gattConnecting = null;
     this.autoReconnectEnabled = true; // disabled by explicit user disconnect
     // Bound once so add/removeEventListener share the same reference.
     this._onDisconnect = () => this.handleDisconnect();
@@ -745,28 +746,47 @@ class OpenDisplayBLE {
     if (!this.device) {
       throw new Error('No device selected');
     }
-    
-    if (this.device.gatt && this.device.gatt.connected) {
-      this.log('Already connected to GATT', 'info');
+
+    // Fully set up already — nothing to do.
+    if (this.isConnected && this.characteristic && this.device.gatt && this.device.gatt.connected) {
+      this.log('Already connected', 'info');
       return true;
     }
-    
+
+    // Coalesce concurrent connectToGATT calls (stacked reconnect timers / listeners).
+    if (this._gattConnecting) {
+      this.log('GATT connect already in progress', 'info');
+      return this._gattConnecting;
+    }
+
+    this._gattConnecting = this._doConnectToGATT().finally(() => {
+      this._gattConnecting = null;
+    });
+    return this._gattConnecting;
+  }
+
+  async _doConnectToGATT() {
     try {
       this.autoReconnectEnabled = true;
-      this.log(`Connecting to GATT Server on: ${this.device.name || this.device.id}...`, 'info');
-      this.setStatus('Connecting...', false);
-      
-      this.gattServer = await this.device.gatt.connect();
-      this.log('GATT Server connected', 'success');
-      
-      // Log connection state
+
+      // Browser may still hold an open GATT link while our app state was reset
+      // (failed service discovery, mid-reconnect race, etc.). Reuse it and finish
+      // setup — do not early-return or isConnected stays false and commands fail.
+      if (this.device.gatt && this.device.gatt.connected) {
+        this.log('GATT already open; finishing service setup...', 'info');
+        this.gattServer = this.device.gatt;
+      } else {
+        this.log(`Connecting to GATT Server on: ${this.device.name || this.device.id}...`, 'info');
+        this.setStatus('Connecting...', false);
+        this.gattServer = await this.device.gatt.connect();
+        this.log('GATT Server connected', 'success');
+      }
+
       this.log(`GATT Server state: connected=${this.gattServer.connected}`, 'info');
-      
+
       this.service = await this.gattServer.getPrimaryService(this.serviceUUID);
       this.log(`Service ${bluetoothUuidShortLabel(this.serviceUUID)} found`, 'success');
-      
-      // Get characteristic with encryption retry logic
-      // This will automatically wait for encryption if the characteristic requires it
+
       this.log('Accessing characteristic (encryption will be established if needed)...', 'info');
       try {
         this.characteristic = await this.waitForEncryptionAndGetCharacteristic(5, 200);
@@ -776,12 +796,10 @@ class OpenDisplayBLE {
         this.log(`Error details: code=${charError.code}, stack=${charError.stack}`, 'error');
         throw charError;
       }
-      
-      // Wait a bit for encryption to fully establish before enabling notifications
+
       this.log('Waiting for encryption to stabilize...', 'info');
       await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Try to enable notifications with retries
+
       try {
         await this.enableNotificationsWithRetry(5, 200);
         // Remove first so a reconnect against Chrome's cached characteristic
@@ -793,8 +811,7 @@ class OpenDisplayBLE {
       } catch (notifyError) {
         this.log(`Failed to start notifications: ${notifyError.name} - ${notifyError.message}`, 'error');
         this.log(`Error details: code=${notifyError.code}, stack=${notifyError.stack}`, 'error');
-        
-        // Log additional diagnostic info
+
         this.log(`Characteristic properties: ${JSON.stringify(this.characteristic.properties || {})}`, 'error');
         try {
           const descriptors = await this.characteristic.getDescriptors();
@@ -805,18 +822,18 @@ class OpenDisplayBLE {
         } catch (descError) {
           this.log(`Could not get descriptors: ${descError.message}`, 'error');
         }
-        
+
         throw notifyError;
       }
-      
+
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.setStatus('Connected', true);
-      
+
       if (this.onConnect) {
         this.onConnect();
       }
-      
+
       return true;
     } catch (error) {
       this.handleError(error);
@@ -863,19 +880,24 @@ class OpenDisplayBLE {
     this.log('Device disconnected', 'warning');
     this.resetState();
     this.setStatus('Disconnected', false);
-    
+
     if (this.onDisconnect) {
       this.onDisconnect();
     }
-    
+
     // Attempt reconnection unless explicitly disabled by user disconnect
     if (this.autoReconnectEnabled && this.device && this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * this.reconnectAttempts;
       this.log(`Connection lost. Retrying (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms...`, 'info');
       this.setStatus(`Reconnecting ${this.reconnectAttempts}/${this.maxReconnectAttempts}...`, false);
-      
+
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
       this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
         this.connectToGATT().catch(error => {
           if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             this.log('Reconnection failed after max attempts', 'error');

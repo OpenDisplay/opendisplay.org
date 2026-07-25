@@ -1536,10 +1536,13 @@ ble_proto:
         enum:
           0:
             name: auto
-            description: Auto (currently resolves to TNB132M flow in firmware)
+            description: Auto (TNB132M on Silabs; SoC NFCT on nRF54LM20)
           1:
             name: tnb132m
-            description: TNB132M / Type-3 flow
+            description: TNB132M / Type-3 flow (external IC + I2C data_bus)
+          2:
+            name: soc_nfct
+            description: SoC NFCT Type-2 tag (nRF54LM20 N1/N2 antenna pads; bus/power pins ignored)
       - name: bus_instance
         size: 1
         description: data_bus instance to use (I2C)

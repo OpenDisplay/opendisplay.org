@@ -191,6 +191,25 @@
             "msd_data_start_byte": "10",
             "reserved": "000000000000000000000000000000000000000000000000"
          },
+         "nfcConfig": {
+            "instance_number": "0x0",
+            "nfc_ic_type": "2",
+            "bus_instance": "0x0",
+            "flags": "0x1",
+            "field_detect_pin": "0xff",
+            "field_detect_mode": "0",
+            "field_detect_active": "0",
+            "field_detect_debounce_ms": "0x0",
+            "power_pin": "0xff",
+            "power_active": "0x0",
+            "power_on_delay_ms": "0x0",
+            "power_off_delay_ms": "0x0",
+            "adv_button_byte_index": "1",
+            "adv_button_button_id": "0x7",
+            "reserved_pin_1": "0x0",
+            "reserved_pin_2": "0x0",
+            "reserved": "00000000000000000000000000000000"
+         },
          "installConfig": {
             "type": "nrf54lm20",
             "downloadFile": "",
