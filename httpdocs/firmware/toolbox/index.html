@@ -76,27 +76,12 @@
     })();
   </script>
   <script>
-    // Wait for polyfill to be ready before loading ESP Web Tools and nRF Web Tools
+    // ESP / nRF52 use Web Serial (polyfill on Android). nRF54 uses WebUSB only —
+    // do not wait for the serial polyfill before loading nRF54 tools.
     (function() {
       const isAndroid = /Android/i.test(navigator.userAgent);
-      
-      function loadScripts() {
-        // Load ESP Web Tools
-        if (document.querySelector('script[src*="install-button.js"]') === null) {
-          const espScript = document.createElement('script');
-          espScript.type = 'module';
-          espScript.src = './js/install-button.js';
-          document.head.appendChild(espScript);
-        }
-        
-        // Load nRF Web Tools (nRF52840 serial DFU)
-        if (document.querySelector('script[src="/js/nrf_web_tools.js"]') === null) {
-          const nrfScript = document.createElement('script');
-          nrfScript.src = '/js/nrf_web_tools.js';
-          document.head.appendChild(nrfScript);
-        }
 
-        // Load nRF54 Web Tools (CMSIS-DAP flash + RTT)
+      function loadNrf54Scripts() {
         if (document.querySelector('script[src="/nrf54_web_tools/dap.umd.js"]') === null) {
           const dapScript = document.createElement('script');
           dapScript.src = '/nrf54_web_tools/dap.umd.js';
@@ -108,21 +93,34 @@
           document.head.appendChild(nrf54Script);
         }
       }
-      
+
+      function loadSerialInstallScripts() {
+        if (document.querySelector('script[src*="install-button.js"]') === null) {
+          const espScript = document.createElement('script');
+          espScript.type = 'module';
+          espScript.src = './js/install-button.js';
+          document.head.appendChild(espScript);
+        }
+        if (document.querySelector('script[src="/js/nrf_web_tools.js"]') === null) {
+          const nrfScript = document.createElement('script');
+          nrfScript.src = '/js/nrf_web_tools.js';
+          document.head.appendChild(nrfScript);
+        }
+      }
+
+      loadNrf54Scripts();
+
       if (isAndroid && navigator.usb) {
-        // On Android with WebUSB, wait for polyfill
-        window.addEventListener('webSerialPolyfillReady', loadScripts, { once: true });
-        // Fallback timeout
+        window.addEventListener('webSerialPolyfillReady', loadSerialInstallScripts, { once: true });
         setTimeout(function() {
-          if (document.querySelector('script[src*="install-button.js"]') === null || 
-              document.querySelector('script[src="nrf_web_tools.js"]') === null) {
+          if (document.querySelector('script[src*="install-button.js"]') === null ||
+              document.querySelector('script[src="/js/nrf_web_tools.js"]') === null) {
             console.warn('Polyfill took too long to load, proceeding anyway');
-            loadScripts();
+            loadSerialInstallScripts();
           }
         }, 2000);
       } else {
-        // Desktop or no WebUSB, load immediately
-        loadScripts();
+        loadSerialInstallScripts();
       }
     })();
   </script>
@@ -466,6 +464,25 @@ function isToolboxBleOnlyMode() {
 
 function toolboxSkipsUsbFirmwareStep() {
   return isToolboxBleOnlyMode();
+}
+
+/** nRF54 CMSIS-DAP needs WebUSB — Android serial polyfill does not help. */
+function toolboxSupportsNrf54UsbInstall() {
+  if (toolboxSkipsUsbFirmwareStep()) return false;
+  return !!navigator.usb;
+}
+
+function toolboxCanShowUsbInstall(installType) {
+  if (installType === 'nrf54l15' || installType === 'nrf54lm20') {
+    return toolboxSupportsNrf54UsbInstall();
+  }
+  return !toolboxSkipsUsbFirmwareStep();
+}
+
+function toolboxSkipsUsbForSelectedBoard() {
+  const board = simpleConfigSelections.driverBoard;
+  if (!board || !board.installConfig) return true;
+  return !toolboxCanShowUsbInstall(board.installConfig.type);
 }
 
 async function ensureWebBluetoothAvailable() {
@@ -2523,7 +2540,7 @@ function handleDriverBoardChange() {
   updateEspDeepSleepVisibility(selectedBoard);
   
   // Show install button if board has install config (USB install is unavailable on iOS / Bluefy)
-  if (selectedBoard.installConfig && !toolboxSkipsUsbFirmwareStep()) {
+  if (selectedBoard.installConfig && toolboxCanShowUsbInstall(selectedBoard.installConfig.type)) {
     const installType = selectedBoard.installConfig.type;
     const installNrf54Btn = document.getElementById('installNrf54Btn');
     if (installType === 'esp32' || installType === 'nrf52840' || installType === 'nrf54l15' || installType === 'nrf54lm20') {
@@ -2820,7 +2837,7 @@ function updateToolboxChecklist() {
   setToolboxChecklistItem('checkDriverBoard', !!simpleConfigSelections.driverBoard);
   setToolboxChecklistItem('checkDisplay', !!simpleConfigSelections.display);
   setToolboxChecklistItem('checkPower', !!simpleConfigSelections.power);
-  setToolboxChecklistItem('checkFirmware', toolboxFirmwareInstalled || toolboxSkipsUsbFirmwareStep());
+  setToolboxChecklistItem('checkFirmware', toolboxFirmwareInstalled || toolboxSkipsUsbForSelectedBoard());
   setToolboxChecklistItem('checkConfigured', toolboxDeviceConfigured);
 }
 
@@ -2844,7 +2861,7 @@ function updateSimpleConfigStatus() {
     setSimpleConfigStatus('Done — your device is configured. Open the BLE Tester to upload images.', 'success');
   } else if (missing.length > 0) {
     setSimpleConfigStatus('Select ' + missing.join(', ') + ' to continue.', 'pending');
-  } else if (!toolboxFirmwareInstalled && !toolboxSkipsUsbFirmwareStep()) {
+  } else if (!toolboxFirmwareInstalled && !toolboxSkipsUsbForSelectedBoard()) {
     setSimpleConfigStatus('Hardware selected. Install firmware over USB (step 2), then configure over Bluetooth.', 'pending');
   } else {
     setSimpleConfigStatus('Ready — power on your device and click Configure over Bluetooth.', 'ready');

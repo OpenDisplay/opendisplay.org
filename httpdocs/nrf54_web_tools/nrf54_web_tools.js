@@ -644,15 +644,18 @@
       return parseIntelHex(await hex.text());
     }
     if (typeof hex === 'string') {
-      if (hex.includes(':') && hex.trim().startsWith(':')) {
+      const trimmed = hex.trim();
+      // Inline Intel HEX (starts with a record). Otherwise treat as URL/path.
+      if (trimmed.startsWith(':')) {
         return parseIntelHex(hex);
       }
-      if (/^https?:\/\//i.test(hex) || hex.startsWith('/') || hex.startsWith('.')) {
-        const res = await fetch(hex);
-        if (!res.ok) throw new Error(`Failed to fetch HEX: ${res.status}`);
-        return parseIntelHex(await res.text());
+      const res = await fetch(hex);
+      if (!res.ok) throw new Error(`Failed to fetch HEX: ${res.status} (${hex})`);
+      const text = await res.text();
+      if (!text.trim().startsWith(':')) {
+        throw new Error(`Fetched content is not Intel HEX (${hex})`);
       }
-      return parseIntelHex(hex);
+      return parseIntelHex(text);
     }
     throw new Error('hex must be a URL, HEX string, File, or Uint8Array');
   }
