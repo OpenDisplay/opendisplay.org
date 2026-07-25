@@ -34,12 +34,21 @@ const PIPE_ACK_TIMEOUT_MS = 8000;     // data-phase stall bound (mirrors direct 
 const PIPE_TAIL_FLUSH_MS = 600;       // tail dup-probe delay (< ackEvery unacked at the tail)
 const PIPE_VERSION = 1;
 const PIPE_FLAG_COMPRESSED = 0x01;
+const PIPE_FLAG_PARTIAL = 0x02;       // 0x0080 flags bit1: transfer is a partial-region refresh
 const PIPE_REQ_WINDOW = 16;           // requested max queue size (tokens in flight)
 const PIPE_REQ_ACK_EVERY = 4;         // requested ACK cadence (tighter than python's 8)
 const PIPE_MAX_PTO = 3;               // silent tail/PTO probes before abort
 const PIPE_RETX_ACK_SPACING = 2;      // ACKs a retransmit gets to land before repeating it
 const PIPE_MAX_RETX_FRACTION = 0.5;   // per-transfer retx budget as a fraction of chunk count
 const TRANSMISSION_MODE_PIPE_WRITE = 0x10; // transmission_modes bit 4
+// PIPE_WRITE_START NACK err codes (OD_ERR_PIPE_START_*). Partial-specific codes
+// mirror py-opendisplay PIPE_START_NACK_*; 0x02 doubles as "unknown flag" for
+// older pipe-capable firmware that does not understand PIPE_FLAG_PARTIAL.
+const PIPE_START_NACK_COMPRESSION = 0x02;
+const PIPE_START_NACK_ETAG_MISMATCH = 0x05;
+const PIPE_START_NACK_PARTIAL_UNSUPPORTED = 0x06;
+const PIPE_START_NACK_RECT_INVALID = 0x07;
+const REFRESH_PARTIAL = 2;            // wire refresh selector for true partial waveform
 
 // display.partial_update_support (config tool enum)
 const PARTIAL_UPDATE_NONE = 0;
@@ -133,6 +142,10 @@ class OpenDisplayBLE {
     // on disconnect (see resetState).
     this.pipeWriteState = null;
     this.pipeProbe = { probed: false, supported: false };
+    // null = unprobed this connection; false = device rejected pipe-partial
+    // (ACK without bit1, or NACK 0x02/0x06 on a partial START) — skip 0x0080
+    // partial for the rest of the connection and use legacy 0x76.
+    this.pipePartialSupported = null;
 
     this.partialState = {
       etag: 0,
@@ -933,6 +946,7 @@ class OpenDisplayBLE {
     // The pipe-write probe is per-connection: a device that ignored 0x0080 (or a
     // reconnect to pipe-capable firmware) must be re-probed on the next transfer.
     this.pipeProbe = { probed: false, supported: false };
+    this.pipePartialSupported = null;
   }
 
   /**
@@ -4003,13 +4017,53 @@ class OpenDisplayBLE {
     }
 
     const partialNewEtag = this.generateEtag();
+    // Keep `prepared` intact for full-frame fallback (pipe/0x76 NACK → full upload).
+    // Partial wire bytes ride only on these dedicated fields.
+    const partialPrepared = {
+      ...prepared,
+      statusMessage:
+        `Partial update ${region.rw}x${region.rh} at (${region.rx},${region.ry})`,
+      partialRegion: region,
+      partialOldEtag: this.partialState.etag,
+      partialNewEtag,
+      partialStreamBytes: streamBytes,
+      partialLogicalStream: logicalStream,
+      partialCompressed,
+      // Palette to commit on partial success (slice so later canvas edits don't mutate).
+      partialPalette: palette.slice(),
+      partialPaletteWidth: imageWidth,
+      partialPaletteHeight: imageHeight
+    };
+
+    // Pipe-first (parity with py-opendisplay _maybe_upload_partial): ride the
+    // sliding window when the device advertises PIPE_WRITE and has not rejected
+    // pipe-partial this connection. Falls through to legacy 0x76 otherwise.
+    if (
+      this._pipeEligible(partialPrepared) &&
+      this.pipePartialSupported !== false
+    ) {
+      return this._activatePipeWrite(partialPrepared, /*partial=*/true);
+    }
+
+    return this._activateLegacyPartialWrite(partialPrepared);
+  }
+
+  /**
+   * Legacy 0x76 / 0x71 / 0x72 stop-and-wait partial upload. Used when pipe is
+   * ineligible or the device rejected / ignored a pipe-partial START.
+   */
+  _activateLegacyPartialWrite(prepared) {
+    const region = prepared.partialRegion;
+    const streamBytes = prepared.partialStreamBytes;
+    const partialCompressed = prepared.partialCompressed;
+    const partialNewEtag = prepared.partialNewEtag;
     const flags = partialCompressed ? 1 : 0;
     const fixed = new Uint8Array(17);
     fixed[0] = flags;
-    fixed[1] = (this.partialState.etag >>> 24) & 0xFF;
-    fixed[2] = (this.partialState.etag >>> 16) & 0xFF;
-    fixed[3] = (this.partialState.etag >>> 8) & 0xFF;
-    fixed[4] = this.partialState.etag & 0xFF;
+    fixed[1] = (prepared.partialOldEtag >>> 24) & 0xFF;
+    fixed[2] = (prepared.partialOldEtag >>> 16) & 0xFF;
+    fixed[3] = (prepared.partialOldEtag >>> 8) & 0xFF;
+    fixed[4] = prepared.partialOldEtag & 0xFF;
     fixed[5] = (partialNewEtag >>> 24) & 0xFF;
     fixed[6] = (partialNewEtag >>> 16) & 0xFF;
     fixed[7] = (partialNewEtag >>> 8) & 0xFF;
@@ -4046,9 +4100,9 @@ class OpenDisplayBLE {
       chunkSize: prepared.chunkSize,
       pipelineSize: prepared.pipelineSize,
       partialNewEtag,
-      newPalette: palette.slice(),
-      paletteWidth: imageWidth,
-      paletteHeight: imageHeight,
+      newPalette: prepared.partialPalette.slice(),
+      paletteWidth: prepared.partialPaletteWidth,
+      paletteHeight: prepared.partialPaletteHeight,
       fullFallback: prepared
     };
 
@@ -4059,7 +4113,7 @@ class OpenDisplayBLE {
         `Partial update ${region.rw}x${region.rh} at (${region.rx},${region.ry}), ${chunks.length + (initial.length ? 1 : 0)} chunks`
       );
     }
-    this.log(`Partial update rect=(${region.rx},${region.ry},${region.rw},${region.rh}) stream=${streamBytes.length}B`, 'info');
+    this.log(`Partial update (0x76) rect=(${region.rx},${region.ry},${region.rw},${region.rh}) stream=${streamBytes.length}B`, 'info');
     const sendPromise = this.sendHexCommand(startHex);
     this._armDirectWriteAckTimer('partial start');
     return sendPromise;
@@ -4078,7 +4132,7 @@ class OpenDisplayBLE {
     this.log('Falling back to full upload', 'info');
     fallback.statusMessage = 'Partial unavailable, uploading full frame...';
     // Route through _startFullUpload so a pipe-capable device uses the fast
-    // sliding-window path for the full frame too (pipe is full-frame only).
+    // sliding-window path for the full frame too.
     return this._startFullUpload(fallback);
   }
 
@@ -4345,7 +4399,7 @@ if (supportsStreamingDecompression) {
       }
       
       if (state.mode === 'partial') {
-        this.sendHexCommand(this.buildDirectWriteEndHex(2));
+        this.sendHexCommand(this.buildDirectWriteEndHex(REFRESH_PARTIAL));
       } else if (state.trackPartial && state.newEtag) {
         // Send the etag-bearing end payload so the firmware stores displayed_etag
         // (handleDirectWriteEnd only stores it for payloads of length >= 5),
@@ -4625,13 +4679,22 @@ if (supportsStreamingDecompression) {
   /**
    * Build a PIPE_WRITE_START (0x0080) command hex string.
    * Wire: [00][80][ver][flags][req_w][req_n][client_max_frame:2 LE][total_size:4 LE]
+   *   + iff partial: [old_etag:4 LE][x:2 LE][y:2 LE][w:2 LE][h:2 LE]
    *
-   * NOTE: this header is LITTLE-endian, unlike the legacy 0x70 START which packs
-   * its size fields big-endian. The byte order is deliberately not reused — see
-   * build_pipe_write_start_command in py-opendisplay commands.py.
+   * NOTE: this header is LITTLE-endian, unlike the legacy 0x70/0x76 START which packs
+   * its size/geometry fields big-endian. The byte order is deliberately not reused —
+   * see build_pipe_write_start_command in py-opendisplay commands.py.
+   *
+   * @param {boolean} compressed
+   * @param {number} totalSize - decompressed byte total (partial: plane_size*2)
+   * @param {number} reqW
+   * @param {number} reqN
+   * @param {number} clientMaxFrame
+   * @param {{oldEtag:number,x:number,y:number,w:number,h:number}|null} partial
    */
-  _buildPipeStartHex(compressed, totalSize, reqW, reqN, clientMaxFrame) {
-    const flags = compressed ? PIPE_FLAG_COMPRESSED : 0;
+  _buildPipeStartHex(compressed, totalSize, reqW, reqN, clientMaxFrame, partial = null) {
+    let flags = compressed ? PIPE_FLAG_COMPRESSED : 0;
+    if (partial) flags |= PIPE_FLAG_PARTIAL;
     const p = [
       PIPE_VERSION,
       flags & 0xFF,
@@ -4640,6 +4703,16 @@ if (supportsStreamingDecompression) {
       clientMaxFrame & 0xFF, (clientMaxFrame >>> 8) & 0xFF,
       totalSize & 0xFF, (totalSize >>> 8) & 0xFF, (totalSize >>> 16) & 0xFF, (totalSize >>> 24) & 0xFF
     ];
+    if (partial) {
+      const e = partial.oldEtag >>> 0;
+      p.push(
+        e & 0xFF, (e >>> 8) & 0xFF, (e >>> 16) & 0xFF, (e >>> 24) & 0xFF,
+        partial.x & 0xFF, (partial.x >>> 8) & 0xFF,
+        partial.y & 0xFF, (partial.y >>> 8) & 0xFF,
+        partial.w & 0xFF, (partial.w >>> 8) & 0xFF,
+        partial.h & 0xFF, (partial.h >>> 8) & 0xFF
+      );
+    }
     return '0080' + this.bytesToHex(p).replace(/\s+/g, '');
   }
 
@@ -4690,17 +4763,33 @@ if (supportsStreamingDecompression) {
   }
 
   /**
-   * Begin a pipe-write transfer: send the 0x0080 START and arm the 2s probe timer.
+   * Begin a pipe-write transfer: send the 0x0080 START and arm the probe timer.
    * The transfer stays in phase 'start' until the device ACKs (negotiation),
    * NACKs, or the timer fires (=> legacy fallback).
+   *
+   * @param {Object} prepared
+   * @param {boolean} [partial=false] - when true, set PIPE_FLAG_PARTIAL + geometry
+   *   and stream prepared.partialStreamBytes (not the full-frame rawData).
    */
-  _activatePipeWrite(prepared) {
+  _activatePipeWrite(prepared, partial = false) {
+    const region = prepared.partialRegion;
+    const useCompressed = partial ? !!prepared.partialCompressed : !!prepared.useCompressed;
+    const totalSize = partial ? prepared.partialLogicalStream.length : prepared.uncompressedSize;
+    const payload = partial
+      ? (useCompressed ? prepared.partialStreamBytes : prepared.partialLogicalStream)
+      : prepared.rawData;
+    const newEtag = partial ? prepared.partialNewEtag : prepared.newEtag;
+    const paletteBuffer = partial ? prepared.partialPalette : prepared.paletteBuffer;
+    const paletteWidth = partial ? prepared.partialPaletteWidth : prepared.paletteWidth;
+    const paletteHeight = partial ? prepared.partialPaletteHeight : prepared.paletteHeight;
+
     const state = {
       active: true,
       phase: 'start',
-      compressed: !!prepared.useCompressed,
-      totalSize: prepared.uncompressedSize,
-      payload: prepared.rawData,
+      partial: !!partial,
+      compressed: useCompressed,
+      totalSize,
+      payload,
       clientMaxFrame: this.encryptionSession.authenticated ? 185 : 232,
       // Negotiated (post-min-rule) parameters, filled in _processPipeStartAck.
       window: 0,
@@ -4721,17 +4810,17 @@ if (supportsStreamingDecompression) {
       bytesSent: 0,
       sending: false,
       retriedUncompressed: false,
-      // Carried through so a START-silence fallback re-enters the legacy path.
+      // Carried through so a START-silence / NACK fallback re-enters the legacy path.
       legacyPrepared: prepared,
       onProgress: prepared.onProgress,
       onComplete: prepared.onComplete,
       onStatusChange: prepared.onStatusChange,
       useFastRefresh: prepared.useFastRefresh,
-      trackPartial: prepared.trackPartial,
-      newEtag: prepared.newEtag,
-      paletteBuffer: prepared.paletteBuffer,
-      paletteWidth: prepared.paletteWidth,
-      paletteHeight: prepared.paletteHeight,
+      trackPartial: partial ? true : prepared.trackPartial,
+      newEtag,
+      paletteBuffer,
+      paletteWidth,
+      paletteHeight,
       uploadStartTime: Date.now(),
       uploadEndTime: null,
       refreshStartTime: null,
@@ -4741,33 +4830,78 @@ if (supportsStreamingDecompression) {
     if (prepared.onStatusChange) {
       prepared.onStatusChange(prepared.statusMessage || 'Starting pipe upload...');
     }
+    const partialGeom = partial && region
+      ? {
+          oldEtag: prepared.partialOldEtag,
+          x: region.rx,
+          y: region.ry,
+          w: region.rw,
+          h: region.rh
+        }
+      : null;
     const startHex = this._buildPipeStartHex(
-      state.compressed, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY, state.clientMaxFrame
+      state.compressed, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY,
+      state.clientMaxFrame, partialGeom
     );
-    this.log(`PIPE_WRITE probe: START compressed=${state.compressed} total=${state.totalSize}B frame=${state.clientMaxFrame}`, 'info');
+    const kind = partial ? 'pipe-partial' : 'PIPE_WRITE';
+    this.log(
+      `${kind} probe: START compressed=${state.compressed} total=${state.totalSize}B` +
+      (partialGeom
+        ? ` rect=(${partialGeom.x},${partialGeom.y},${partialGeom.w},${partialGeom.h})`
+        : ''),
+      'info'
+    );
     const sendPromise = this.sendHexCommand(startHex).catch(err => this._abortPipeWrite(err));
     this._armPipeTimer('start', PIPE_START_TIMEOUT_MS);
     return sendPromise;
   }
 
   /**
-   * Fall back to the legacy 0x70 direct-write path, reusing the already-prepared
-   * data. When markUnsupported is set (START silence / non-recoverable START NACK)
-   * the probe is cached negative so the rest of the connection skips 0x0080.
+   * Fall back from a failed pipe START to the matching legacy path.
+   * Full-frame → 0x70; partial → 0x76. When markUnsupported is set (START silence
+   * / non-recoverable START NACK) the probe is cached negative so the rest of the
+   * connection skips 0x0080.
    */
   _fallbackToLegacyFromPipe(markUnsupported) {
     const state = this.pipeWriteState;
     if (!state) return;
     this._clearPipeTimer();
     const prepared = state.legacyPrepared;
+    const wasPartial = state.partial;
     this.pipeWriteState = null;
     if (markUnsupported) {
       this.pipeProbe = { probed: true, supported: false };
+    }
+    if (wasPartial) {
+      this.log('Falling back to legacy 0x76 partial write', 'info');
+      return this._activateLegacyPartialWrite(prepared).catch(err => {
+        this._abortDirectWrite(err);
+      });
     }
     // Often invoked from the START-silence timer, where nothing awaits the
     // returned promise — a failed legacy START must still settle onComplete.
     return this._activateFullDirectWrite(prepared).catch(err => {
       this._abortDirectWrite(err);
+    });
+  }
+
+  /**
+   * Pipe-partial START was rejected in a way that makes a 0x76 retry futile
+   * (etag mismatch / bpp unsupported / bad rect). Clear local partial baseline
+   * and fall through to a full-frame upload, mirroring python.
+   */
+  _fallbackPipePartialToFull(reason) {
+    const state = this.pipeWriteState;
+    if (!state) return;
+    this._clearPipeTimer();
+    const prepared = state.legacyPrepared;
+    this.pipeWriteState = null;
+    this.log(`${reason}; clearing partial state, falling back to full`, 'info');
+    this.resetPartialState();
+    prepared.statusMessage = 'Partial unavailable, uploading full frame...';
+    return this._startFullUpload(prepared).catch(err => {
+      this._abortDirectWrite(err);
+      if (this.pipeWriteState) this._abortPipeWrite(err);
     });
   }
 
@@ -4813,9 +4947,14 @@ if (supportsStreamingDecompression) {
     const state = this.pipeWriteState;
     if (!state || !state.active) return;
     if (state.phase === 'start') {
-      // 2s of silence after 0x0080 START => stale config bit / pipe-less firmware.
-      // Fall back to the legacy 0x70 path and skip the probe for this connection.
-      this.log('No PIPE_WRITE START response within 2s; falling back to legacy direct write', 'warning');
+      // Silence after 0x0080 START => stale config bit / pipe-less firmware.
+      // Fall back to the matching legacy path and skip the probe for this connection.
+      this.log(
+        state.partial
+          ? 'No pipe-partial START response; falling back to legacy 0x76'
+          : 'No PIPE_WRITE START response within timeout; falling back to legacy direct write',
+        'warning'
+      );
       this._fallbackToLegacyFromPipe(true);
       return;
     }
@@ -4898,20 +5037,69 @@ if (supportsStreamingDecompression) {
     if (b0 === 0xFF && b1 === 0x80) {
       if (state.phase !== 'start') return true;
       const err = bytes.length >= 3 ? bytes[2] : 0;
-      // err 0x02 = compressed flag unsupported: the device answered 0x0080 (pipe
-      // works), so retry the START once uncompressed reusing the raw bytes.
-      if (err === 0x02 && state.compressed && !state.retriedUncompressed) {
+      // err 0x02 = compressed flag unsupported (or, on a second try / already-
+      // uncompressed partial START, the partial flag itself is unknown): the
+      // device answered 0x0080 (pipe works), so retry uncompressed once, or
+      // disable pipe-partial and fall back to 0x76.
+      if (err === PIPE_START_NACK_COMPRESSION && state.compressed && !state.retriedUncompressed) {
         this.pipeProbe = { probed: true, supported: true };
-        this.log('Device rejected compressed PIPE_WRITE (err 0x02); retrying uncompressed', 'info');
+        this.log(
+          state.partial
+            ? 'Device rejected compressed pipe-partial (err 0x02); retrying uncompressed still-partial'
+            : 'Device rejected compressed PIPE_WRITE (err 0x02); retrying uncompressed',
+          'info'
+        );
         state.retriedUncompressed = true;
         state.compressed = false;
-        state.payload = state.legacyPrepared.rawUncompressed;
+        if (state.partial) {
+          state.payload = state.legacyPrepared.partialLogicalStream;
+          state.legacyPrepared.partialCompressed = false;
+          state.legacyPrepared.partialStreamBytes = state.legacyPrepared.partialLogicalStream;
+        } else {
+          state.payload = state.legacyPrepared.rawUncompressed;
+          state.legacyPrepared.useCompressed = false;
+        }
         this._clearPipeTimer();
+        const region = state.legacyPrepared.partialRegion;
+        const partialGeom = state.partial && region
+          ? {
+              oldEtag: state.legacyPrepared.partialOldEtag,
+              x: region.rx, y: region.ry, w: region.rw, h: region.rh
+            }
+          : null;
         const startHex = this._buildPipeStartHex(
-          false, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY, state.clientMaxFrame
+          false, state.totalSize, PIPE_REQ_WINDOW, PIPE_REQ_ACK_EVERY,
+          state.clientMaxFrame, partialGeom
         );
         this.sendHexCommand(startHex).catch(e => this._abortPipeWrite(e));
         this._armPipeTimer('start', PIPE_START_TIMEOUT_MS);
+        return true;
+      }
+      if (state.partial) {
+        this.pipeProbe = { probed: true, supported: true };
+        if (err === PIPE_START_NACK_COMPRESSION) {
+          // Second 0x02 / uncompressed 0x02 → partial flag unknown. Cache
+          // negative and fall back to 0x76 (pipe itself still works for full).
+          this.log('Device rejected the pipe-partial flag (err 0x02); disabling pipe-partial this connection', 'info');
+          this.pipePartialSupported = false;
+          this._fallbackToLegacyFromPipe(false);
+          return true;
+        }
+        if (err === PIPE_START_NACK_ETAG_MISMATCH) {
+          this._fallbackPipePartialToFull('pipe-partial etag mismatch (0x05)');
+          return true;
+        }
+        if (err === PIPE_START_NACK_PARTIAL_UNSUPPORTED || err === PIPE_START_NACK_RECT_INVALID) {
+          if (err === PIPE_START_NACK_PARTIAL_UNSUPPORTED) {
+            this.pipePartialSupported = false;
+          }
+          this._fallbackPipePartialToFull(
+            `pipe-partial rejected (err 0x${err.toString(16)})`
+          );
+          return true;
+        }
+        this.log(`pipe-partial START NACK (err 0x${err.toString(16)}); falling back to legacy 0x76`, 'info');
+        this._fallbackToLegacyFromPipe(false);
         return true;
       }
       this.log(`PIPE_WRITE START NACK (err 0x${err.toString(16)}); falling back to legacy`, 'info');
@@ -4962,7 +5150,8 @@ if (supportsStreamingDecompression) {
 
   /**
    * Apply the negotiation min-rule from the START ACK, split the payload into
-   * frames, and begin streaming.
+   * frames, and begin streaming. For pipe-partial, also verifies flags bit1 was
+   * echoed back (older pipe-capable firmware ACKs without it → fall to 0x76).
    */
   _processPipeStartAck(bytes) {
     const state = this.pipeWriteState;
@@ -4972,6 +5161,17 @@ if (supportsStreamingDecompression) {
     const devMaxAckEvery = bytes[4];
     const devMaxFrame = bytes[5] | (bytes[6] << 8); // LE
     const flags = bytes[7];
+
+    if (state.partial && (flags & PIPE_FLAG_PARTIAL) === 0) {
+      // Requested partial but the device did not confirm bit1 → older
+      // pipe-capable firmware. Abandon the pipe attempt; the subsequent 0x76
+      // START resets the orphaned firmware session.
+      this.log('Device ACKed 0x0080 without the partial bit; pipe-partial unsupported this connection', 'info');
+      this.pipePartialSupported = false;
+      this._fallbackToLegacyFromPipe(false);
+      return;
+    }
+    if (state.partial) this.pipePartialSupported = true;
 
     // Min-rule — computed identically to firmware and python _negotiate_pipe.
     const window = Math.max(1, Math.min(PIPE_REQ_WINDOW, devMaxWindow, 32));
@@ -5005,8 +5205,9 @@ if (supportsStreamingDecompression) {
     state.phase = 'data';
 
     this.log(
-      `PIPE_WRITE negotiated: W=${window} N=${ackEvery} frame=${frameEff} selective=${selective} ` +
-      `compressed=${state.compressed} (dev max ${devMaxWindow}/${devMaxAckEvery}/${devMaxFrame}, ver ${ver}), ` +
+      `${state.partial ? 'pipe-partial' : 'PIPE_WRITE'} negotiated: W=${window} N=${ackEvery} ` +
+      `frame=${frameEff} selective=${selective} compressed=${state.compressed} ` +
+      `(dev max ${devMaxWindow}/${devMaxAckEvery}/${devMaxFrame}, ver ${ver}), ` +
       `${state.chunks.length} chunks`,
       'info'
     );
@@ -5156,8 +5357,9 @@ if (supportsStreamingDecompression) {
   }
 
   /**
-   * All chunks acked. Compressed transfers send an explicit 0x0082 END (committing
-   * the new etag when tracking partial). Uncompressed full-frame transfers AUTO-
+   * All chunks acked. Compressed full-frame and ALL partial transfers send an
+   * explicit 0x0082 END (partial never auto-completes — firmware requires the
+   * END for refresh mode + new_etag). Uncompressed full-frame transfers AUTO-
    * complete — the firmware sends an unsolicited END_ACK once total_size is
    * reached, so we send NOTHING and just wait. Either way phase moves to 'end'.
    */
@@ -5167,10 +5369,24 @@ if (supportsStreamingDecompression) {
     if (state.windowBase < state.chunks.length) return;
     state.phase = 'end';
     if (!state.uploadEndTime) state.uploadEndTime = Date.now();
-    if (state.compressed) {
-      const refreshMode = state.useFastRefresh ? 1 : 0;
-      const endHex = this._buildPipeEndHex(refreshMode, state.trackPartial ? state.newEtag : null);
-      this.log('PIPE_WRITE all chunks acked, sending explicit END', 'info');
+    if (state.partial || state.compressed) {
+      // Partial: always REFRESH_PARTIAL (2) + new_etag (required for etag commit).
+      // Compressed full-frame: fast/full refresh + optional etag when tracking.
+      const refreshMode = state.partial ? REFRESH_PARTIAL : (state.useFastRefresh ? 1 : 0);
+      const etag = state.partial
+        ? state.newEtag
+        : (state.trackPartial ? state.newEtag : null);
+      if (state.partial && (etag == null || etag === 0)) {
+        this._abortPipeWrite(new Error('PIPE_WRITE partial transfer requires a new_etag for the END commit'));
+        return;
+      }
+      const endHex = this._buildPipeEndHex(refreshMode, etag);
+      this.log(
+        state.partial
+          ? 'pipe-partial all chunks acked, sending explicit END (refresh=PARTIAL)'
+          : 'PIPE_WRITE all chunks acked, sending explicit END',
+        'info'
+      );
       this.sendHexCommand(endHex).catch(err => this._abortPipeWrite(err));
       this._armPipeTimer('end', PIPE_ACK_TIMEOUT_MS);
     } else {
@@ -5183,6 +5399,12 @@ if (supportsStreamingDecompression) {
   _onPipeEndAck() {
     const state = this.pipeWriteState;
     if (!state || !state.active) return;
+    // Partial firmware must never auto-complete; an unsolicited END_ACK arriving
+    // before we sent END would have refreshed FULL with no committed etag.
+    if (state.partial && state.phase !== 'end' && state.phase !== 'refresh') {
+      this._abortPipeWrite(new Error('PIPE_WRITE partial transfer auto-completed unexpectedly (unsolicited END_ACK)'));
+      return;
+    }
     state.phase = 'refresh';
     this._clearPipeTimer();
     if (!state.uploadEndTime) state.uploadEndTime = Date.now();
@@ -5211,17 +5433,24 @@ if (supportsStreamingDecompression) {
     const totalTime = state.uploadStartTime
       ? ((refreshEndTime - state.uploadStartTime) / 1000).toFixed(2)
       : '?';
-    this.log(`PIPE_WRITE completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s, Total: ${totalTime}s`, 'success');
+    const label = state.partial ? 'pipe-partial' : 'PIPE_WRITE';
+    this.log(`${label} completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s, Total: ${totalTime}s`, 'success');
     if (state.onStatusChange) {
-      state.onStatusChange(`Pipe upload completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s`);
+      state.onStatusChange(`${state.partial ? 'Partial' : 'Pipe'} upload completed! Upload: ${uploadTime}s, Refresh: ${refreshTime}s`);
     }
 
-    // Partial-tracking interplay. A compressed transfer carried the new etag in the
-    // explicit END, so record it as the legacy path does. An uncompressed transfer
-    // AUTO-completed with NO etag committed (firmware displayed_etag unchanged), so
-    // the tracked baseline is stale — reset it so the next partial does a full frame
-    // first instead of silently etag-mismatching.
-    if (state.trackPartial) {
+    // Partial-tracking interplay.
+    // - Pipe-partial always sent new_etag on the explicit END → commit baseline.
+    // - Compressed full-frame with trackPartial also carried the etag → commit.
+    // - Uncompressed full-frame AUTO-completed with NO etag committed → reset so
+    //   the next partial does a full frame instead of silently etag-mismatching.
+    if (state.partial) {
+      if (state.newEtag && state.paletteBuffer) {
+        this._commitPartialState(state.newEtag, state.paletteBuffer, state.paletteWidth, state.paletteHeight);
+      } else {
+        this.resetPartialState();
+      }
+    } else if (state.trackPartial) {
       if (state.compressed && state.newEtag && state.paletteBuffer) {
         this._commitPartialState(state.newEtag, state.paletteBuffer, state.paletteWidth, state.paletteHeight);
       } else {

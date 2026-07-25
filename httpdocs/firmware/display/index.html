@@ -370,6 +370,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 <label for="imageUpload" style="margin: 0; min-width: 120px;">Select image:</label>
                 <input type="file" id="imageUpload" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" style="flex: 1;" />
             </div>
+            <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 4px;">
+                <label for="usePartialUpload">
+                    <input type="checkbox" id="usePartialUpload" checked onchange="onUsePartialUploadChange();" />
+                    Use partial refresh when possible
+                </label>
+            </div>
             <div class="field-row" style="margin-top: 12px;display:none">
                 <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
                 <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
@@ -734,6 +740,31 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             wrap.style.display = (show && connected) ? 'block' : 'none';
             if (!show || !connected) stopPartialDemo();
             updatePartialDemoBwNote();
+            setUsePartialUploadUI(show && connected);
+        }
+        function setUsePartialUploadUI(show) {
+            const row = document.getElementById('usePartialUploadRow');
+            if (!row) return;
+            row.style.display = show ? 'flex' : 'none';
+            if (!show) {
+                const cb = document.getElementById('usePartialUpload');
+                if (cb) cb.checked = true;
+            }
+        }
+        function wantsPartialUpload() {
+            if (!(displayPartialUpdateSupport > 0)) return false;
+            const cb = document.getElementById('usePartialUpload');
+            return !cb || cb.checked;
+        }
+        function onUsePartialUploadChange() {
+            if (!wantsPartialUpload() && bleLib) {
+                // Drop the client baseline so the next enable starts with a full
+                // frame instead of etag-mismatching against a stale panel image.
+                bleLib.resetPartialState();
+                addLog('Partial refresh disabled for uploads (next enable will full-refresh first)', 'info');
+            } else {
+                addLog('Partial refresh enabled for uploads when pixels change', 'info');
+            }
         }
         function partialDemoFontSize(canvas, text) {
             let fs = Math.floor(Math.min(canvas.width, canvas.height) / 5);
@@ -820,6 +851,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             drawPartialDemoOnCanvas(text);
             sendDirectWriteAuto({
                 quietLog: true,
+                forcePartial: true,
                 onProgress: (current, total) => {
                     if (!partialDemo.running) return;
                     const progress = Math.floor((current / total) * 100);
@@ -2111,11 +2143,15 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             const colorScheme = parseInt(document.getElementById('colorSchemeSelect').value) || 0;
             const useDemoCallbacks = !!(extraOptions.onComplete || extraOptions.onProgress || extraOptions.onStatusChange);
+            // Demo always uses the device capability; manual uploads honor the checkbox.
+            const partialSupport = (extraOptions.forcePartial || wantsPartialUpload())
+                ? displayPartialUpdateSupport
+                : 0;
             bleLib.sendCanvasToDisplay(canvas, colorScheme, {
                 rotation: displayRotation,
                 originalWidth: widthInput,
                 originalHeight: heightInput,
-                partialUpdateSupport: displayPartialUpdateSupport,
+                partialUpdateSupport: partialSupport,
                 transmissionModes: transmissionModes,
                 onProgress: extraOptions.onProgress || ((current, total) => {
                     const progress = Math.floor((current / total) * 100);
