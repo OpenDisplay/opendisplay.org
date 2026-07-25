@@ -1,0 +1,71 @@
+name: Sync Firmware_NRF54 Release
+
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync nRF54 firmware binaries from latest release
+        id: sync
+        run: .github/scripts/sync-firmware-nrf54-release.sh
+
+      - name: Close superseded automated PRs
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing_prs=$(gh pr list --repo "${{ github.repository }}" --head "automated/firmware-nrf54-sync" --state open --json number --jq '.[].number')
+          for pr_number in $existing_prs; do
+            echo "Closing existing PR #$pr_number"
+            gh pr close "$pr_number" --repo "${{ github.repository }}" --comment "Superseded by a newer nRF54 firmware sync."
+          done
+
+      - name: Create Pull Request
+        if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync nRF54 firmware binaries to OpenDisplay/Firmware_NRF54 v${{ steps.sync.outputs.tag }}'
+          title: 'chore: sync nRF54 firmware binaries to OpenDisplay/Firmware_NRF54 v${{ steps.sync.outputs.tag }}'
+          body: |
+            New release detected in [OpenDisplay/Firmware_NRF54](https://github.com/OpenDisplay/Firmware_NRF54).
+
+            ## Release
+
+            - Tag: **${{ steps.sync.outputs.tag }}**
+            - https://github.com/OpenDisplay/Firmware_NRF54/releases/tag/${{ steps.sync.outputs.tag }}
+
+            ## Updated paths
+
+            - `httpdocs/firmware/toolbox/firmware/nrf54l15.hex`
+            - `httpdocs/firmware/toolbox/firmware/nrf54lm20a.hex`
+            - `httpdocs/firmware/toolbox/firmware/firmware-nrf54-version.json`
+
+            Merge this PR, then publish a GitHub Release on opendisplay.org to deploy to production.
+
+            ---
+            *Automated by the sync-firmware-nrf54 workflow*
+          branch: automated/firmware-nrf54-sync
+          delete-branch: true
+          labels: automated
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.sync.outputs.changed }}" = "true" ]; then
+            echo "PR created for Firmware_NRF54 v${{ steps.sync.outputs.tag }}"
+          else
+            echo "nRF54 firmware binaries are up to date"
+          fi

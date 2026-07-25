@@ -89,11 +89,23 @@
           document.head.appendChild(espScript);
         }
         
-        // Load nRF Web Tools
+        // Load nRF Web Tools (nRF52840 serial DFU)
         if (document.querySelector('script[src="/js/nrf_web_tools.js"]') === null) {
           const nrfScript = document.createElement('script');
           nrfScript.src = '/js/nrf_web_tools.js';
           document.head.appendChild(nrfScript);
+        }
+
+        // Load nRF54 Web Tools (CMSIS-DAP flash + RTT)
+        if (document.querySelector('script[src="/nrf54_web_tools/dap.umd.js"]') === null) {
+          const dapScript = document.createElement('script');
+          dapScript.src = '/nrf54_web_tools/dap.umd.js';
+          document.head.appendChild(dapScript);
+        }
+        if (document.querySelector('script[src="/nrf54_web_tools/nrf54_web_tools.js"]') === null) {
+          const nrf54Script = document.createElement('script');
+          nrf54Script.src = '/nrf54_web_tools/nrf54_web_tools.js';
+          document.head.appendChild(nrf54Script);
         }
       }
       
@@ -378,6 +390,7 @@
           <button slot="activate" id="installFirmwareBtn" style="width: 100%; margin: 0;">Install firmware (USB)</button>
         </esp-web-install-button>
         <button type="button" id="installNrfBtn" style="display: none; width: 100%; margin: 0;">Install firmware (USB)</button>
+        <button type="button" id="installNrf54Btn" style="display: none; width: 100%; margin: 0;">Install firmware (USB)</button>
       </div>
       </section>
 
@@ -443,6 +456,7 @@ let bleConnectReject = null;
 // Single nRF Web Tools instance, reused across board changes so its click listener
 // is never stacked (NrfWebTools.init() calls addEventListener, which onclick=null can't remove).
 let nrfInstaller = null;
+let nrf54Installer = null;
 
 function isToolboxBleOnlyMode() {
   return window.OpenDisplayBrowser
@@ -2511,7 +2525,8 @@ function handleDriverBoardChange() {
   // Show install button if board has install config (USB install is unavailable on iOS / Bluefy)
   if (selectedBoard.installConfig && !toolboxSkipsUsbFirmwareStep()) {
     const installType = selectedBoard.installConfig.type;
-    if (installType === 'esp32' || installType === 'nrf52840') {
+    const installNrf54Btn = document.getElementById('installNrf54Btn');
+    if (installType === 'esp32' || installType === 'nrf52840' || installType === 'nrf54l15' || installType === 'nrf54lm20') {
       installButtonContainer.style.display = 'block';
     } else {
       installButtonContainer.style.display = 'none';
@@ -2519,10 +2534,12 @@ function handleDriverBoardChange() {
     if (selectedBoard.installConfig.type === 'esp32') {
       firmwareInstallButton.style.display = 'block';
       installNrfBtn.style.display = 'none';
+      if (installNrf54Btn) installNrf54Btn.style.display = 'none';
       firmwareInstallButton.setAttribute('manifest', selectedBoard.installConfig.manifest);
     } else if (selectedBoard.installConfig.type === 'nrf52840') {
       firmwareInstallButton.style.display = 'none';
       installNrfBtn.style.display = 'block';
+      if (installNrf54Btn) installNrf54Btn.style.display = 'none';
       // Initialize nRF Web Tools
       if (typeof NrfWebTools !== 'undefined') {
         // Create once and reuse. NrfWebTools.init() attaches a click listener via
@@ -2538,9 +2555,33 @@ function handleDriverBoardChange() {
           alert('nRF Web Tools library not loaded. Please refresh the page.');
         };
       }
+    } else if (installType === 'nrf54l15' || installType === 'nrf54lm20') {
+      firmwareInstallButton.style.display = 'none';
+      installNrfBtn.style.display = 'none';
+      if (installNrf54Btn) {
+        installNrf54Btn.style.display = 'block';
+        const mappedTarget = installType === 'nrf54lm20' ? 'nrf54lm20a' : 'nrf54l15';
+        const hexPath = installType === 'nrf54lm20'
+          ? 'firmware/nrf54lm20a.hex'
+          : 'firmware/nrf54l15.hex';
+        if (typeof Nrf54WebTools !== 'undefined') {
+          if (!nrf54Installer) {
+            nrf54Installer = new Nrf54WebTools(null, null, { target: mappedTarget });
+          }
+          nrf54Installer.setTarget(mappedTarget);
+          nrf54Installer.setHex(hexPath);
+          nrf54Installer.deviceName = selectedBoard.name;
+          installNrf54Btn.onclick = () => nrf54Installer.open();
+        } else {
+          installNrf54Btn.onclick = () => {
+            alert('nRF54 Web Tools library not loaded. Please refresh the page.');
+          };
+        }
+      }
     } else {
       firmwareInstallButton.style.display = 'none';
       installNrfBtn.style.display = 'none';
+      if (installNrf54Btn) installNrf54Btn.style.display = 'none';
     }
     initToolboxInstallTracking();
   } else {
@@ -2820,6 +2861,7 @@ function markToolboxFirmwareInstalled() {
 function initToolboxInstallTracking() {
   const espBtn = document.getElementById('installFirmwareBtn');
   const nrfBtn = document.getElementById('installNrfBtn');
+  const nrf54Btn = document.getElementById('installNrf54Btn');
   if (espBtn && !espBtn.dataset.toolboxTracked) {
     espBtn.dataset.toolboxTracked = '1';
     espBtn.addEventListener('click', markToolboxFirmwareInstalled);
@@ -2827,6 +2869,10 @@ function initToolboxInstallTracking() {
   if (nrfBtn && !nrfBtn.dataset.toolboxTracked) {
     nrfBtn.dataset.toolboxTracked = '1';
     nrfBtn.addEventListener('click', markToolboxFirmwareInstalled);
+  }
+  if (nrf54Btn && !nrf54Btn.dataset.toolboxTracked) {
+    nrf54Btn.dataset.toolboxTracked = '1';
+    nrf54Btn.addEventListener('click', markToolboxFirmwareInstalled);
   }
 }
 

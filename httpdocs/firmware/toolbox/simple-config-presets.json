@@ -116,9 +116,9 @@
          },
          "installConfig": {
             "type": "nrf54l15",
-            "downloadFile": "",
+            "downloadFile": "firmware/nrf54l15.hex",
             "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware-nrf54"
+            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
          },
          "transmission_modes": "25",
          "index": 22
@@ -212,9 +212,9 @@
          },
          "installConfig": {
             "type": "nrf54lm20",
-            "downloadFile": "",
+            "downloadFile": "firmware/nrf54lm20a.hex",
             "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
          },
          "defaultPower": "battery-2000",
          "transmission_modes": "25",
