@@ -762,10 +762,10 @@ ble_proto:
             description: SSD1619 M3 Lite 2.2" 250x128 B/W/R
           3000:
             name: ed103tc2_1872x1404
-            description: E Ink ED103TC2 + IT8951 (Seeed 10.3", 1872x1404, 1bpp).
+            description: E Ink ED103TC2 + IT8951 (10.3", 1872x1404, 1bpp; FastEPD IT8951 path).
           3001:
             name: ed103tc2_1872x1404_4gray
-            description: Same panel as 3000; 4bpp (16-level)
+            description: Same panel as 3000; 4bpp (16-level; FastEPD IT8951 path)
       - name: pixel_width
         size: 2
         description: Pixel width of panel
@@ -1536,10 +1536,13 @@ ble_proto:
         enum:
           0:
             name: auto
-            description: Auto (currently resolves to TNB132M flow in firmware)
+            description: Auto (TNB132M on Silabs; SoC NFCT on nRF54LM20)
           1:
             name: tnb132m
-            description: TNB132M / Type-3 flow
+            description: TNB132M / Type-3 flow (external IC + I2C data_bus)
+          2:
+            name: soc_nfct
+            description: SoC NFCT Type-2 tag (nRF54LM20 N1/N2 antenna pads; bus/power pins ignored)
       - name: bus_instance
         size: 1
         description: data_bus instance to use (I2C)

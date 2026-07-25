@@ -565,6 +565,53 @@ function setStatus(message, isConnected = false) {
   statusText.textContent = message;
   statusText.className = isConnected ? 'status-text connected' : 'status-text';
 }
+function ensureToolboxBleLib(namePrefix) {
+  if (bleLib) {
+    bleLib.deviceNamePrefix = namePrefix;
+    return bleLib;
+  }
+  bleLib = new OpenDisplayBLE({
+    deviceNamePrefix: namePrefix,
+    maxReconnectAttempts: 3,
+    reconnectDelay: 2000,
+    onConnect: async () => {
+      addLog("BLE Connection established successfully!", 'success');
+      setStatus("Connected", true);
+      document.getElementById("connectbutton").innerHTML = 'Disconnect';
+      await ensureAuthenticatedOnConnect();
+      if (bleConnectResolve) {
+        const resolve = bleConnectResolve;
+        bleConnectResolve = null;
+        bleConnectReject = null;
+        resolve();
+      }
+    },
+    onDisconnect: () => {
+      addLog('Device disconnected.');
+      setStatus("Disconnected");
+      document.getElementById("connectbutton").innerHTML = 'Connect';
+    },
+    onError: (error) => {
+      addLog(`Error: ${error.name} - ${error.message}`, 'error');
+      setStatus(`Error: ${error.message}`);
+      document.getElementById("connectbutton").innerHTML = 'Connect';
+      if (bleConnectReject) {
+        const reject = bleConnectReject;
+        bleConnectResolve = null;
+        bleConnectReject = null;
+        reject(error);
+      }
+    },
+    onNotification: handleNotification,
+    onLog: (message, type) => {
+      addLog(message, type);
+    },
+    onStatusChange: (message, isConnected) => {
+      setStatus(message, isConnected);
+    }
+  });
+  return bleLib;
+}
 function preConnect() {
   if (bleLib && bleLib.isConnected) {
     addLog("Disconnecting...");
@@ -580,34 +627,7 @@ function preConnect() {
       setStatus("Error: No device filter");
       return;
     }
-    bleLib = new OpenDisplayBLE({
-      deviceNamePrefix: namePrefix,
-      maxReconnectAttempts: 3,
-      reconnectDelay: 2000,
-      onConnect: async () => {
-        addLog("BLE Connection established successfully!", 'success');
-        setStatus("Connected", true);
-        document.getElementById("connectbutton").innerHTML = 'Disconnect';
-        await ensureAuthenticatedOnConnect();
-      },
-      onDisconnect: () => {
-        addLog('Device disconnected.');
-        setStatus("Disconnected");
-        document.getElementById("connectbutton").innerHTML = 'Connect';
-      },
-      onError: (error) => {
-        addLog(`Error: ${error.name} - ${error.message}`, 'error');
-        setStatus(`Error: ${error.message}`);
-        document.getElementById("connectbutton").innerHTML = 'Connect';
-      },
-      onNotification: handleNotification,
-      onLog: (message, type) => {
-        addLog(message, type);
-      },
-      onStatusChange: (message, isConnected) => {
-        setStatus(message, isConnected);
-      }
-    });
+    ensureToolboxBleLib(namePrefix);
     bleLib.connect(namePrefix).catch(error => {
       if (error.name === 'NotFoundError' || error.name === 'AbortError') {
         addLog("No device selected/found.");
@@ -2151,37 +2171,7 @@ function connectToBleDevice(useCachedDevice = false) {
     // Point the persistent callbacks at this attempt's promise.
     bleConnectResolve = resolve;
     bleConnectReject = reject;
-    if (!bleLib) {
-      bleLib = new OpenDisplayBLE({
-        deviceNamePrefix: namePrefix,
-        maxReconnectAttempts: 3,
-        reconnectDelay: 2000,
-        onConnect: async () => {
-          addLog('BLE connection established', 'success');
-          document.getElementById("connectbutton").innerHTML = 'Disconnect';
-          await ensureAuthenticatedOnConnect();
-          if (bleConnectResolve) bleConnectResolve();
-        },
-        onDisconnect: () => {
-          addLog('Device disconnected.');
-          setStatus("Disconnected");
-          document.getElementById("connectbutton").innerHTML = 'Connect';
-        },
-        onError: (error) => {
-          addLog(`Error: ${error.name} - ${error.message}`, 'error');
-          setStatus(`Error: ${error.message}`);
-          document.getElementById("connectbutton").innerHTML = 'Connect';
-          if (bleConnectReject) bleConnectReject(error);
-        },
-        onNotification: handleNotification,
-        onLog: (message, type) => {
-          addLog(message, type);
-        },
-        onStatusChange: (message, isConnected) => {
-          setStatus(message, isConnected);
-        }
-      });
-    }
+    ensureToolboxBleLib(namePrefix);
     if (useCachedDevice) {
       addLog("Reconnecting to previously selected device...");
     } else {

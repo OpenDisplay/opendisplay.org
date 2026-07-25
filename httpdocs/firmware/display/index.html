@@ -2232,6 +2232,50 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
         }
         
+        function ensureDisplayBleLib(namePrefix) {
+            if (bleLib) {
+                bleLib.deviceNamePrefix = namePrefix;
+                return bleLib;
+            }
+            bleLib = new OpenDisplayBLE({
+                deviceNamePrefix: namePrefix,
+                maxReconnectAttempts: 5,
+                reconnectDelay: 2000,
+                onConnect: () => {
+                    addLog('Connection successful!', 'success');
+                    setStatus('Connected', true);
+                    setConnectedUI(true);
+                    setTimeout(() => {
+                        readDynamicConfig();
+                        setTimeout(() => {
+                            readFirmwareVersion();
+                        }, 200);
+                    }, 450);
+                },
+                onDisconnect: () => {
+                    addLog('Device disconnected.');
+                    resetVariables();
+                },
+                onError: (error) => {
+                    handleError(error);
+                },
+                onNotification: handleDisplayNotification,
+                onLog: (message, type) => {
+                    addLog(message, type);
+                },
+                onStatusChange: (message, isConnected) => {
+                    setStatus(message, isConnected);
+                },
+                onCommandAck: () => {
+                    setStatus("Command ACK.");
+                },
+                onCommandError: (errorCode) => {
+                    addLog(`ERROR: General CMD Error (${errorCode}).`, 'error');
+                    setStatus(`Command Error (${errorCode}).`, false, true);
+                }
+            });
+            return bleLib;
+        }
         function preConnect() {
             if (bleLib && bleLib.isConnected) {
                 addLog("Disconnecting...");
@@ -2248,43 +2292,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     setStatus("Error: No prefix", false, true);
                     return;
                 }
-                bleLib = new OpenDisplayBLE({
-                    deviceNamePrefix: namePrefix,
-                    maxReconnectAttempts: 5,
-                    reconnectDelay: 2000,
-                    onConnect: () => {
-                        addLog('Connection successful!', 'success');
-                        setStatus('Connected', true);
-                        setConnectedUI(true);
-                        setTimeout(() => {
-                            readDynamicConfig();
-                            setTimeout(() => {
-                                readFirmwareVersion();
-                            }, 200);
-                        }, 450);
-                    },
-                    onDisconnect: () => {
-                        addLog('Device disconnected.');
-                        resetVariables();
-                    },
-                    onError: (error) => {
-                        handleError(error);
-                    },
-                    onNotification: handleDisplayNotification,
-                    onLog: (message, type) => {
-                        addLog(message, type);
-                    },
-                    onStatusChange: (message, isConnected) => {
-                        setStatus(message, isConnected);
-                    },
-                    onCommandAck: () => {
-                        setStatus("Command ACK.");
-                    },
-                    onCommandError: (errorCode) => {
-                        addLog(`ERROR: General CMD Error (${errorCode}).`, 'error');
-                        setStatus(`Command Error (${errorCode}).`, false, true);
-                    }
-                });
+                ensureDisplayBleLib(namePrefix);
                 bleLib.connect(namePrefix).catch(error => {
                     if (error.name === 'NotFoundError' || error.name === 'AbortError') {
                         addLog("No device selected/found.");
@@ -2504,9 +2512,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     addLog("No firmware version received", 'error');
                     return;
                 }
-                const { major, minor, sha } = versionInfo;
-                firmwareVersionPreview = `${major}.${minor}`;
-                addLog(`Firmware Version: ${major}.${minor}${sha ? ' SHA: ' + sha.substring(0, 8) + '...' : ''}`, 'success');
+                const { major, minor, patch, sha } = versionInfo;
+                firmwareVersionPreview = (patch != null)
+                    ? `${major}.${minor}.${patch}`
+                    : `${major}.${minor}`;
+                addLog(`Firmware Version: ${firmwareVersionPreview}${sha ? ' SHA: ' + sha.substring(0, 8) + '...' : ''}`, 'success');
                 updatePreviewLine();
             });
         }
