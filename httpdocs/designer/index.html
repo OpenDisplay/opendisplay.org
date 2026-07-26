@@ -644,7 +644,7 @@
   <script>
     let currentPreset = null;
     let designerSimplePresetsCache = null;
-    let displayConfig = { width: 800, height: 480, colorScheme: 0 };
+    let displayConfig = { width: 800, height: 480, colorScheme: 0, panelIcType: null };
     let elements = [];
     let selectedElementIndex = -1;
     let canvas, ctx;
@@ -4042,6 +4042,7 @@
           displayConfig.width = displayCfg.pixelWidth;
           displayConfig.height = displayCfg.pixelHeight;
           displayConfig.colorScheme = displayCfg.colorScheme;
+          displayConfig.panelIcType = displayCfg.panelIcType != null ? Number(displayCfg.panelIcType) : null;
           
           document.getElementById('displayWidth').value = displayCfg.pixelWidth;
           document.getElementById('displayHeight').value = displayCfg.pixelHeight;
@@ -4082,6 +4083,7 @@
         bleLib.sendCanvasToDisplay(canvas, colorScheme, {
           rotation: 0,
           useFastRefresh: false,
+          panelIcType: displayConfig.panelIcType,
           onProgress: (current, total) => {
             const progress = Math.floor((current / total) * 100);
             if (current % 10 === 0 || current === total) {

@@ -595,6 +595,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         let activeHeightMm = 0;
         let displayRotation = 0; // 0=0°, 1=90°, 2=180°, 3=270°
         let transmissionModes = null;
+        let displayPanelIcType = null; // needed for EP426/EP368 4-gray LUT v2
         let displayPartialUpdateSupport = 0;
         const partialDemo = {
             running: false,
@@ -2153,6 +2154,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 originalHeight: heightInput,
                 partialUpdateSupport: partialSupport,
                 transmissionModes: transmissionModes,
+                panelIcType: displayPanelIcType,
                 onProgress: extraOptions.onProgress || ((current, total) => {
                     const progress = Math.floor((current / total) * 100);
                     setProgressBar(true, progress);
@@ -2481,6 +2483,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     activeHeightMm = displayCfg.activeHeightMm || 0;
                     displayRotation = Math.min(Math.max(rotation, 0), 3);
                     transmissionModes = tm;
+                    displayPanelIcType = displayCfg.panelIcType != null ? Number(displayCfg.panelIcType) : null;
                     displayPartialUpdateSupport = Number(displayCfg.partialUpdateSupport) || 0;
                     setPartialDemoUI(displayPartialUpdateSupport > 0);
                     if (displayPartialUpdateSupport === 2) {
