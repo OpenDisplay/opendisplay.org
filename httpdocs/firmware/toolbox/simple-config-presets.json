@@ -210,6 +210,24 @@
             "reserved_pin_2": "0x0",
             "reserved": "00000000000000000000000000000000"
          },
+         "flashConfig": {
+            "instance_number": "0x0",
+            "flash_ic_type": "0",
+            "bus_instance": "0x0",
+            "flags": "0x1",
+            "mosi_pin": "0x22",
+            "sck_pin": "0x21",
+            "cs_pin": "0x25",
+            "miso_pin": "0x24",
+            "wp_pin": "0x23",
+            "hold_pin": "0x20",
+            "power_pin": "0xff",
+            "power_active": "0x1",
+            "power_on_delay_ms": "0x0",
+            "power_off_delay_ms": "0x0",
+            "mode": "0x0",
+            "reserved": "0000000000000000000000000000000000"
+         },
          "installConfig": {
             "type": "nrf54lm20",
             "downloadFile": "firmware/nrf54lm20a.hex",
@@ -1481,12 +1499,15 @@
             "mosi_pin": "0x21",
             "sck_pin": "0x22",
             "cs_pin": "0x23",
+            "miso_pin": "0xff",
+            "wp_pin": "0xff",
+            "hold_pin": "0xff",
             "power_pin": "0xff",
             "power_active": "0x1",
             "power_on_delay_ms": "0x0",
             "power_off_delay_ms": "0x0",
             "mode": "0x0",
-            "reserved": "0000000000000000000000000000000000000000"
+            "reserved": "0000000000000000000000000000000000"
          },
          "transmission_modes": "9",
          "installConfig": {
@@ -1584,12 +1605,15 @@
             "mosi_pin": "0x21",
             "sck_pin": "0x22",
             "cs_pin": "0x23",
+            "miso_pin": "0xff",
+            "wp_pin": "0xff",
+            "hold_pin": "0xff",
             "power_pin": "0xff",
             "power_active": "0x1",
             "power_on_delay_ms": "0x0",
             "power_off_delay_ms": "0x0",
             "mode": "0x0",
-            "reserved": "0000000000000000000000000000000000000000"
+            "reserved": "0000000000000000000000000000000000"
          },
          "transmission_modes": "9",
          "installConfig": {
