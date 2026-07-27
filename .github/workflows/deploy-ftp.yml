@@ -1,9 +1,26 @@
 name: Deploy to FTP
 
 on:
+  # Called by release-please.yml once it has created a release. Needed because a
+  # release created with GITHUB_TOKEN does not emit `release: published`.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to deploy"
+        required: true
+        type: string
+  # Kept for releases published by hand in the GitHub UI, and for manual redeploys.
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to deploy (leave empty to deploy the current branch)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
@@ -13,10 +30,9 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
-
-      - name: Install curl
-        run: sudo apt-get update && sudo apt-get install -y curl
+          # Under workflow_call the default ref is the caller's (main), which is
+          # not what we want to publish — pin to the tag being released.
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
 
       - name: Deploy httpdocs to FTP
         env:
