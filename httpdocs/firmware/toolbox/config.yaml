@@ -1692,8 +1692,17 @@ ble_proto:
       - name: mode
         size: 1
         description: Flash mode selector (reserved for future)
+      - name: miso_pin
+        size: 1
+        description: SPI MISO pin (0xPN); 0 or 0xFF = unused
+      - name: wp_pin
+        size: 1
+        description: SPI WP (IO2) pin (0xPN); 0 or 0xFF = unused
+      - name: hold_pin
+        size: 1
+        description: SPI HOLD (IO3) pin (0xPN); 0 or 0xFF = unused
       - name: reserved
-        size: 20
+        size: 17
         description: Reserved bytes for future flash extensions
     44:
       name: data_extended
