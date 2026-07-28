@@ -83,6 +83,47 @@ for name in "${asset_names[@]}"; do
   esac
 done
 
+# Create ESP Web Tools manifests for any newly shipped *_full.bin that has none
+# yet (e.g. when a new env like esp32-N4 starts releasing). Chip family is
+# derived from the env stem; unknown stems fall back to classic ESP32.
+chip_family_for() {
+  local stem="$1"
+  case "$stem" in
+    esp32-s3-*) echo "ESP32-S3" ;;
+    esp32-c3-*) echo "ESP32-C3" ;;
+    esp32-c6-*) echo "ESP32-C6" ;;
+    esp32-*)    echo "ESP32" ;;
+    *)          echo "" ;;
+  esac
+}
+
+for bin in "$BIN_DIR"/*_full.bin; do
+  [[ -f "$bin" ]] || continue
+  base=$(basename "$bin")
+  stem="${base%_full.bin}"
+  manifest="$BIN_DIR/${stem}_full.json"
+  if [[ ! -f "$manifest" ]]; then
+    family=$(chip_family_for "$stem")
+    if [[ -z "$family" ]]; then
+      echo "  skip manifest for $base (unknown chip family)"
+      continue
+    fi
+    jq -n \
+      --arg v "$latest_tag" \
+      --arg family "$family" \
+      --arg path "$base" \
+      '{
+        name: "Open Display Firmware",
+        version: $v,
+        home_assistant_domain: "open_display",
+        new_install_prompt_erase: false,
+        new_install_improv_wait_time: 0,
+        builds: [{ chipFamily: $family, parts: [{ path: $path, offset: 0 }] }]
+      }' > "$manifest"
+    echo "  created $manifest ($family)"
+  fi
+done
+
 for manifest in "$BIN_DIR"/*_full.json; do
   [[ -f "$manifest" ]] || continue
   jq --arg v "$latest_tag" '.version = $v' "$manifest" > "${manifest}.tmp"

@@ -86,6 +86,9 @@ ble_proto:
           8:
             name: NRF54LM20
             description: Seeed XIAO nRF54LM20A (Zephyr)
+          9:
+            name: ESP32
+            description: classic ESP32 based boards
       - name: communication_modes
         size: 1
         description: Supported communication modes (bitfield)
@@ -171,6 +174,9 @@ ble_proto:
           4:
             name: OpenDisplay
             description: Only to be used for free giveaways
+          5:
+            name: Soldered
+            description: Soldered Electronics
       - name: board_type
         size: 1
         description: Board identifier (depends on manufacturer_id)
@@ -237,6 +243,9 @@ ble_proto:
               0:
                 name: ESP32_S3:PhotoPainter
                 description: ESP32-S3-PhotoPainter
+              1:
+                name: E-Paper_ESP32_Driver_Board
+                description: Waveshare E-Paper ESP32 Driver Board
             3:
               0:
                 name: M3 NRF Lite
@@ -259,6 +268,13 @@ ble_proto:
               6:
                 name: M3 Silabs Peghook
                 description: M3 Silabs Peghook
+            5:
+              0:
+                name: Inkplate_5_V2
+                description: Inkplate 5 V2
+              1:
+                name: Inkplate_10
+                description: Inkplate 10
       - name: board_revision
         size: 1
         description: Board revision number
@@ -766,6 +782,12 @@ ble_proto:
           3001:
             name: ed103tc2_1872x1404_4gray
             description: Same panel as 3000; 4bpp (16-level; FastEPD IT8951 path)
+          3002:
+            name: inkplate5v2_1280x720
+            description: Soldered Inkplate 5 V2 (ED050WROW, 1280x720; FastEPD native parallel path)
+          3003:
+            name: inkplate10_1200x825
+            description: Soldered Inkplate 10 (ED097TC2, 1200x825; FastEPD native parallel path)
       - name: pixel_width
         size: 2
         description: Pixel width of panel
