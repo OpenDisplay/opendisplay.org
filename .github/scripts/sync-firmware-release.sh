@@ -46,6 +46,27 @@ fi
 
 echo "Syncing firmware release $latest_tag (was: ${pinned_tag:-none})"
 
+# A release whose build failed is still "latest" via the API, just with no (or
+# incomplete) assets. Without this guard the download loop below simply matches
+# nothing — no error — and the manifest rewrite further down would still stamp
+# the new version into every *_full.json, advertising a firmware whose binaries
+# were never built. Fail loudly instead; the workflow goes red and opens no PR.
+#
+# Counted with jq rather than over a bash array: on a zero-asset release the
+# array is empty, and "${arr[@]}" under `set -u` is an error on bash < 4.4.
+missing=()
+[[ $(echo "$release_json" | jq '[.assets[].name | select(endswith("_full.bin"))] | length') -eq 0 ]] \
+  && missing+=("*_full.bin")
+[[ $(echo "$release_json" | jq '[.assets[].name | select(. == "NRF52840.uf2")] | length') -eq 0 ]] \
+  && missing+=("NRF52840.uf2")
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "Release $latest_tag is missing expected assets: ${missing[*]}" >&2
+  echo "Refusing to sync — this usually means the firmware build failed after the release was created." >&2
+  echo "Re-run the firmware release build, then re-run this sync." >&2
+  exit 1
+fi
+
 mapfile -t asset_names < <(echo "$release_json" | jq -r '.assets[].name')
 
 for name in "${asset_names[@]}"; do

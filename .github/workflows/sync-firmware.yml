@@ -38,8 +38,13 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
-          title: 'chore: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
+          # `fix:`, not `chore:` — release-please does not bump a version for
+          # chore commits, so a firmware sync would merge to main and then sit
+          # there undeployed until some unrelated fix happened along. As a fix
+          # it cuts a patch release, which is what actually publishes the new
+          # toolbox binaries to opendisplay.org.
+          commit-message: 'fix: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
+          title: 'fix: sync firmware binaries to OpenDisplay/Firmware v${{ steps.sync.outputs.tag }}'
           body: |
             New release detected in [OpenDisplay/Firmware](https://github.com/OpenDisplay/Firmware).
 
