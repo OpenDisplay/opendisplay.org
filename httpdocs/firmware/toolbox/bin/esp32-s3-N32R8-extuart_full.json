@@ -6,10 +6,10 @@
   "new_install_improv_wait_time": 0,
   "builds": [
     {
-      "chipFamily": "ESP32",
+      "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "esp32-N4_full.bin",
+          "path": "esp32-s3-N32R8-extuart_full.bin",
           "offset": 0
         }
       ]
