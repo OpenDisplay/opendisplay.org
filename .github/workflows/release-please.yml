@@ -13,8 +13,6 @@ concurrency:
 
 jobs:
   release-please:
-    # A push to a fork's main would otherwise cut releases there. Keep it to
-    # the upstream repository; `deploy` needs this job, so it is gated too.
     if: github.repository == 'OpenDisplay/opendisplay.org'
     runs-on: ubuntu-latest
     timeout-minutes: 10

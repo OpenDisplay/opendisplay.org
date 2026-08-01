@@ -11,8 +11,6 @@ permissions:
 
 jobs:
   sync:
-    # Forks inherit the schedule and would open firmware-sync PRs against
-    # themselves. Keep it to the upstream repository.
     if: github.repository == 'OpenDisplay/opendisplay.org'
     runs-on: ubuntu-latest
     steps:
