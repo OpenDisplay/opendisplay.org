@@ -319,3 +319,21 @@ a:hover {
   height: 0;
 }
 
+/* Sticky footer for when the viewport is taller than the content */
+.page-inner {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+#main-content {
+    flex-grow: 1;
+}
+
+.site-bar {
+    flex-shrink: 0;
+}
+
+.site-footer {
+    flex-shrink: 0;
+}
