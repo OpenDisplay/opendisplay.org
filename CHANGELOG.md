@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.11.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.0...1.11.1) (2026-08-01)
+
+
+### Continuous Integration
+
+* drop comments from the repository guards ([ef4bc31](https://github.com/OpenDisplay/opendisplay.org/commit/ef4bc3179f6fc0b290675ac993395d87a985a638))
+* only run automated workflows on the upstream repository ([fb86c23](https://github.com/OpenDisplay/opendisplay.org/commit/fb86c235578bd9c97090fdd8e00a70c0f7f86f1a))
+* only run automated workflows on the upstream repository ([b04bc79](https://github.com/OpenDisplay/opendisplay.org/commit/b04bc79e5b4fec3fffd4f45fc94512f983cc7c04))
+
 ## [1.11.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.10.3...1.11.0) (2026-07-30)
 
 
