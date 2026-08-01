@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: github.repository == 'OpenDisplay/opendisplay.org'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
