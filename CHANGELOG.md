@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.1...1.11.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **toolbox:** add missing SHT40 sensor to reTerminal E1003 preset ([41dcd9d](https://github.com/OpenDisplay/opendisplay.org/commit/41dcd9de622a2763f31e8a7032a164f554031059))
+
 ## [1.11.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.0...1.11.1) (2026-08-01)
 
 
