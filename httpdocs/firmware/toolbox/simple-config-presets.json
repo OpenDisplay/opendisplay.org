@@ -825,6 +825,13 @@
             "pulldowns": "0x0",
             "reserved": "0x0"
          },
+         "sensorData": {
+            "sensor_type": "4",
+            "instance_number": "0",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x44",
+            "msd_data_start_byte": "7"
+         },
          "touchController": {
             "instance_number": "0x0",
             "touch_ic_type": "1",
