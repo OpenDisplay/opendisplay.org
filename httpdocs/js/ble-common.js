@@ -16,21 +16,21 @@ const OPENDISPLAY_MSD_COMPANY_ID = 0x2446;
 
 // Timeout (ms) to wait for each config-write ack (0x41/0x42) from the device.
 // The firmware acks every chunk, so this bounds a dead connection per expected reply.
-const CONFIG_WRITE_ACK_TIMEOUT_MS = 8000;
+const CONFIG_WRITE_ACK_TIMEOUT_MS = 15000;
 
 // Timeout (ms) to wait for each direct-write ack (start 0x70/0x76, chunk 0x71,
 // end 0x72) from the device. A stalled transfer that never gets a response aborts
 // the upload instead of leaving the UI stuck at "Uploading N%" forever. The
 // display-refresh phase (waiting for 0x73) is bounded by the firmware's own
 // refresh timeout (0x74), so the ack timer is cleared once the end command acks.
-const DIRECT_WRITE_ACK_TIMEOUT_MS = 8000;
+const DIRECT_WRITE_ACK_TIMEOUT_MS = 15000;
 
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
 // (transmission_modes bit 4) and falls back to the legacy 0x70 path if the START
 // draws no response. See _activatePipeWrite / handlePipeWriteNotification below.
-const PIPE_START_TIMEOUT_MS = 8000;   // silence after 0x0080 START => legacy fallback
-const PIPE_ACK_TIMEOUT_MS = 8000;     // data-phase stall bound (mirrors direct write)
+const PIPE_START_TIMEOUT_MS = 15000;  // silence after 0x0080 START => legacy fallback
+const PIPE_ACK_TIMEOUT_MS = 15000;    // data-phase stall bound (mirrors direct write)
 const PIPE_TAIL_FLUSH_MS = 600;       // tail dup-probe delay (< ackEvery unacked at the tail)
 const PIPE_VERSION = 1;
 const PIPE_FLAG_COMPRESSED = 0x01;
@@ -86,9 +86,9 @@ class OpenDisplayBLE {
     );
     this.deviceNamePrefix = options.deviceNamePrefix || 'OD';
     this.maxReconnectAttempts = options.maxReconnectAttempts || 5;
-    this.reconnectDelay = options.reconnectDelay || 2000;
-    this.gattRetryDelay = options.gattRetryDelay || 150;
-    this.gattMaxRetries = options.gattMaxRetries || 2;
+    this.reconnectDelay = options.reconnectDelay || 2500;
+    this.gattRetryDelay = options.gattRetryDelay || 300;
+    this.gattMaxRetries = options.gattMaxRetries || 5;
     
     // State
     this.device = null;
@@ -675,7 +675,7 @@ class OpenDisplayBLE {
    * Enable notifications with retry logic
    * Some devices need time for encryption to fully establish before CCCD can be written
    */
-  async enableNotificationsWithRetry(maxRetries = 5, delayMs = 200) {
+  async enableNotificationsWithRetry(maxRetries = 5, delayMs = 400) {
     let lastError = null;
     
     for (let i = 0; i < maxRetries; i++) {
@@ -713,7 +713,7 @@ class OpenDisplayBLE {
    * Wait for encryption to be established with retries
    * Attempts to get the characteristic, which will trigger encryption if needed
    */
-  async waitForEncryptionAndGetCharacteristic(maxRetries = 5, delayMs = 200) {
+  async waitForEncryptionAndGetCharacteristic(maxRetries = 5, delayMs = 400) {
     let lastError = null;
     
     for (let i = 0; i < maxRetries; i++) {
@@ -802,7 +802,7 @@ class OpenDisplayBLE {
 
       this.log('Accessing characteristic (encryption will be established if needed)...', 'info');
       try {
-        this.characteristic = await this.waitForEncryptionAndGetCharacteristic(5, 200);
+        this.characteristic = await this.waitForEncryptionAndGetCharacteristic(5, 400);
         this.log(`Characteristic ${bluetoothUuidShortLabel(this.characteristicUUID)} found`, 'success');
       } catch (charError) {
         this.log(`Failed to get characteristic: ${charError.name} - ${charError.message}`, 'error');
@@ -811,10 +811,10 @@ class OpenDisplayBLE {
       }
 
       this.log('Waiting for encryption to stabilize...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       try {
-        await this.enableNotificationsWithRetry(5, 200);
+        await this.enableNotificationsWithRetry(5, 400);
         // Remove first so a reconnect against Chrome's cached characteristic
         // object doesn't stack a second listener (which would process every
         // notification twice). No-op the first time / on a fresh characteristic.
@@ -838,6 +838,9 @@ class OpenDisplayBLE {
 
         throw notifyError;
       }
+
+      // Let SoftDevice / Chrome finish link-param negotiation before the first write.
+      await this.delay(500);
 
       this.isConnected = true;
       this.reconnectAttempts = 0;
@@ -1036,7 +1039,10 @@ class OpenDisplayBLE {
         await this.writeCommandValue(commandToSend);
         return;
       } catch (error) {
-        if (error.name === 'NetworkError' && error.message.includes('GATT operation') && retries < this.gattMaxRetries) {
+        const msg = (error && error.message) ? error.message : '';
+        const busy = error.name === 'NetworkError'
+          && (msg.includes('GATT operation') || /gatt/i.test(msg));
+        if (busy && retries < this.gattMaxRetries) {
           this.log(`GATT busy, retrying send (${retries + 1}/${this.gattMaxRetries})...`, 'info');
           await this.delay(this.gattRetryDelay);
           retries++;

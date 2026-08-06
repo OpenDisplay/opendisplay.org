@@ -631,7 +631,7 @@ function ensureToolboxBleLib(namePrefix) {
   bleLib = new OpenDisplayBLE({
     deviceNamePrefix: namePrefix,
     maxReconnectAttempts: 3,
-    reconnectDelay: 2000,
+    reconnectDelay: 2500,
     onConnect: async () => {
       addLog("BLE Connection established successfully!", 'success');
       setStatus("Connected", true);
@@ -2187,11 +2187,11 @@ async function startAutoInstall() {
     addLog('Step 1: Connecting to BLE device...', 'info');
     await connectToBleDevice();
     addLog('Step 2: Waiting for connection to stabilize...', 'info');
-        await bleLib.delay(2000);
+        await bleLib.delay(3000);
     addLog('Step 3: Writing config to device...', 'info');
     await writeConfigToDevice();
     addLog('Step 4: Waiting before reboot...', 'info');
-        await bleLib.delay(1500);
+        await bleLib.delay(3000);
     addLog('Step 5: Rebooting device...', 'info');
     reboot();
     
@@ -3214,7 +3214,7 @@ async function startSimpleAutoInstall() {
     updateProgressBar(30, 'Stabilizing...');
     setSimpleConfigStatus('Connection established. Preparing to write settings…', 'busy');
     addLog('Step 2: Waiting for connection to stabilize...', 'info');
-    await bleLib.delay(2000);
+    await bleLib.delay(3000);
     
     updateProgressBar(50, 'Writing config...');
     setSimpleConfigStatus('Writing configuration to your device…', 'busy');
@@ -3223,7 +3223,7 @@ async function startSimpleAutoInstall() {
     
     addLog('Step 4: Waiting before reboot...', 'info');
     setSimpleConfigStatus('Finishing write. Waiting before reboot…', 'busy');
-    await bleLib.delay(2500);
+    await bleLib.delay(3000);
     
     updateProgressBar(90, 'Rebooting...');
     setSimpleConfigStatus('Rebooting device…', 'busy');
@@ -3232,7 +3232,7 @@ async function startSimpleAutoInstall() {
     
     addLog('Step 6: Waiting after reboot...', 'info');
     setSimpleConfigStatus('Reboot sent. Waiting for device to restart…', 'busy');
-    await bleLib.delay(2500);
+    await bleLib.delay(3500);
     
     updateProgressBar(100, 'Complete!');
     addLog('Auto-install sequence completed!', 'success');
@@ -3368,7 +3368,7 @@ async function waitForDeviceReboot(maxWaitTime = 65000, retryInterval = 5000) {
 
       // If we get here, connection succeeded
       addLog('Device reconnected after reboot!', 'success');
-      await delay(2000); // Wait for connection to stabilize
+      await delay(3000); // Wait for connection to stabilize
       return true;
     } catch (error) {
       lastError = error;

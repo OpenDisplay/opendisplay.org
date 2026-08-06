@@ -591,6 +591,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         let bleLib;
         widthInput = 800;
         heightInput = 480;
+        let deviceDisplayConfigReady = false;
         let activeWidthMm = 0;
         let activeHeightMm = 0;
         let displayRotation = 0; // 0=0°, 1=90°, 2=180°, 3=270°
@@ -2105,6 +2106,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             setLedUI(false);
             setBuzzerUI(false);
             firmwareVersionPreview = '';
+            deviceDisplayConfigReady = false;
             activeWidthMm = 0;
             activeHeightMm = 0;
             displayPartialUpdateSupport = 0;
@@ -2463,6 +2465,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const displayCfg = bleLib.extractDisplayConfig(parsedConfig);
                 if (!displayCfg) {
                     addLog("No display config found in device config", 'warning');
+                    deviceDisplayConfigReady = false;
+                    updatePreviewLine();
                     setPartialDemoUI(false);
                     return;
                 }
@@ -2478,6 +2482,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     if (pixelWidth > 0 && pixelHeight > 0 && pixelWidth < 4000 && pixelHeight < 4000) {
                         widthInput = pixelWidth;
                         heightInput = pixelHeight;
+                        deviceDisplayConfigReady = true;
+                    } else {
+                        deviceDisplayConfigReady = false;
                     }
                     activeWidthMm = displayCfg.activeWidthMm || 0;
                     activeHeightMm = displayCfg.activeHeightMm || 0;
@@ -2502,7 +2509,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     updateTextColorSwatches();
                     updateQRColorSwatches();
                     doAll();
-                    addLog(`Canvas size set from device: ${widthInput}x${heightInput}`, 'success');
+                    if (deviceDisplayConfigReady) {
+                        addLog(`Canvas size set from device: ${widthInput}x${heightInput}`, 'success');
+                    }
                 }
                 deviceLedCount = (parsedConfig.packets || []).filter(function(p) { return p.id === 0x21; }).length;
                 setLedUI(deviceLedCount > 0);
@@ -2524,9 +2533,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const previewMeta = document.getElementById('previewMeta');
             const previewLockIcon = document.getElementById('previewLockIcon');
             if (previewMeta) {
-                const diagonal = screenDiagonalInches(activeWidthMm, activeHeightMm);
-                const resolution = widthInput + '×' + heightInput + (diagonal != null ? ' (' + diagonal.toFixed(1) + '")' : '');
-                previewMeta.textContent = ' · ' + resolution + ' · ' + (SCHEME_SHORT[scheme] || ('S' + scheme)) + (firmwareVersionPreview ? ' · v' + firmwareVersionPreview : '');
+                if (!deviceDisplayConfigReady) {
+                    previewMeta.textContent = '';
+                } else {
+                    const diagonal = screenDiagonalInches(activeWidthMm, activeHeightMm);
+                    const resolution = widthInput + '×' + heightInput + (diagonal != null ? ' (' + diagonal.toFixed(1) + '")' : '');
+                    previewMeta.textContent = ' · ' + resolution + ' · ' + (SCHEME_SHORT[scheme] || ('S' + scheme)) + (firmwareVersionPreview ? ' · v' + firmwareVersionPreview : '');
+                }
             }
             if (previewLockIcon) {
                 const enc = bleLib && bleLib.encryptionSession && bleLib.encryptionSession.authenticated;
