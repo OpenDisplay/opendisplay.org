@@ -735,7 +735,7 @@
             "reserved": "0x0"
          },
          "defaultDisplay": "ep133a-spectra-1200x1600",
-         "defaultPower": "battery-2000",
+         "defaultPower": "battery-5000",
          "installConfig": {
             "type": "esp32",
             "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-E1004_full.json",
@@ -2846,6 +2846,22 @@
          "index": 4
       },
       {
+         "id": "battery-5000",
+         "name": "LiPo 5000mAh",
+         "powerOption": {
+            "power_mode": "1",
+            "battery_capacity_mah": "0x1388",
+            "sleep_timeout_ms": "40000",
+            "tx_power": "0x8",
+            "sleep_flags": "0x0",
+            "battery_sense_flags": "0x0",
+            "capacity_estimator": "1",
+            "deep_sleep_time_seconds": "0",
+            "reserved": "0x0"
+         },
+         "index": 5
+      },
+      {
          "id": "battery-prim-1p",
          "name": "1 CR2450",
          "powerOption": {
@@ -2859,7 +2875,7 @@
             "deep_sleep_time_seconds": "0",
             "reserved": "0x0"
          },
-         "index": 5
+         "index": 6
       },
       {
          "id": "battery-prim-2p",
@@ -2875,7 +2891,7 @@
             "deep_sleep_time_seconds": "0",
             "reserved": "0x0"
          },
-         "index": 6
+         "index": 7
       },
       {
          "id": "battery-prim-4p",
@@ -2891,7 +2907,7 @@
             "deep_sleep_time_seconds": "0",
             "reserved": "0x0"
          },
-         "index": 7
+         "index": 8
       },
       {
          "id": "solar",
@@ -2907,7 +2923,7 @@
             "deep_sleep_time_seconds": "0",
             "reserved": "0x0"
          },
-         "index": 8
+         "index": 9
       },
       {
          "id": "battery-650",
@@ -2923,7 +2939,7 @@
             "deep_sleep_time_seconds": "0",
             "reserved": "0x0"
          },
-         "index": 9
+         "index": 10
       },
       {
          "id": "inkplate",
@@ -2948,7 +2964,7 @@
             "screen_timeout_seconds": "0x0",
             "reserved": "0x00000000"
          },
-         "index": 10
+         "index": 11
       }
    ]
 }
