@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.4](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.3...1.11.4) (2026-08-07)
+
+
+### Bug Fixes
+
+* ep133a dimensions ([cd9ee19](https://github.com/OpenDisplay/opendisplay.org/commit/cd9ee1950b100847fab2023f4338ee4130ea92f4))
+
 ## [1.11.3](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.2...1.11.3) (2026-08-06)
 
 
