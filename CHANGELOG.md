@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.5](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.4...1.11.5) (2026-08-09)
+
+
+### Bug Fixes
+
+* trigger release-please ([654cb0b](https://github.com/OpenDisplay/opendisplay.org/commit/654cb0bcf68aa51ba107228cbbe0d3472138bf8a))
+
 ## [1.11.4](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.3...1.11.4) (2026-08-07)
 
 
