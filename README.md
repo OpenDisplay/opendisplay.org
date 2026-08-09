@@ -4,7 +4,7 @@ Website files for https://opendisplay.org/
 
 ## Deployment
 
-Publishing a [GitHub Release](https://github.com/OpenDisplay/opendisplay.org/releases) deploys `httpdocs/` to the Netcup FTP server at `/httpdocs/`.
+Publishing a [GitHub Release](https://github.com/OpenDisplay/opendisplay.org/releases) deploys `httpdocs/` to the FTP server at `/httpdocs/`.
 
 ## GitHub Actions
 
