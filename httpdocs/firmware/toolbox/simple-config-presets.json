@@ -121,7 +121,7 @@
             "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
          },
          "transmission_modes": "25",
-         "index": 22
+         "index": 28
       },
       {
          "id": "nrf54lm20-xiao",
@@ -2230,7 +2230,7 @@
             "color_scheme": "0",
             "full_update_mC": "16"
          },
-         "index": 33
+         "index": 40
       },
       {
          "id": "ep397-800x480-4gray",
@@ -2339,7 +2339,7 @@
             "color_scheme": "5",
             "full_update_mC": "10"
          },
-         "index": 33
+         "index": 41
       },
       {
          "id": "ep583-648x480",
