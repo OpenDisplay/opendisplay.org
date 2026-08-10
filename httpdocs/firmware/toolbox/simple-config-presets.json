@@ -74,7 +74,7 @@
       },
       {
          "id": "nrf54l15-xiao",
-         "name": "Seeed XIAO ePaper Breakout \u2014 nRF54L15",
+         "name": "Seeed XIAO ePaper Breakout — nRF54L15",
          "connectorPins": [
             24
          ],
@@ -239,78 +239,6 @@
          "index": 23
       },
       {
-         "id": "ee04",
-         "name": "Seeed EE04 (ESP32-S3)",
-         "connectorPins": [
-            24,
-            50
-         ],
-         "systemConfig": {
-            "ic_type": "2",
-            "communication_modes": "0x1",
-            "device_flags": "0x1",
-            "pwr_pin": "0x2b",
-            "reserved": "0x0"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "0",
-            "board_revision": "0x1",
-            "reserved": "0x0"
-         },
-         "displayPins": {
-            "reset": "0x26",
-            "busy": "0x4",
-            "dc": "0xa",
-            "cs": "0x2c",
-            "data": "0x9",
-            "clk": "0x7"
-         },
-         "powerDefaults": {
-            "battery_sense_pin": "0x1",
-            "battery_sense_enable_pin": "0x6",
-            "voltage_scaling_factor": "0xb1",
-            "deep_sleep_current_ua": "0"
-         },
-         "led": {
-            "instance_number": "0x0",
-            "led_type": "0",
-            "led_1_r": "0x15",
-            "led_2_g": "0x15",
-            "led_3_b": "0x15",
-            "led_4": "0x0",
-            "led_flags": "0x7",
-            "reserved": "0x0"
-         },
-         "buttons": {
-            "instance_number": "0x0",
-            "input_type": "1",
-            "display_as": "1",
-            "inputpin1": "0x2",
-            "inputpin2": "0x3",
-            "inputpin3": "0x5",
-            "inputpin4": "0xff",
-            "inputpin5": "0xff",
-            "inputpin6": "0xff",
-            "inputpin7": "0xff",
-            "inputpin8": "0xff",
-            "isused": "0x7",
-            "invert": "0x7",
-            "pullups": "0x0",
-            "pulldowns": "0x0",
-            "button_data_byte_index": "0",
-            "reserved": "0x0"
-         },
-         "installConfig": {
-            "type": "esp32",
-            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware"
-         },
-         "transmission_modes": "25",
-         "index": 2
-      },
-      {
          "id": "ee02",
          "name": "Seeed EE02 (ESP32-S3)",
          "connectorPins": [
@@ -385,45 +313,86 @@
          "index": 29
       },
       {
-         "id": "en05",
-         "name": "Seeed EN05 (NRF52840)",
+         "id": "ee03",
+         "name": "Seeed EE03 (ESP32-S3)",
          "connectorPins": [
-            24
+            40
          ],
          "systemConfig": {
-            "ic_type": "1",
+            "ic_type": "2",
             "communication_modes": "0x1",
-            "device_flags": "0x3",
+            "device_flags": "0x0",
+            "pwr_pin": "0x2b",
+            "reserved": "000000000000000000000000000000",
+            "pwr_pin_2": "0x2b",
+            "pwr_pin_3": "0xfe"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "8",
+            "board_revision": "0x1",
+            "reserved": "000000000000000000000000000000000000"
+         },
+         "displayPins": {
+            "reset": "0x26",
+            "busy": "0x4",
+            "dc": "0x8",
+            "cs": "0x2c",
+            "data": "0x9",
+            "clk": "0x7"
+         },
+         "defaultDisplay": "seeed-ed103-1872x1404",
+         "defaultPower": "battery-3000",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8-extuart_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "25",
+         "index": 8
+      },
+      {
+         "id": "ee04",
+         "name": "Seeed EE04 (ESP32-S3)",
+         "connectorPins": [
+            24,
+            50
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x1",
             "pwr_pin": "0x2b",
             "reserved": "0x0"
          },
          "manufacturerData": {
             "manufacturer_id": "1",
-            "board_type": "7",
+            "board_type": "0",
             "board_revision": "0x1",
             "reserved": "0x0"
          },
          "displayPins": {
-            "reset": "0xf",
-            "busy": "0x1d",
-            "dc": "0x1f",
+            "reset": "0x26",
+            "busy": "0x4",
+            "dc": "0xa",
             "cs": "0x2c",
-            "data": "0x2f",
-            "clk": "0x2d"
+            "data": "0x9",
+            "clk": "0x7"
          },
          "powerDefaults": {
-            "battery_sense_pin": "2",
-            "battery_sense_enable_pin": "19",
-            "voltage_scaling_factor": "706",
-            "deep_sleep_current_ua": "60"
+            "battery_sense_pin": "0x1",
+            "battery_sense_enable_pin": "0x6",
+            "voltage_scaling_factor": "0xb1",
+            "deep_sleep_current_ua": "0"
          },
          "led": {
             "instance_number": "0x0",
             "led_type": "0",
-            "led_1_r": "0x1a",
-            "led_2_g": "0x1e",
-            "led_3_b": "0x6",
-            "led_4": "0xff",
+            "led_1_r": "0x15",
+            "led_2_g": "0x15",
+            "led_3_b": "0x15",
+            "led_4": "0x0",
             "led_flags": "0x7",
             "reserved": "0x0"
          },
@@ -431,9 +400,9 @@
             "instance_number": "0x0",
             "input_type": "1",
             "display_as": "1",
-            "inputpin1": "0x3",
-            "inputpin2": "0x1c",
-            "inputpin3": "46",
+            "inputpin1": "0x2",
+            "inputpin2": "0x3",
+            "inputpin3": "0x5",
             "inputpin4": "0xff",
             "inputpin5": "0xff",
             "inputpin6": "0xff",
@@ -447,13 +416,13 @@
             "reserved": "0x0"
          },
          "installConfig": {
-            "type": "nrf52840",
-            "downloadFile": "https://opendisplay.org/firmware/toolbox/firmware/NRF52840.uf2",
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
          "transmission_modes": "25",
-         "index": 3
+         "index": 2
       },
       {
          "id": "ee05",
@@ -525,6 +494,77 @@
          },
          "transmission_modes": "25",
          "index": 4
+      },
+      {
+         "id": "en05",
+         "name": "Seeed EN05 (NRF52840)",
+         "connectorPins": [
+            24
+         ],
+         "systemConfig": {
+            "ic_type": "1",
+            "communication_modes": "0x1",
+            "device_flags": "0x3",
+            "pwr_pin": "0x2b",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "7",
+            "board_revision": "0x1",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "0xf",
+            "busy": "0x1d",
+            "dc": "0x1f",
+            "cs": "0x2c",
+            "data": "0x2f",
+            "clk": "0x2d"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "2",
+            "battery_sense_enable_pin": "19",
+            "voltage_scaling_factor": "706",
+            "deep_sleep_current_ua": "60"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "0x1a",
+            "led_2_g": "0x1e",
+            "led_3_b": "0x6",
+            "led_4": "0xff",
+            "led_flags": "0x7",
+            "reserved": "0x0"
+         },
+         "buttons": {
+            "instance_number": "0x0",
+            "input_type": "1",
+            "display_as": "1",
+            "inputpin1": "0x3",
+            "inputpin2": "0x1c",
+            "inputpin3": "46",
+            "inputpin4": "0xff",
+            "inputpin5": "0xff",
+            "inputpin6": "0xff",
+            "inputpin7": "0xff",
+            "inputpin8": "0xff",
+            "isused": "0x7",
+            "invert": "0x7",
+            "pullups": "0x0",
+            "pulldowns": "0x0",
+            "button_data_byte_index": "0",
+            "reserved": "0x0"
+         },
+         "installConfig": {
+            "type": "nrf52840",
+            "downloadFile": "https://opendisplay.org/firmware/toolbox/firmware/NRF52840.uf2",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "25",
+         "index": 3
       },
       {
          "id": "reterminal-e1001",
@@ -715,7 +755,7 @@
          "id": "reterminal-e1004",
          "name": "Seeed reTerminal E1004 (ESP32-S3)",
          "connectorPins": [
-            133
+            60
          ],
          "systemConfig": {
             "ic_type": "2",
@@ -1086,46 +1126,6 @@
          },
          "transmission_modes": "25",
          "index": 20
-      },
-      {
-         "id": "ee03",
-         "name": "Seeed EE03 (ESP32-S3)",
-         "connectorPins": [
-            40
-         ],
-         "systemConfig": {
-            "ic_type": "2",
-            "communication_modes": "0x1",
-            "device_flags": "0x0",
-            "pwr_pin": "0x2b",
-            "reserved": "000000000000000000000000000000",
-            "pwr_pin_2": "0x2b",
-            "pwr_pin_3": "0xfe"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "8",
-            "board_revision": "0x1",
-            "reserved": "000000000000000000000000000000000000"
-         },
-         "displayPins": {
-            "reset": "0x26",
-            "busy": "0x4",
-            "dc": "0x8",
-            "cs": "0x2c",
-            "data": "0x9",
-            "clk": "0x7"
-         },
-         "defaultDisplay": "seeed-ed103-1872x1404",
-         "defaultPower": "battery-3000",
-         "installConfig": {
-            "type": "esp32",
-            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8-extuart_full.json",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware"
-         },
-         "transmission_modes": "25",
-         "index": 8
       },
       {
          "id": "nrf52840-xiao",
@@ -2105,7 +2105,7 @@
    "displays": [
       {
          "id": "ep154-200x200",
-         "name": "1.54\" Monochrome (200\u00d7200)",
+         "name": "1.54\" Monochrome (200×200)",
          "connectorPins": [
             24
          ],
@@ -2123,7 +2123,7 @@
       },
       {
          "id": "ep154-152x152",
-         "name": "1.54\" BWR (152\u00d7152)",
+         "name": "1.54\" BWR (152×152)",
          "connectorPins": [
             24
          ],
@@ -2142,7 +2142,7 @@
       },
       {
          "id": "ep154yr-200x200",
-         "name": "1.54\" BWRY (200\u00d7200)",
+         "name": "1.54\" BWRY (200×200)",
          "connectorPins": [
             24
          ],
@@ -2161,7 +2161,7 @@
       },
       {
          "id": "ep213-122x250",
-         "name": "2.13\" Monochrome (122\u00d7250)",
+         "name": "2.13\" Monochrome (122×250)",
          "connectorPins": [
             24
          ],
@@ -2179,7 +2179,7 @@
       },
       {
          "id": "ep213r-122x250",
-         "name": "2.13\" BWRY (122\u00d7250)",
+         "name": "2.13\" BWRY (122×250)",
          "connectorPins": [
             24
          ],
@@ -2197,7 +2197,7 @@
       },
       {
          "id": "ep266yr-184x360",
-         "name": "2.66\" BWRY (184\u00d7360)",
+         "name": "2.66\" BWRY (184×360)",
          "connectorPins": [
             24
          ],
@@ -2216,7 +2216,7 @@
       },
       {
          "id": "ep29-128x296",
-         "name": "2.9\" Flexible Monochrome (296\u00d7128)",
+         "name": "2.9\" Flexible Monochrome (296×128)",
          "connectorPins": [
             24
          ],
@@ -2234,7 +2234,7 @@
       },
       {
          "id": "ep29r-128x296",
-         "name": "2.9\" BWRY (128\u00d7296)",
+         "name": "2.9\" BWRY (128×296)",
          "connectorPins": [
             24
          ],
@@ -2271,7 +2271,7 @@
       },
       {
          "id": "ep35yr-184x384",
-         "name": "3.5\" BWRY (184\u00d7384)",
+         "name": "3.5\" BWRY (184×384)",
          "connectorPins": [
             24
          ],
@@ -2290,7 +2290,7 @@
       },
       {
          "id": "ep397-800x480",
-         "name": "3.97\" GDEM0397T81P monochrome (800\u00d7480)",
+         "name": "3.97\" GDEM0397T81P monochrome (800×480)",
          "connectorPins": [
             24
          ],
@@ -2308,7 +2308,7 @@
       },
       {
          "id": "ep397-800x480-4gray",
-         "name": "3.97\" GDEM0397T81P 4-gray (800\u00d7480)",
+         "name": "3.97\" GDEM0397T81P 4-gray (800×480)",
          "connectorPins": [
             24
          ],
@@ -2326,7 +2326,7 @@
       },
       {
          "id": "ep397yr-800x480",
-         "name": "3.97\" GDEM0397F81 BWRY (800\u00d7480)",
+         "name": "3.97\" GDEM0397F81 BWRY (800×480)",
          "connectorPins": [
             24
          ],
@@ -2344,7 +2344,7 @@
       },
       {
          "id": "ep42-400x300",
-         "name": "4.2\" Monochrome (400\u00d7300)",
+         "name": "4.2\" Monochrome (400×300)",
          "connectorPins": [
             24
          ],
@@ -2362,7 +2362,7 @@
       },
       {
          "id": "ep42yr-400x300",
-         "name": "4.2\" BWRY (400\u00d7300)",
+         "name": "4.2\" BWRY (400×300)",
          "connectorPins": [
             24
          ],
@@ -2381,7 +2381,7 @@
       },
       {
          "id": "ep426-800x480",
-         "name": "4.26\" Monochrome (800\u00d7480)",
+         "name": "4.26\" Monochrome (800×480)",
          "connectorPins": [
             24
          ],
@@ -2399,7 +2399,7 @@
       },
       {
          "id": "ep426-800x480-4g",
-         "name": "4.26\" Monochrome 4gray (800\u00d7480)",
+         "name": "4.26\" Monochrome 4gray (800×480)",
          "connectorPins": [
             24
          ],
@@ -2417,7 +2417,7 @@
       },
       {
          "id": "ep583-648x480",
-         "name": "5.83\" Monochrome (648\u00d7480)",
+         "name": "5.83\" Monochrome (648×480)",
          "connectorPins": [
             24
          ],
@@ -2435,7 +2435,7 @@
       },
       {
          "id": "ep75-800x480",
-         "name": "7.5\" Monochrome (800\u00d7480)",
+         "name": "7.5\" Monochrome (800×480)",
          "connectorPins": [
             24
          ],
@@ -2453,7 +2453,7 @@
       },
       {
          "id": "ep75-800x480-4gray",
-         "name": "7.5\" Monochrome 4-gray (800\u00d7480)",
+         "name": "7.5\" Monochrome 4-gray (800×480)",
          "connectorPins": [
             24
          ],
@@ -2471,7 +2471,7 @@
       },
       {
          "id": "ep73-spectra-800x480",
-         "name": "7.3\" Spectra 6 Color (800\u00d7480)",
+         "name": "7.3\" Spectra 6 Color (800×480)",
          "connectorPins": [
             50
          ],
@@ -2489,7 +2489,7 @@
       },
       {
          "id": "ep75-bwry-800x480",
-         "name": "7.5\" BWRY (800\u00d7480)",
+         "name": "7.5\" BWRY (800×480)",
          "connectorPins": [
             24
          ],
@@ -2507,7 +2507,7 @@
       },
       {
          "id": "seeed-ed103-1872x1404",
-         "name": "10.3\" Seeed ED103TC2 monochrome (1872\u00d71404)",
+         "name": "10.3\" Seeed ED103TC2 monochrome (1872×1404)",
          "connectorPins": [
             40
          ],
@@ -2525,7 +2525,7 @@
       },
       {
          "id": "seeed-ed103-1872x1404-4gray",
-         "name": "10.3\" Seeed ED103TC2 4bpp gray (1872\u00d71404)",
+         "name": "10.3\" Seeed ED103TC2 4bpp gray (1872×1404)",
          "connectorPins": [
             40
          ],
@@ -2633,7 +2633,7 @@
       },
       {
          "id": "uc8151-029-bwr",
-         "name": "UC8151 2.9\" 168\u00d7384 B/W/R",
+         "name": "UC8151 2.9\" 168×384 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2651,7 +2651,7 @@
       },
       {
          "id": "ssd1619-029-bwr",
-         "name": "SSD1619 2.9\" 168\u00d7384 B/W/R",
+         "name": "SSD1619 2.9\" 168×384 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2669,7 +2669,7 @@
       },
       {
          "id": "ssd1619-016-bwr",
-         "name": "SSD1619 1.6\" 200\u00d7200 B/W/R",
+         "name": "SSD1619 1.6\" 200×200 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2687,7 +2687,7 @@
       },
       {
          "id": "ssd1619-022-bwr",
-         "name": "SSD1619 2.2\" 240\u00d7320 B/W/R",
+         "name": "SSD1619 2.2\" 240×320 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2705,7 +2705,7 @@
       },
       {
          "id": "ssd1619-026-bwr",
-         "name": "SSD1619 2.6\" 296\u00d7152 B/W/R",
+         "name": "SSD1619 2.6\" 296×152 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2723,7 +2723,7 @@
       },
       {
          "id": "uc8151-027-bwr",
-         "name": "UC8151 2.7\" 200\u00d7300 B/W/R",
+         "name": "UC8151 2.7\" 200×300 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2742,7 +2742,7 @@
       },
       {
          "id": "uc43-430-bwr",
-         "name": "UC variant 4.3\" 152\u00d7522 B/W/R",
+         "name": "UC variant 4.3\" 152×522 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2760,7 +2760,7 @@
       },
       {
          "id": "ssd1619-013-bwr",
-         "name": "SSD1619 1.3\" 144\u00d7200 B/W/R",
+         "name": "SSD1619 1.3\" 144×200 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2778,7 +2778,7 @@
       },
       {
          "id": "ssd1619-022-lite-bwr",
-         "name": "SSD1619 2.2 lite \" 128\u00d7250 B/W/R",
+         "name": "SSD1619 2.2 lite \" 128×250 B/W/R",
          "connectorPins": [
             124
          ],
@@ -2796,9 +2796,9 @@
       },
       {
          "id": "ep133a-spectra-1200x1600",
-         "name": "13.3\" Spectra 6 Color dual-CS (1200\u00d71600, bwgbry_split)",
+         "name": "13.3\" Spectra 6 Color dual-CS (1200×1600, bwgbry_split)",
          "connectorPins": [
-            133
+            60
          ],
          "panelIcType": "66",
          "config": {
@@ -2814,7 +2814,7 @@
       },
       {
          "id": "inkplate-5v2-1280x720",
-         "name": "Inkplate 5 V2 (1280\u00d7720)",
+         "name": "Inkplate 5 V2 (1280×720)",
          "connectorPins": [
             1052
          ],
@@ -2833,7 +2833,7 @@
       },
       {
          "id": "inkplate-10-1200x825",
-         "name": "Inkplate 10 (1200\u00d7825)",
+         "name": "Inkplate 10 (1200×825)",
          "connectorPins": [
             1010
          ],
