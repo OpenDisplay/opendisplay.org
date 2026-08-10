@@ -311,6 +311,80 @@
          "index": 2
       },
       {
+         "id": "ee02",
+         "name": "Seeed EE02 (ESP32-S3)",
+         "connectorPins": [
+            60
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x1",
+            "pwr_pin": "0x2b",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "17",
+            "board_revision": "0x1",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "0x26",
+            "busy": "0x4",
+            "dc": "0xa",
+            "cs": "0x2c",
+            "data": "0x9",
+            "clk": "0x7",
+            "cs2": "41"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "0x1",
+            "battery_sense_enable_pin": "0x6",
+            "voltage_scaling_factor": "0xb1",
+            "deep_sleep_current_ua": "0"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "0x15",
+            "led_2_g": "0x15",
+            "led_3_b": "0x15",
+            "led_4": "0x0",
+            "led_flags": "0x7",
+            "reserved": "0x0"
+         },
+         "buttons": {
+            "instance_number": "0x0",
+            "input_type": "1",
+            "display_as": "1",
+            "inputpin1": "0x2",
+            "inputpin2": "0x3",
+            "inputpin3": "0x5",
+            "inputpin4": "0xff",
+            "inputpin5": "0xff",
+            "inputpin6": "0xff",
+            "inputpin7": "0xff",
+            "inputpin8": "0xff",
+            "isused": "0x7",
+            "invert": "0x7",
+            "pullups": "0x0",
+            "pulldowns": "0x0",
+            "button_data_byte_index": "0",
+            "reserved": "0x0"
+         },
+         "defaultDisplay": "ep133a-spectra-1200x1600",
+         "defaultPower": "battery-2000",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "25",
+         "index": 29
+      },
+      {
          "id": "en05",
          "name": "Seeed EN05 (NRF52840)",
          "connectorPins": [
@@ -738,7 +812,7 @@
          "defaultPower": "battery-5000",
          "installConfig": {
             "type": "esp32",
-            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-E1004_full.json",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N32R8-extuart_full.json",
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },

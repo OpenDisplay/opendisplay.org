@@ -5566,7 +5566,8 @@ const PREMADE_SIMPLE_PRESETS = [
   { stem: 'xiao-75-s3-og', name: 'XIAO 75 S3 OG', driverBoardId: 'ee04', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1001', name: 'ReTerminal E1001', driverBoardId: 'reterminal-e1001', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1002', name: 'ReTerminal E1002', driverBoardId: 'reterminal-e1002', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
-  { stem: 'reterminal-e1004', name: 'ReTerminal E1004', driverBoardId: 'reterminal-e1004', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-5000' }
+  { stem: 'reterminal-e1004', name: 'ReTerminal E1004', driverBoardId: 'reterminal-e1004', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-5000' },
+  { stem: 'ee02', name: 'Seeed EE02', driverBoardId: 'ee02', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-2000' }
 ];
 
 function extractLegacyPremadeConfigStem(configParam) {

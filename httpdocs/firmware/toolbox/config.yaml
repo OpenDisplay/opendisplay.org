@@ -239,6 +239,9 @@ ble_proto:
               16:
                 name: NRF54LM20
                 description: XIAO nRF54LM20A
+              17:
+                name: EE02
+                description: XIAO EE02 (ESP32-S3 Plus, 13.3" Spectra6)
             2:
               0:
                 name: ESP32_S3:PhotoPainter

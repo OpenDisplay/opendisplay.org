@@ -28,7 +28,8 @@
     "esp32-epd-driver": 25,
     "inkplate-5v2": 26,
     "inkplate-10": 27,
-    "nrf54l15-xiao": 28
+    "nrf54l15-xiao": 28,
+    "ee02": 29
   },
   "displays": {
     "ep154-200x200": 1,
