@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.12.0...1.13.0) (2026-08-10)
+
+
+### Features
+
+* add EE02 preset ([c3e504b](https://github.com/OpenDisplay/opendisplay.org/commit/c3e504b595dbbf2436355b2e2bf3a63d43b8b183))
+
+
+### Bug Fixes
+
+* sync firmware binaries to OpenDisplay/Firmware v2.26.2 ([f894e55](https://github.com/OpenDisplay/opendisplay.org/commit/f894e55151af47ed4d551aed5ff1ae8a3ed78374))
+* sync firmware binaries to OpenDisplay/Firmware v2.26.2 ([2be1761](https://github.com/OpenDisplay/opendisplay.org/commit/2be176123f8d5629940d7e55be08d5d474cd25c4))
+
 ## [1.12.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.11.5...1.12.0) (2026-08-09)
 
 
