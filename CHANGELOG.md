@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.0...1.13.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* trigger release-pleas ([b4695b4](https://github.com/OpenDisplay/opendisplay.org/commit/b4695b4b326ae870886a7eac2696dcfae307c97b))
+
 ## [1.13.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.12.0...1.13.0) (2026-08-10)
 
 
