@@ -795,6 +795,18 @@ async function reboot() {
     await bleLib.reboot();
     addLog("Reboot command sent", 'success');
   } catch (error) {
+    if (OpenDisplayBLE.isAuthError(error)) {
+      addLog("Reboot requires authentication — re-authenticating...", 'info');
+      try {
+        await ensureAuthenticatedOnDemand();
+        await bleLib.reboot();
+        addLog("Reboot command sent", 'success');
+        return;
+      } catch (retryErr) {
+        addLog("Error rebooting: " + retryErr.message, 'error');
+        return;
+      }
+    }
     addLog("Error rebooting: " + error.message, 'error');
   }
 }
@@ -2109,30 +2121,12 @@ async function ensureAuthenticatedOnConnect() {
 }
 
 function isAuthError(error) {
-  const msg = (error && error.message ? String(error.message) : String(error || '')).toLowerCase();
-  const name = (error && error.name ? String(error.name) : '').toLowerCase();
-  return (
-    name.includes('security') ||
-    msg.includes('auth') ||
-    msg.includes('encrypt') ||
-    msg.includes('encryption') ||
-    msg.includes('not authorized') ||
-    msg.includes('insufficient encryption') ||
-    msg.includes('0xfe')
-  );
+  return OpenDisplayBLE.isAuthError(error);
 }
 
 async function ensureAuthenticatedOnDemand() {
   if (!bleLib || !bleLib.isConnected) throw new Error('Not connected');
-  const urlKey = getEncryptionKeyFromUrl();
-  if (urlKey) {
-    const needsAuth = await bleLib.setEncryptionKey(urlKey);
-    if (needsAuth) await bleLib.authenticate();
-    return;
-  }
-  // No URL key; prompt now because we know an operation required it.
-  const needsAuth = await bleLib.setEncryptionKey(null);
-  if (needsAuth) await bleLib.authenticate();
+  await bleLib.ensureAuthenticated(getEncryptionKeyFromUrl);
 }
 function isToolboxEncodedConfigParam(configParamTrimmed) {
   return configParamTrimmed.length > 50 &&

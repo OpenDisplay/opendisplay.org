@@ -177,6 +177,14 @@ class OpenDisplayBLE {
       onComplete: null,
       timeoutId: null
     };
+
+    this.commandResponseState = {
+      active: false,
+      expectedCmd: null,
+      fireAndForget: true,
+      resolve: null,
+      reject: null
+    };
     
     this.configWriteState = {
       active: false,
@@ -1095,6 +1103,123 @@ class OpenDisplayBLE {
     await this.characteristic.writeValue(data);
   }
   
+  /**
+   * True when the device replied [0x00][cmd_lo][0xFE] (authentication required).
+   */
+  static isAuthRequiredResponse(bytes) {
+    return !!(bytes && bytes.length >= 3 && bytes[0] === 0x00 && bytes[2] === 0xFE);
+  }
+
+  /**
+   * True when an Error indicates the device rejected a command for lack of auth.
+   */
+  static isAuthError(error) {
+    const msg = (error && error.message ? String(error.message) : String(error || '')).toLowerCase();
+    const name = (error && error.name ? String(error.name) : '').toLowerCase();
+    return (
+      name.includes('security') ||
+      msg.includes('auth') ||
+      msg.includes('encrypt') ||
+      msg.includes('encryption') ||
+      msg.includes('not authorized') ||
+      msg.includes('insufficient encryption') ||
+      msg.includes('0xfe')
+    );
+  }
+
+  _clearCommandResponseState() {
+    this.commandResponseState.active = false;
+    this.commandResponseState.expectedCmd = null;
+    this.commandResponseState.fireAndForget = true;
+    this.commandResponseState.resolve = null;
+    this.commandResponseState.reject = null;
+  }
+
+  _rejectCommandResponse(error) {
+    const reject = this.commandResponseState.reject;
+    this._clearCommandResponseState();
+    if (reject) reject(error);
+  }
+
+  _resolveCommandResponse() {
+    const resolve = this.commandResponseState.resolve;
+    this._clearCommandResponseState();
+    if (resolve) resolve();
+  }
+
+  /**
+   * Wait for a short command reply.
+   * fireAndForget: timeout resolves (reboot). Otherwise timeout rejects and
+   * [0x00][cmd] ACK / [0xFF][cmd] NACK settle the promise.
+   */
+  _waitForCommandResponse(expectedCmd, timeoutMs = 3000, options = {}) {
+    const fireAndForget = options.fireAndForget !== false;
+    this._clearCommandResponseState();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this._clearCommandResponseState();
+        if (fireAndForget) resolve();
+        else reject(new Error('Command response timeout'));
+      }, timeoutMs);
+      this.commandResponseState = {
+        active: true,
+        expectedCmd,
+        fireAndForget,
+        resolve: () => {
+          clearTimeout(timer);
+          this._clearCommandResponseState();
+          resolve();
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          this._clearCommandResponseState();
+          reject(err);
+        }
+      };
+    });
+  }
+
+  _onAuthRequiredResponse(bytes) {
+    this.encryptionSession.authenticated = false;
+    const cmd = bytes[1];
+    this.log(`Command 0x${cmd.toString(16).padStart(2, '0')} requires authentication (0xFE)`, 'error');
+    if (this.commandResponseState.active && this.commandResponseState.expectedCmd === cmd) {
+      this._rejectCommandResponse(new Error('Authentication required (0xFE)'));
+    }
+  }
+
+  /**
+   * Authenticate, prompting for the key when needed. Retries on wrong key until
+   * success or the user cancels the prompt. getUrlKey() may return a Uint8Array(16)
+   * to try once before prompting.
+   */
+  async ensureAuthenticated(getUrlKey = null) {
+    if (this.encryptionSession.authenticated) return;
+
+    let triedUrlKey = false;
+    while (true) {
+      try {
+        if (!triedUrlKey && typeof getUrlKey === 'function') {
+          const urlKey = getUrlKey();
+          if (urlKey) {
+            triedUrlKey = true;
+            await this.setEncryptionKey(urlKey);
+            await this.authenticate();
+            return;
+          }
+        }
+        await this.setEncryptionKey(null);
+        await this.authenticate();
+        return;
+      } catch (error) {
+        if (error && error.message === 'Encryption key required') throw error;
+        this.encryptionSession.masterKey = null;
+        this.encryptionSession.authenticated = false;
+        this.log(`Authentication failed: ${error.message} — try again`, 'error');
+      }
+    }
+  }
+
   /**
    * Set encryption master key (prompts user if not provided)
    */
@@ -2347,6 +2472,15 @@ class OpenDisplayBLE {
     const responseType = bytes[0];
     const command = bytes[1];
     if (responseType !== 0x00 || command !== 0x44) return false;
+    if (bytes.length >= 3 && bytes[2] === 0xFE) {
+      this._clearMsdReadTimer();
+      const cb = this.msdReadState.onComplete;
+      this.msdReadState.onComplete = null;
+      this.msdReadState.active = false;
+      this.log('MSD read requires authentication (0xFE)', 'error');
+      if (cb) cb(null, new Error('Authentication required (0xFE)'));
+      return true;
+    }
     this._clearMsdReadTimer();
     const cb = this.msdReadState.onComplete;
     this.msdReadState.onComplete = null;
@@ -2407,6 +2541,24 @@ class OpenDisplayBLE {
     
     const responseType = bytes[0];
     const command = bytes[1];
+
+    // Generic auth-required reply: [0x00][cmd_lo][0xFE]
+    if (OpenDisplayBLE.isAuthRequiredResponse(bytes)) {
+      this._onAuthRequiredResponse(bytes);
+      return true;
+    }
+
+    // Pending simple-command waiter (reboot, clear config, …)
+    if (this.commandResponseState.active && command === this.commandResponseState.expectedCmd) {
+      if (responseType === 0x00) {
+        this._resolveCommandResponse();
+        return true;
+      }
+      if (responseType === 0xFF) {
+        this._rejectCommandResponse(new Error('Command rejected by device'));
+        return true;
+      }
+    }
     
     // Command ACK (0x00 0x63)
     if (responseType === 0x00 && command === 0x63) {
@@ -3235,7 +3387,34 @@ class OpenDisplayBLE {
     if (!this.isConnected) {
       throw new Error('Not connected');
     }
+    const responsePromise = this._waitForCommandResponse(0x0F, 3000);
     await this.sendHexCommand('000F');
+    await responsePromise;
+  }
+
+  /**
+   * Clear stored configuration (CMD 0x0045)
+   */
+  async clearConfig() {
+    if (!this.isConnected) {
+      throw new Error('Not connected');
+    }
+    const responsePromise = this._waitForCommandResponse(0x45, 8000, { fireAndForget: false });
+    await this.sendHexCommand('0045');
+    await responsePromise;
+  }
+
+  /**
+   * Power off via D-FF latch (CMD 0x0052). Fire-and-forget: success ACK may not
+   * arrive before the rail is cut; NACK means no latch hardware on this target.
+   */
+  async powerOff() {
+    if (!this.isConnected) {
+      throw new Error('Not connected');
+    }
+    const responsePromise = this._waitForCommandResponse(0x52, 2000);
+    await this.sendHexCommand('0052');
+    await responsePromise;
   }
 
   /**
@@ -4478,6 +4657,13 @@ if (supportsStreamingDecompression) {
   handleDirectWriteNotification(bytes, hexString) {
     if (!this.directWriteState || !this.directWriteState.active) {
       return false;
+    }
+
+    if (OpenDisplayBLE.isAuthRequiredResponse(bytes) &&
+        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76)) {
+      this.encryptionSession.authenticated = false;
+      this._abortDirectWrite(new Error('Authentication required (0xFE)'));
+      return true;
     }
     
     if (bytes.length < 2) {

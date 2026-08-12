@@ -575,7 +575,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             <div id="deviceControlWrap" class="connected-only device-control-wrap">
                 <div class="device-actions">
                     <button type="button" onclick="deviceReboot();">Reboot</button>
+                    <button type="button" onclick="deviceClearConfig();">Clear config</button>
                     <button type="button" onclick="deviceDeepSleep();">Deep sleep</button>
+                    <button type="button" onclick="devicePowerOff();" title="Cut power via D-FF latch (ESP32 boards with power latch only)">Power latch off</button>
                     <button type="button" onclick="deviceRebootBootloader();">Bootloader</button>
                 </div>
             </div>
@@ -592,6 +594,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         widthInput = 800;
         heightInput = 480;
         let deviceDisplayConfigReady = false;
+        let deviceEncryptionRequired = false;
         let activeWidthMm = 0;
         let activeHeightMm = 0;
         let displayRotation = 0; // 0=0°, 1=90°, 2=180°, 3=270°
@@ -1483,9 +1486,73 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (!bleLib || !bleLib.isConnected) return;
             bleLib.sendHexCommand('000F').catch(function(e) { addLog('Reboot error: ' + e.message, 'error'); });
         }
+        async function deviceClearConfig() {
+            if (!bleLib || !bleLib.isConnected) {
+                addLog('Not connected', 'error');
+                return;
+            }
+            if (!confirm('Clear stored configuration on the device? This cannot be undone.')) return;
+            addLog('Clearing stored config (0x0045)...', 'info');
+            try {
+                await bleLib.clearConfig();
+                addLog('Stored config cleared', 'success');
+                deviceDisplayConfigReady = false;
+                deviceEncryptionRequired = false;
+                lastDeviceParsedConfigForMsd = null;
+                updatePreviewLine();
+                setTimeout(function() { readDynamicConfig(); }, 500);
+            } catch (error) {
+                if (OpenDisplayBLE.isAuthError(error)) {
+                    addLog('Clear config requires authentication — re-authenticating...', 'info');
+                    try {
+                        await ensureDeviceAuthenticated();
+                        await bleLib.clearConfig();
+                        addLog('Stored config cleared', 'success');
+                        deviceDisplayConfigReady = false;
+                        deviceEncryptionRequired = false;
+                        lastDeviceParsedConfigForMsd = null;
+                        updatePreviewLine();
+                        setTimeout(function() { readDynamicConfig(); }, 500);
+                    } catch (retryErr) {
+                        addLog('Clear config error: ' + retryErr.message, 'error');
+                    }
+                    return;
+                }
+                addLog('Clear config error: ' + error.message, 'error');
+            }
+        }
         function deviceDeepSleep() {
             if (!bleLib || !bleLib.isConnected) return;
-            bleLib.sendHexCommand('0052').catch(function(e) { addLog('Deep sleep error: ' + e.message, 'error'); });
+            bleLib.sendHexCommand('0053').catch(function(e) { addLog('Deep sleep error: ' + e.message, 'error'); });
+        }
+        async function devicePowerOff() {
+            if (!bleLib || !bleLib.isConnected) {
+                addLog('Not connected', 'error');
+                return;
+            }
+            if (!confirm('Cut power via the D-FF latch? The device will only wake on a physical button press.')) return;
+            addLog('Power latch off (0x0052)...', 'info');
+            try {
+                await bleLib.powerOff();
+                addLog('Power-off command sent (device may disconnect)', 'info');
+            } catch (error) {
+                if (OpenDisplayBLE.isAuthError(error)) {
+                    addLog('Power off requires authentication — re-authenticating...', 'info');
+                    try {
+                        await ensureDeviceAuthenticated();
+                        await bleLib.powerOff();
+                        addLog('Power-off command sent (device may disconnect)', 'info');
+                    } catch (retryErr) {
+                        addLog('Power off error: ' + (retryErr.message === 'Command rejected by device'
+                            ? 'Power latch not supported on this device (use Deep sleep)'
+                            : retryErr.message), 'error');
+                    }
+                    return;
+                }
+                addLog('Power off error: ' + (error.message === 'Command rejected by device'
+                    ? 'Power latch not supported on this device (use Deep sleep)'
+                    : error.message), 'error');
+            }
         }
         async function deviceRebootBootloader() {
             if (!bleLib || !bleLib.isConnected) {
@@ -2107,6 +2174,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             setBuzzerUI(false);
             firmwareVersionPreview = '';
             deviceDisplayConfigReady = false;
+            deviceEncryptionRequired = false;
             activeWidthMm = 0;
             activeHeightMm = 0;
             displayPartialUpdateSupport = 0;
@@ -2128,6 +2196,25 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) {
                 addLog("Cannot upload: Canvas not ready.", 'error');
+                return;
+            }
+            if (deviceEncryptionRequired && bleLib && !bleLib.encryptionSession.authenticated) {
+                void (async () => {
+                    try {
+                        await ensureDeviceAuthenticated();
+                    } catch (e) {
+                        addLog("Cannot upload: authentication required.", 'error');
+                        setStatus("Authentication required", true, true);
+                        if (extraOptions.onComplete) extraOptions.onComplete(false, e);
+                        return;
+                    }
+                    sendDirectWriteAuto(extraOptions);
+                })();
+                return;
+            }
+            if (!deviceDisplayConfigReady) {
+                addLog("Cannot upload: device display config not loaded.", 'error');
+                if (extraOptions.onComplete) extraOptions.onComplete(false, new Error('Display config not loaded'));
                 return;
             }
             if (bleLib && bleLib.directWriteState && bleLib.directWriteState.active) {
@@ -2203,8 +2290,19 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     addLog("LED flash stopped", 'success');
                 } else if (continuousHex === "00770000") {
                     addLog("Buzzer pattern done", 'success');
-                } else if (continuousHex.length >= 4 && cmdHex === "0052") {
+                } else if (continuousHex.length >= 4 && cmdHex === "0045") {
+                    addLog("Clear config ACK", 'success');
+                } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF45") {
+                    addLog("Clear config failed (device NACK)", 'error');
+                } else if (continuousHex.length >= 4 && cmdHex === "0053") {
                     addLog("Deep sleep ACK (device will go offline)", 'info');
+                } else if (continuousHex.length >= 4 && cmdHex === "0052") {
+                    addLog("Power latch off ACK (device will go offline)", 'info');
+                } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF53") {
+                    const err = continuousHex.length >= 6 ? continuousHex.substring(4, 6) : "??";
+                    addLog("Deep sleep rejected (0x" + err + ")", 'error');
+                } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF52") {
+                    addLog("Power-off unsupported on this device (use Deep sleep / 0x0053)", 'warning');
                 } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF73") {
                     const err = continuousHex.length >= 6 ? continuousHex.substring(4, 6) : "??";
                     addLog("LED error (0x" + err + ")", 'error');
@@ -2374,82 +2472,6 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             console.log("BLE Log: " + time + " : " + logTXT);
         }
-        async function readDynamicConfig() {
-            if (!bleLib || !bleLib.isConnected) {
-                addLog("Cannot read config: Not connected.", 'error');
-                return;
-            }
-            addLog("Requesting config (0x0040)...", 'info');
-            
-            // Helper function to actually perform the config read
-            const performConfigRead = async () => {
-                return new Promise((resolve, reject) => {
-            bleLib.readConfig((configBytes, error) => {
-                if (error) {
-                            reject(error);
-                            return;
-                        }
-                        if (!configBytes || configBytes.length === 0) {
-                            reject(new Error("Config read callback received empty data"));
-                    return;
-                }
-                        resolve(configBytes);
-                    }, (received, total) => {
-                        addLog(`Progress: ${received}/${total} bytes`, 'info');
-                    });
-                });
-            };
-            
-            try {
-                const configBytes = await performConfigRead();
-                addLog(`Config read callback received ${configBytes ? configBytes.length : 0} bytes`, 'info');
-                try {
-                    const parsedConfig = bleLib.parseConfigBytes(configBytes);
-                    applyParsedConfig(parsedConfig);
-                } catch (error) {
-                    addLog("Error parsing config: " + error.message, 'error');
-                    setTimeout(function() { readAdvertisingData(true); }, 200);
-                }
-            } catch (error) {
-                // Check if this is an authentication error
-                // The error might be in the message or we need to check the notification
-                const errorMsg = error.message || '';
-                if (errorMsg.includes('auth') || errorMsg.includes('encryption') || errorMsg.includes('0xFE')) {
-                    const urlKey = getUrlParameter('key');
-                    const keyBytes = parseKeyFromUrl(urlKey);
-                    if (keyBytes) {
-                        addLog("Authentication required. Using encryption key from URL.", 'info');
-                    } else {
-                        addLog("Authentication required for config read. Prompting for encryption key...", 'info');
-                    }
-                    try {
-                        await bleLib.setEncryptionKey(keyBytes || null);
-                        addLog("Encryption key set, authenticating...", 'info');
-                        
-                        // Perform authentication
-                        await bleLib.authenticate();
-                        addLog("Authentication successful! Retrying config read...", 'success');
-                        
-                        // Retry config read after authentication
-                        const configBytes = await performConfigRead();
-                        addLog(`Config read callback received ${configBytes ? configBytes.length : 0} bytes`, 'info');
-                        try {
-                            const parsedConfig = bleLib.parseConfigBytes(configBytes);
-                            applyParsedConfig(parsedConfig);
-                        } catch (parseError) {
-                            addLog("Error parsing config: " + parseError.message, 'error');
-                            setTimeout(function() { readAdvertisingData(true); }, 200);
-                        }
-                    } catch (authError) {
-                        addLog("Authentication failed: " + authError.message, 'error');
-                        setTimeout(function() { readAdvertisingData(true); }, 200);
-                    }
-                } else {
-                    addLog("Config read failed: " + error.message, 'error');
-                    setTimeout(function() { readAdvertisingData(true); }, 200);
-                }
-            }
-        }
         function applyParsedConfig(parsedConfig) {
             lastDeviceParsedConfigForMsd = parsedConfig || null;
             const powerOption = extractPowerOptionFromParsedConfig(parsedConfig);
@@ -2592,7 +2614,81 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             return out;
         }
+
+        function getEncryptionKeyFromUrl() {
+            return parseKeyFromUrl(getUrlParameter('key'));
+        }
+
+        async function ensureDeviceAuthenticated() {
+            if (!bleLib || !bleLib.isConnected) throw new Error('Not connected');
+            await bleLib.ensureAuthenticated(getEncryptionKeyFromUrl);
+        }
         
+        async function readDynamicConfig() {
+            if (!bleLib || !bleLib.isConnected) {
+                addLog("Cannot read config: Not connected.", 'error');
+                return;
+            }
+            addLog("Requesting config (0x0040)...", 'info');
+            
+            const performConfigRead = async () => {
+                return new Promise((resolve, reject) => {
+            bleLib.readConfig((configBytes, error) => {
+                if (error) {
+                            reject(error);
+                            return;
+                        }
+                        if (!configBytes || configBytes.length === 0) {
+                            reject(new Error("Config read callback received empty data"));
+                    return;
+                }
+                        resolve(configBytes);
+                    }, (received, total) => {
+                        addLog(`Progress: ${received}/${total} bytes`, 'info');
+                    });
+                });
+            };
+            
+            try {
+                const configBytes = await performConfigRead();
+                deviceEncryptionRequired = false;
+                addLog(`Config read callback received ${configBytes ? configBytes.length : 0} bytes`, 'info');
+                try {
+                    const parsedConfig = bleLib.parseConfigBytes(configBytes);
+                    applyParsedConfig(parsedConfig);
+                } catch (error) {
+                    addLog("Error parsing config: " + error.message, 'error');
+                    setTimeout(function() { readAdvertisingData(true); }, 200);
+                }
+            } catch (error) {
+                if (!OpenDisplayBLE.isAuthError(error)) {
+                    addLog("Config read failed: " + error.message, 'error');
+                    setTimeout(function() { readAdvertisingData(true); }, 200);
+                    return;
+                }
+                deviceEncryptionRequired = true;
+                deviceDisplayConfigReady = false;
+                updatePreviewLine();
+                addLog("Authentication required for config read.", 'info');
+                try {
+                    await ensureDeviceAuthenticated();
+                    const configBytes = await performConfigRead();
+                    deviceEncryptionRequired = false;
+                    addLog(`Config read callback received ${configBytes ? configBytes.length : 0} bytes`, 'info');
+                    try {
+                        const parsedConfig = bleLib.parseConfigBytes(configBytes);
+                        applyParsedConfig(parsedConfig);
+                    } catch (parseError) {
+                        addLog("Error parsing config: " + parseError.message, 'error');
+                        setTimeout(function() { readAdvertisingData(true); }, 200);
+                    }
+                } catch (authError) {
+                    addLog("Authentication failed: " + authError.message, 'error');
+                    setStatus("Authentication required", true, true);
+                }
+            }
+        }
+
         function initializeFromUrl() {
             // Check for device filter in URL parameters
             const filterParam = getUrlParameter('filter') || getUrlParameter('device') || getUrlParameter('prefix');

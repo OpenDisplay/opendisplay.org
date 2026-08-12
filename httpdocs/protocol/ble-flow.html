@@ -913,7 +913,8 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
       <li><code>0x0044</code> — Read 16-byte manufacturer specific data (MSD)</li>
       <li><code>0x0050</code> — Authenticate / encryption handshake (see <a href="#encryption-authentication" style="color: var(--accent);">Encryption</a>)</li>
       <li><code>0x0051</code> — Enter DFU</li>
-      <li><code>0x0052</code> — Deep sleep</li>
+      <li><code>0x0052</code> — Power off (D-FF latch hardware only)</li>
+      <li><code>0x0053</code> — Deep sleep</li>
       <li><code>0x0070</code> — Direct write start</li>
       <li><code>0x0071</code> — Direct write data (also partial stream while a <code>0x0076</code> session is active)</li>
       <li><code>0x0072</code> — Direct write end</li>
