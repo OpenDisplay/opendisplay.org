@@ -73,172 +73,6 @@
          "index": 1
       },
       {
-         "id": "nrf54l15-xiao",
-         "name": "Seeed XIAO ePaper Breakout — nRF54L15",
-         "connectorPins": [
-            24
-         ],
-         "systemConfig": {
-            "ic_type": "7",
-            "communication_modes": "0x1",
-            "device_flags": "0x21",
-            "pwr_pin": "0xff",
-            "reserved": "0x0"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "15",
-            "board_revision": "0x2",
-            "reserved": "0x0"
-         },
-         "displayPins": {
-            "reset": "0x14",
-            "busy": "0x1b",
-            "dc": "0x17",
-            "cs": "0x15",
-            "data": "0x22",
-            "clk": "0x21"
-         },
-         "powerDefaults": {
-            "battery_sense_pin": "0xFF",
-            "battery_sense_enable_pin": "0xFF",
-            "voltage_scaling_factor": "0x0"
-         },
-         "led": {
-            "instance_number": "0x0",
-            "led_type": "0",
-            "led_1_r": "0x20",
-            "led_2_g": "0x20",
-            "led_3_b": "0x20",
-            "led_4": "0x0",
-            "led_flags": "0x7",
-            "reserved": "0x0"
-         },
-         "installConfig": {
-            "type": "nrf54l15",
-            "downloadFile": "firmware/nrf54l15.hex",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
-         },
-         "transmission_modes": "25",
-         "index": 28
-      },
-      {
-         "id": "nrf54lm20-xiao",
-         "name": "Seeed XIAO ePaper Breakout nRF54LM20A",
-         "connectorPins": [
-            24
-         ],
-         "systemConfig": {
-            "ic_type": "8",
-            "communication_modes": "0x1",
-            "device_flags": "0x21",
-            "pwr_pin": "0xff",
-            "reserved": "0x0"
-         },
-         "manufacturerData": {
-            "manufacturer_id": "1",
-            "board_type": "16",
-            "board_revision": "3",
-            "reserved": "0x0"
-         },
-         "displayPins": {
-            "reset": "0x10",
-            "busy": "0x17",
-            "dc": "0xbd",
-            "cs": "0xbf",
-            "data": "0x16",
-            "clk": "0x14"
-         },
-         "powerDefaults": {
-            "battery_sense_pin": "0xFF",
-            "battery_sense_enable_pin": "0xFF",
-            "voltage_scaling_factor": "0x0",
-            "sleep_timeout_ms": "40000",
-            "tx_power": "0x0"
-         },
-         "led": {
-            "instance_number": "0x0",
-            "led_type": "0",
-            "led_1_r": "0xB6",
-            "led_2_g": "0xB8",
-            "led_3_b": "0xB7",
-            "led_4": "0xff",
-            "led_flags": "0x7",
-            "reserved": "0x0"
-         },
-         "dataBus": {
-            "instance_number": "0x0",
-            "bus_type": "1",
-            "pin_1": "0xb1",
-            "pin_2": "0xb2",
-            "pin_3": "0x0",
-            "pin_4": "0x0",
-            "pin_5": "0x0",
-            "pin_6": "0x0",
-            "pin_7": "0x0",
-            "bus_speed_hz": "0x186a0",
-            "bus_flags": "0x0",
-            "pullups": "0x3",
-            "pulldowns": "0x0",
-            "reserved": "0x0"
-         },
-         "sensorData": {
-            "instance_number": "0x0",
-            "sensor_type": "6",
-            "bus_id": "0x0",
-            "i2c_addr_7bit": "0x6b",
-            "msd_data_start_byte": "10",
-            "reserved": "000000000000000000000000000000000000000000000000"
-         },
-         "nfcConfig": {
-            "instance_number": "0x0",
-            "nfc_ic_type": "2",
-            "bus_instance": "0x0",
-            "flags": "0x1",
-            "field_detect_pin": "0xff",
-            "field_detect_mode": "0",
-            "field_detect_active": "0",
-            "field_detect_debounce_ms": "0x0",
-            "power_pin": "0xff",
-            "power_active": "0x0",
-            "power_on_delay_ms": "0x0",
-            "power_off_delay_ms": "0x0",
-            "adv_button_byte_index": "1",
-            "adv_button_button_id": "0x7",
-            "reserved_pin_1": "0x0",
-            "reserved_pin_2": "0x0",
-            "reserved": "00000000000000000000000000000000"
-         },
-         "flashConfig": {
-            "instance_number": "0x0",
-            "flash_ic_type": "0",
-            "bus_instance": "0x0",
-            "flags": "0x1",
-            "mosi_pin": "0x22",
-            "sck_pin": "0x21",
-            "cs_pin": "0x25",
-            "miso_pin": "0x24",
-            "wp_pin": "0x23",
-            "hold_pin": "0x20",
-            "power_pin": "0xff",
-            "power_active": "0x1",
-            "power_on_delay_ms": "0x0",
-            "power_off_delay_ms": "0x0",
-            "mode": "0x0",
-            "reserved": "0000000000000000000000000000000000"
-         },
-         "installConfig": {
-            "type": "nrf54lm20",
-            "downloadFile": "firmware/nrf54lm20a.hex",
-            "firmwareLetter": "O",
-            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
-         },
-         "defaultPower": "battery-2000",
-         "transmission_modes": "25",
-         "index": 23
-      },
-      {
          "id": "ee02",
          "name": "Seeed EE02 (ESP32-S3)",
          "connectorPins": [
@@ -2100,6 +1934,172 @@
          },
          "transmission_modes": "25",
          "index": 22
+      },
+      {
+         "id": "nrf54l15-xiao",
+         "name": "Seeed XIAO ePaper Breakout — nRF54L15",
+         "connectorPins": [
+            24
+         ],
+         "systemConfig": {
+            "ic_type": "7",
+            "communication_modes": "0x1",
+            "device_flags": "0x21",
+            "pwr_pin": "0xff",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "15",
+            "board_revision": "0x2",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "0x14",
+            "busy": "0x1b",
+            "dc": "0x17",
+            "cs": "0x15",
+            "data": "0x22",
+            "clk": "0x21"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "0xFF",
+            "battery_sense_enable_pin": "0xFF",
+            "voltage_scaling_factor": "0x0"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "0x20",
+            "led_2_g": "0x20",
+            "led_3_b": "0x20",
+            "led_4": "0x0",
+            "led_flags": "0x7",
+            "reserved": "0x0"
+         },
+         "installConfig": {
+            "type": "nrf54l15",
+            "downloadFile": "firmware/nrf54l15.hex",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
+         },
+         "transmission_modes": "25",
+         "index": 28
+      },
+      {
+         "id": "nrf54lm20-xiao",
+         "name": "Seeed XIAO ePaper Breakout nRF54LM20A",
+         "connectorPins": [
+            24
+         ],
+         "systemConfig": {
+            "ic_type": "8",
+            "communication_modes": "0x1",
+            "device_flags": "0x21",
+            "pwr_pin": "0xff",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "1",
+            "board_type": "16",
+            "board_revision": "3",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "0x10",
+            "busy": "0x17",
+            "dc": "0xbd",
+            "cs": "0xbf",
+            "data": "0x16",
+            "clk": "0x14"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "0xFF",
+            "battery_sense_enable_pin": "0xFF",
+            "voltage_scaling_factor": "0x0",
+            "sleep_timeout_ms": "40000",
+            "tx_power": "0x0"
+         },
+         "led": {
+            "instance_number": "0x0",
+            "led_type": "0",
+            "led_1_r": "0xB6",
+            "led_2_g": "0xB8",
+            "led_3_b": "0xB7",
+            "led_4": "0xff",
+            "led_flags": "0x7",
+            "reserved": "0x0"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0xb1",
+            "pin_2": "0xb2",
+            "pin_3": "0x0",
+            "pin_4": "0x0",
+            "pin_5": "0x0",
+            "pin_6": "0x0",
+            "pin_7": "0x0",
+            "bus_speed_hz": "0x186a0",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "instance_number": "0x0",
+            "sensor_type": "6",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x6b",
+            "msd_data_start_byte": "10",
+            "reserved": "000000000000000000000000000000000000000000000000"
+         },
+         "nfcConfig": {
+            "instance_number": "0x0",
+            "nfc_ic_type": "2",
+            "bus_instance": "0x0",
+            "flags": "0x1",
+            "field_detect_pin": "0xff",
+            "field_detect_mode": "0",
+            "field_detect_active": "0",
+            "field_detect_debounce_ms": "0x0",
+            "power_pin": "0xff",
+            "power_active": "0x0",
+            "power_on_delay_ms": "0x0",
+            "power_off_delay_ms": "0x0",
+            "adv_button_byte_index": "1",
+            "adv_button_button_id": "0x7",
+            "reserved_pin_1": "0x0",
+            "reserved_pin_2": "0x0",
+            "reserved": "00000000000000000000000000000000"
+         },
+         "flashConfig": {
+            "instance_number": "0x0",
+            "flash_ic_type": "0",
+            "bus_instance": "0x0",
+            "flags": "0x1",
+            "mosi_pin": "0x22",
+            "sck_pin": "0x21",
+            "cs_pin": "0x25",
+            "miso_pin": "0x24",
+            "wp_pin": "0x23",
+            "hold_pin": "0x20",
+            "power_pin": "0xff",
+            "power_active": "0x1",
+            "power_on_delay_ms": "0x0",
+            "power_off_delay_ms": "0x0",
+            "mode": "0x0",
+            "reserved": "0000000000000000000000000000000000"
+         },
+         "installConfig": {
+            "type": "nrf54lm20",
+            "downloadFile": "firmware/nrf54lm20a.hex",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware_NRF54"
+         },
+         "defaultPower": "battery-2000",
+         "transmission_modes": "25",
+         "index": 23
       }
    ],
    "displays": [
