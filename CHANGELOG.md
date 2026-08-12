@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.1...1.13.2) (2026-08-12)
+
+
+### Bug Fixes
+
+* reorder presets ([a738208](https://github.com/OpenDisplay/opendisplay.org/commit/a7382082e0980b2cf14c85b37305994b2ad429c9))
+
 ## [1.13.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.0...1.13.1) (2026-08-10)
 
 
