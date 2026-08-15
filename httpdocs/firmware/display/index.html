@@ -384,9 +384,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     <option value="2">B/W + Yellow</option>
                     <option value="3">B/W + Red + Yellow</option>
                     <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
-                    <option value="8">6-color split (left half-plane then right; dual-CS)</option>
                     <option value="5">4 Grayscale</option>
                     <option value="6">16 Grayscale (4bpp)</option>
+                    <option value="7">B/W + Green + Blue + Red + Yellow + Orange (7-color)</option>
+                    <option value="8">6-color split (left half-plane then right; dual-CS)</option>
                 </select>
             </div>
         </div>
@@ -673,11 +674,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const v = Math.round((k * 255) / 15);
                 const h = v.toString(16).padStart(2, '0');
                 return '#' + h + h + h;
-            })
+            }),
+            ['#000000', '#ffffff', '#ff0000', '#ffff00', '#00ff00', '#0000ff', '#ffa500'],
         ];
         PALETTE[8] = PALETTE[4]; // bwgbry_split — same Spectra 6 swatches
         const SCHEME_SHORT = {
-            0: 'BW', 1: 'BWR', 2: 'BWY', 3: 'BWRY', 4: '6C', 5: '4G', 6: '16G', 8: '6Cs'
+            0: 'BW', 1: 'BWR', 2: 'BWY', 3: 'BWRY', 4: '6C', 5: '4G', 6: '16G', 7: '7C', 8: '6Cs'
         };
         const SCHEME_NAMES = {
             0: 'Monochrome (B/W)',
@@ -687,11 +689,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             4: 'B/W + Green + Blue + Red + Yellow (6-color)',
             5: '4 Grayscale',
             6: '16 Grayscale (4bpp)',
+            7: 'B/W + Green + Blue + Red + Yellow + Orange (7-color)',
             8: '6-color split (left half-plane then right; dual-CS)'
         };
         function clampScheme(cs) {
             const n = parseInt(cs, 10);
-            if (n === 8) return 8;
+            if (n === 7 || n === 8) return n;
             if (Number.isNaN(n)) return 0;
             return Math.min(Math.max(n, 0), 6);
         }
