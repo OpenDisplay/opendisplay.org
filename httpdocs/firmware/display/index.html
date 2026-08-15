@@ -675,7 +675,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const h = v.toString(16).padStart(2, '0');
                 return '#' + h + h + h;
             }),
-            ['#000000', '#ffffff', '#ff0000', '#ffff00', '#00ff00', '#0000ff', '#ffa500'],
+            ['#000000', '#ffffff', '#ff0000', '#ffff00', '#00ff00', '#0000ff', '#ff8000'],
         ];
         PALETTE[8] = PALETTE[4]; // bwgbry_split — same Spectra 6 swatches
         const SCHEME_SHORT = {
@@ -2067,13 +2067,18 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 ctx.fillStyle = 'rgb(255, 255, 0)';  // Pure yellow - exact display color
                 ctx.fillText(text, x, y2);
             }
-            if (colorScheme === 4 || colorScheme === 8) {
+            if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
                 let y3 = y + fontSize * 1.4;
                 ctx.fillStyle = 'rgb(0, 255, 0)';  // Pure green - exact display color
                 ctx.fillText(text, x, y3);
                 let y4 = y - fontSize * 1.4;
                 ctx.fillStyle = 'rgb(0, 0, 255)';  // Pure blue - exact display color
                 ctx.fillText(text, x, y4);
+            }
+            if (colorScheme === 7) {
+                let y5 = y + fontSize * 2.1;
+                ctx.fillStyle = 'rgb(255, 128, 0)';  // Pure orange - exact display color
+                ctx.fillText(text, x, y5);
             }
             if (colorScheme === 5) {
                 let y2 = y + fontSize * 0.7;
