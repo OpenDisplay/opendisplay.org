@@ -112,14 +112,56 @@ test('BWRY panel 0x1D: raw ble-common output MISMATCHES python (documents the ga
   assert.notDeepEqual(actual, expected);
 });
 
-test('BWRY panel 0x1D: paint-swap workaround restores byte parity', () => {
-  const native = makeIndices(16, 8, 4, 99);
-  const expected = refBwry(native, 16, 8, bwryCodes(0x1d));
-  // Swap the painted colors for indices 2 (yellow) and 3 (red): the encoder
-  // then classifies swapped names and stores the panel-native codes.
-  const swapped = native.map((i) => (i === 2 ? 3 : i === 3 ? 2 : i));
-  const actual = encodeViaBle(swapped, 16, 8, 3, 0, 0x1d);
-  assert.deepEqual(actual, expected);
+for (const panel of [0x1d, 0x1e]) {
+  for (const rotation of ROTATIONS) {
+    test(`BWRY panel 0x${panel.toString(16)} rot ${rotation} odd width: paint-swap restores byte parity`, () => {
+      const native = makeIndices(13, 7, 4, 99 + panel + rotation);
+      const expected = refBwry(native, 13, 7, bwryCodes(panel));
+      // Swap the painted colors for indices 2 (yellow) and 3 (red): the encoder
+      // then classifies swapped names and stores the panel-native codes. The
+      // swap belongs in the send-canvas RGB lookup only — canonical indices
+      // and the preview stay unswapped.
+      const swapped = native.map((i) => (i === 2 ? 3 : i === 3 ? 2 : i));
+      const actual = encodeViaBle(swapped, 13, 7, 3, rotation, panel);
+      assert.deepEqual(actual, expected);
+    });
+  }
+}
+
+// Structured fixtures: every palette entry exercised in order, constant frames,
+// and a full EP213-sized frame with exact output lengths.
+for (const scheme of [0, 1, 2, 3, 4, 5, 6, 8]) {
+  const paletteSize = PAINT_PALETTES[scheme].length;
+  test(`scheme ${scheme}: palette-cycling, all-zero, all-max fixtures match`, () => {
+    const w = 13;
+    const h = 7;
+    const cycle = Array.from({ length: w * h }, (_, i) => i % paletteSize);
+    const zeros = new Array(w * h).fill(0);
+    const maxed = new Array(w * h).fill(paletteSize - 1);
+    for (const native of [cycle, zeros, maxed]) {
+      assert.deepEqual(
+        encodeViaBle(native, w, h, scheme, 0),
+        REFS[scheme](native, w, h, null),
+      );
+    }
+  });
+}
+
+test('EP213 full frame 122x250: mono and BWR lengths and bytes match', () => {
+  const mono = makeIndices(122, 250, 2, 213);
+  const monoBytes = encodeViaBle(mono, 122, 250, 0, 0);
+  assert.equal(monoBytes.length, Math.ceil(122 / 8) * 250); // 16 bytes/row, row-padded
+  assert.deepEqual(monoBytes, refMono(mono, 122, 250));
+
+  const bwr = makeIndices(122, 250, 3, 214);
+  const bwrBytes = encodeViaBle(bwr, 122, 250, 1, 0);
+  assert.equal(bwrBytes.length, Math.ceil(122 / 8) * 250 * 2);
+  assert.deepEqual(bwrBytes, refBwr(bwr, 122, 250));
+});
+
+test('EP213 122x250 rotated canvas (250x122) recovers native frame', () => {
+  const native = makeIndices(122, 250, 2, 215);
+  assert.deepEqual(encodeViaBle(native, 122, 250, 0, 1), refMono(native, 122, 250));
 });
 
 // Fail-open evidence for the adapter's hard-reject rule: scheme 7 silently
