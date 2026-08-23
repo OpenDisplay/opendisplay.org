@@ -2,7 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HTTPDOCS="$REPO_ROOT/httpdocs"
+# OD_DEPLOY_HTTPDOCS: test hook only — lets the shell test point at a fixture
+# tree. Production callers never set it.
+HTTPDOCS="${OD_DEPLOY_HTTPDOCS:-$REPO_ROOT/httpdocs}"
 MANIFEST_NAME=".opendisplay-deploy-manifest.txt"
 
 CURL_MAX_TIME="${CURL_MAX_TIME:-180}"
@@ -97,57 +99,76 @@ else
   debug "no remote manifest — first deploy"
 fi
 
-# Upload HTML entrypoints LAST: FTP uploads are sequential and non-atomic, and
-# a sorted manifest would otherwise publish e.g. app/index.html before the
-# app/v<N>/ assets it references, opening a transient-404 window for versioned
-# module graphs (DESIGN_WEB_OD_APP_PLAN.md §2).
-mapfile -t TO_UPLOAD < <(
-  {
-    while read -r hash rel; do
-      [[ -z "$rel" ]] && continue
-      if [[ "$has_remote_manifest" == true ]]; then
-        remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
-        [[ "$remote_hash" == "$hash" ]] && continue
-      fi
-      printf '%s\n' "$rel"
-    done < "$LOCAL_MANIFEST"
-  } | { grep -v '\.html$' || true; }
-  {
-    while read -r hash rel; do
-      [[ -z "$rel" ]] && continue
-      if [[ "$has_remote_manifest" == true ]]; then
-        remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
-        [[ "$remote_hash" == "$hash" ]] && continue
-      fi
-      printf '%s\n' "$rel"
-    done < "$LOCAL_MANIFEST"
-  } | { grep '\.html$' || true; }
-)
+# Split changed files into assets and HTML entrypoints. HTML uploads LAST, and
+# ONLY if every asset uploaded successfully: FTP uploads are sequential and
+# non-atomic, and publishing an entrypoint whose assets failed (or before they
+# exist) would serve a broken page (DESIGN_WEB_OD_APP_PLAN.md §2).
+ASSETS_TO_UPLOAD=()
+HTML_TO_UPLOAD=()
+while read -r hash rel; do
+  [[ -z "$rel" ]] && continue
+  if [[ "$has_remote_manifest" == true ]]; then
+    remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
+    [[ "$remote_hash" == "$hash" ]] && continue
+  fi
+  if [[ "$rel" == *.html ]]; then
+    HTML_TO_UPLOAD+=("$rel")
+  else
+    ASSETS_TO_UPLOAD+=("$rel")
+  fi
+done < "$LOCAL_MANIFEST"
 
-upload_count="${#TO_UPLOAD[@]}"
+upload_count=$(( ${#ASSETS_TO_UPLOAD[@]} + ${#HTML_TO_UPLOAD[@]} ))
 if [[ "$upload_count" -eq 0 ]]; then
-  notice "deploy skipped: no file changes detected"
+  # No files to upload, but the manifests may still differ (deletion-only
+  # change): refresh the remote manifest so the diff doesn't reappear forever.
+  if [[ "$has_remote_manifest" == true ]] && ! cmp -s "$LOCAL_MANIFEST" "$REMOTE_MANIFEST"; then
+    if ! curl "${CURL_OPTS[@]}" -T "$LOCAL_MANIFEST" "$MANIFEST_URL"; then
+      error "manifest-only refresh failed"
+      exit 1
+    fi
+    notice "deploy: no file uploads; remote manifest refreshed (deletion-only diff)"
+  else
+    notice "deploy skipped: no file changes detected"
+  fi
   exit 0
 fi
 
-notice "FTP deploy: uploading ${upload_count}/${local_total} changed file(s) -> ${FTP_BASE_URL}"
+notice "FTP deploy: uploading ${upload_count}/${local_total} changed file(s) (${#ASSETS_TO_UPLOAD[@]} assets, ${#HTML_TO_UPLOAD[@]} html) -> ${FTP_BASE_URL}"
 
 uploaded=0
 failed=0
 
-for rel in "${TO_UPLOAD[@]}"; do
-  file="${HTTPDOCS}/${rel}"
-  url="${FTP_BASE_URL}${rel}"
-  if curl "${CURL_OPTS[@]}" -T "$file" "$url"; then
-    uploaded=$((uploaded + 1))
-    if (( uploaded % 25 == 0 || uploaded == upload_count )); then
-      debug "uploaded ${uploaded}/${upload_count} ..."
+upload_batch() {
+  local rel file url
+  for rel in "$@"; do
+    file="${HTTPDOCS}/${rel}"
+    url="${FTP_BASE_URL}${rel}"
+    if curl "${CURL_OPTS[@]}" -T "$file" "$url"; then
+      uploaded=$((uploaded + 1))
+      if (( uploaded % 25 == 0 || uploaded == upload_count )); then
+        debug "uploaded ${uploaded}/${upload_count} ..."
+      fi
+    else
+      failed=$((failed + 1))
+      error "upload failed: ${rel}"
     fi
-  else
-    failed=$((failed + 1))
-    error "upload failed: ${rel}"
-  fi
-done
+  done
+}
+
+if [[ ${#ASSETS_TO_UPLOAD[@]} -gt 0 ]]; then
+  upload_batch "${ASSETS_TO_UPLOAD[@]}"
+fi
+
+# Gate the HTML phase on a fully successful asset phase.
+if [[ "$failed" -gt 0 ]]; then
+  error "asset phase had ${failed} failure(s) — HTML entrypoints NOT published (${uploaded}/${upload_count} ok)"
+  exit 1
+fi
+
+if [[ ${#HTML_TO_UPLOAD[@]} -gt 0 ]]; then
+  upload_batch "${HTML_TO_UPLOAD[@]}"
+fi
 
 if [[ "$failed" -gt 0 ]]; then
   error "deploy finished with ${failed} failed upload(s) (${uploaded}/${upload_count} ok)"

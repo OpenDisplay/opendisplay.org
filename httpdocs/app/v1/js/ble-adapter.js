@@ -24,16 +24,33 @@ function instance() {
 // deferred setTimeout load only logs failures and must not be relied on.
 const readiness = new WeakMap();
 
+// Fields readDeviceInfo() consumes from the display packet (0x20); readiness
+// means every one of them has a resolvable offset — not merely "some schema
+// loaded". Names are the config.yaml source of truth.
+const REQUIRED_DISPLAY_FIELDS = [
+  'pixel_width',
+  'pixel_height',
+  'rotation',
+  'color_scheme',
+  'transmission_modes',
+  'partial_update_support',
+  'panel_ic_type',
+];
+
 async function initInstance(inst) {
   // loadYAMLConfig swallows errors internally (logs only), so readiness is
   // judged by validating the resulting state, not by the call resolving.
   await inst.loadYAMLConfig(SCHEMA_PATH);
   const schema = inst.packetSchema;
-  const sizes = inst.packetSizes || {};
-  if (!schema || !schema[DISPLAY_PACKET_ID] || Object.keys(sizes).length === 0) {
+  const size = inst.packetSizes?.[DISPLAY_PACKET_ID];
+  const offsets = inst.packetFieldOffsets?.[DISPLAY_PACKET_ID];
+  const missing = REQUIRED_DISPLAY_FIELDS.filter(
+    (f) => typeof offsets?.[f] !== 'number',
+  );
+  if (!schema || !schema[DISPLAY_PACKET_ID] || !size || missing.length > 0) {
     throw new Error(
-      'Packet schema failed to load or lacks the display packet — cannot talk to devices. ' +
-      `(${SCHEMA_PATH})`,
+      'Packet schema failed to load or lacks required display fields ' +
+      `(${missing.join(', ') || 'packet 0x20 absent'}) — cannot talk to devices. (${SCHEMA_PATH})`,
     );
   }
   return inst;

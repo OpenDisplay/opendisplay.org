@@ -80,9 +80,14 @@ test('app skeleton boots: schema ready or explicit gate, never a half-boot', asy
   const status = dom.match(/id="statusLine"[^>]*>([^<]*)</)?.[1] ?? '';
   const gateHidden = /id="gateBanner"[^>]*\bhidden\b/.test(dom);
   const gateText = dom.match(/id="gateBanner"[^>]*>([^<]*)</)?.[1]?.trim() ?? '';
+  const schemaState = dom.match(/data-od-schema="([^"]*)"/)?.[1] ?? '';
+
+  // Boot is schema-FIRST: the schema must reach "ready" through the real
+  // fetch + js-yaml + validation path regardless of Bluetooth availability.
+  assert.equal(schemaState, 'ready', `schema state "${schemaState}" (status "${status}")`);
 
   if (gateHidden) {
-    // Full boot path: schema must have loaded and the device view rendered.
+    // Full boot path: device view rendered.
     assert.equal(status, 'Ready.', `expected Ready, got status "${status}"`);
     assert.ok(!/id="emptyState"[^>]*\bhidden\b/.test(dom), 'empty state should be visible');
   } else {

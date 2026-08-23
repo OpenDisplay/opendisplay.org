@@ -19,8 +19,17 @@
   function createInstance() {
     var inst = new OpenDisplayBLE();
     // Library auto-reconnect reuses stale per-connection state; the adapter
-    // reconnects explicitly on a fresh instance instead (plan §3).
-    inst.autoReconnectEnabled = false;
+    // reconnects explicitly on a fresh instance instead (plan §3). A plain
+    // assignment is NOT enough: the library's own connect()/_doConnectToGATT()
+    // set this flag back to true, so an unexpected disconnect would revive the
+    // stale instance. Pin the property so library writes are inert — instance
+    // configuration only; ble-common.js itself is untouched.
+    Object.defineProperty(inst, 'autoReconnectEnabled', {
+      configurable: false,
+      enumerable: true,
+      get: function () { return false; },
+      set: function () { /* pinned false: adapter owns reconnection */ },
+    });
     globalThis.odAppBle = inst;
     return inst;
   }

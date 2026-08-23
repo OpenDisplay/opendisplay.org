@@ -58,12 +58,15 @@ jobs:
       - name: Reject changes to released app version directories
         run: |
           set -euo pipefail
-          released_file="httpdocs/app/RELEASED_VERSIONS"
-          [[ -f "$released_file" ]] || { echo "no $released_file — nothing released"; exit 0; }
-          mapfile -t released < <(grep -v '^\s*#' "$released_file" | grep -v '^\s*$' || true)
-          [[ ${#released[@]} -eq 0 ]] && { echo "no released versions listed"; exit 0; }
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
+          # Read the released list from the BASE commit: a PR that edits the
+          # manifest while touching a released dir must not be able to unlock
+          # itself, and a release PR that adds vN to the manifest can still
+          # make vN's final changes in the same PR.
+          released_raw="$(git show "${base}:httpdocs/app/RELEASED_VERSIONS" 2>/dev/null || true)"
+          mapfile -t released < <(grep -E '^v[0-9]+$' <<< "$released_raw" || true)
+          [[ ${#released[@]} -eq 0 ]] && { echo "no released versions in base manifest"; exit 0; }
           changed="$(git diff --name-only "$base" "$head")"
           fail=0
           for v in "${released[@]}"; do

@@ -1,36 +1,60 @@
-// Loads the UNMODIFIED httpdocs/js/ble-common.js classic script into a Node vm
-// sandbox so its encoder can be exercised headlessly. Nothing here patches or
-// alters the library — the sandbox only supplies the browser globals the script
-// expects at load time.
+// Loads the UNMODIFIED httpdocs/js/ble-common.js classic script (plus the real
+// js-yaml, so the production schema parser runs) into a Node vm sandbox so its
+// encoder and schema paths can be exercised headlessly. Nothing here patches
+// the library — the sandbox only supplies the browser globals the script
+// expects.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 
-const BLE_COMMON_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../httpdocs/js/ble-common.js',
-);
+const HTTPDOCS = join(dirname(fileURLToPath(import.meta.url)), '../../../httpdocs');
 
 let cachedSandbox = null;
+let fetchMode = 'httpdocs'; // 'httpdocs' | 'fail'
+
+// Test hook: force schema fetches to fail (readiness retry tests).
+export function setSandboxFetchMode(mode) {
+  fetchMode = mode;
+}
+
+function sandboxFetch(path) {
+  if (fetchMode === 'fail') {
+    return Promise.resolve({ ok: false, status: 503, text: async () => '' });
+  }
+  try {
+    const text = readFileSync(join(HTTPDOCS, path.replace(/^\//, '')), 'utf8');
+    return Promise.resolve({ ok: true, status: 200, text: async () => text });
+  } catch {
+    return Promise.resolve({ ok: false, status: 404, text: async () => '' });
+  }
+}
 
 function buildSandbox() {
   const sandbox = {
     console,
-    // Constructor defers its YAML schema load through setTimeout; dropping the
-    // callback keeps the harness offline (schema is irrelevant to encoding).
+    // Constructor defers its own YAML load through setTimeout; dropping the
+    // callback keeps init deterministic (tests await loadYAMLConfig directly).
     setTimeout: () => 0,
     clearTimeout: () => {},
     navigator: { userAgent: 'node-spike-harness', bluetooth: undefined },
-    document: { readyState: 'complete', addEventListener: () => {} },
+    document: {
+      readyState: 'complete',
+      addEventListener: () => {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    },
     TextEncoder,
     TextDecoder,
+    fetch: (path) => sandboxFetch(path),
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
   vm.createContext(sandbox);
-  const source = readFileSync(BLE_COMMON_PATH, 'utf8');
-  vm.runInContext(source, sandbox, { filename: 'ble-common.js' });
+  for (const rel of ['js/js-yaml.min.js', 'js/ble-common.js']) {
+    vm.runInContext(readFileSync(join(HTTPDOCS, rel), 'utf8'), sandbox, { filename: rel });
+  }
   return sandbox;
 }
 
@@ -43,6 +67,14 @@ export function getSandbox() {
 export function makeBleInstance() {
   const sandbox = getSandbox();
   return vm.runInContext('new OpenDisplayBLE()', sandbox);
+}
+
+// Runs the real boot-bridge.js in the sandbox and returns its bridge surface.
+export function loadBootBridge() {
+  const sandbox = getSandbox();
+  const src = readFileSync(join(HTTPDOCS, 'app/v1/boot-bridge.js'), 'utf8');
+  vm.runInContext(src, sandbox, { filename: 'app/v1/boot-bridge.js' });
+  return { bridge: sandbox.odAppBridge, currentInstance: () => sandbox.odAppBle };
 }
 
 // Minimal stand-in for an HTMLCanvasElement backed by an RGBA buffer — only the
