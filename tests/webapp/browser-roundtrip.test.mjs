@@ -87,6 +87,10 @@ run();
 
 test('real Chromium canvas round-trip: opaque parity + transparency hazard', (t) => {
   if (!CHROME) {
+    // In CI this proof is load-bearing: a green run must not silently skip it.
+    if (process.env.OD_REQUIRE_BROWSER_TESTS || process.env.CI) {
+      assert.fail('no Chrome/Chromium binary found and browser tests are required');
+    }
     t.skip('no Chrome/Chromium binary found');
     return;
   }

@@ -29,5 +29,5 @@ py-opendisplay swaps yellow/red wire codes for panels `0x1D`/`0x1E` (bb_epaper `
 
 - M-S(a) exit criterion met with the architecture unchanged — no fallback needed, nothing dropped from the supported set.
 - The harness (`tests/webapp/lib/load-ble-common.mjs` vm loader, `reference-encoders.mjs`, `fixtures.mjs`) is the seed of the §10 integration suite; the fixture generator and reference encoders carry forward as-is.
-- New requirement for `dither.js`: the BWRY 0x1D/0x1E paint-swap table (Finding 1).
+- New requirement: the BWRY 0x1D/0x1E paint-swap table, owned by the **send-canvas RGB lookup** (Finding 1) — never by the dither/preview path.
 - M-S(b) (saved-device/auth proof) requires a real browser + device and remains open — it needs the M0 scratch context to run.
