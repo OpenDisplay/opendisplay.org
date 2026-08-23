@@ -171,3 +171,68 @@ Total: **~3 working weeks** for one engineer familiar with the codebase.
 | Deep-sleeping tags unreachable for "reconnect" | Copy Toolbox's retry loop + user guidance; show `lastSeen` so stale rows are legible |
 | Site-data wipe destroys keys | Key export/QR backup is first-class in M1, and the lock icon nags when a key has never been exported |
 | Scope creep toward Toolbox | The adapter simply has no config-write method; PRs adding 0x41/0x42 to `httpdocs/app/` are rejected by convention stated here |
+
+## 11. Feature matrix
+
+Definitive in/out list. Entries marked ✻ amend earlier sections — they incorporate findings from an external design review (2026-08-23): rotation carried end-to-end, scheme 8 added / scheme 7 fails closed, key entry-only (no generation), device records keyed on an immutable `recordId` with `bleId` as a rebindable permission handle. "Internal" = capability used by the app with no UI exposed.
+
+### Device list & connectivity
+
+| Feature | Status | Notes |
+|---|---|---|
+| Saved device list (persistent) | ✅ In | ✻ IndexedDB records with immutable `recordId`; `bleId` is a rebindable binding |
+| Add device via chooser | ✅ In | `requestDevice()` ladder from `ble-common.js` |
+| Silent reconnect to known device | ✅ In | `getDevices()` + cached-device path; device must be advertising |
+| Re-pair after permission loss | ✅ In | ✻ user-confirmed rebinding to an existing record (never automatic for keyed devices) |
+| Rename / forget / export / import devices | ✅ In | Key export separate and explicit |
+| Locked devices (auth, key entry, key storage) | ✅ In | ✻ enter/import an existing key only; `setEncryptionKey()` + `authenticate()` with app-owned retry dialog |
+| Key generation / device locking | ❌ Out | Provisioning is a config write — Toolbox territory |
+| Pre-connection scan list with live telemetry | ❌ Out | No page-rendered scan list in Web Bluetooth; telemetry shown post-connect (0x44) |
+| Firmware version / MSD / panel info on device card | ✅ In | Refreshed each connect |
+| Multiple simultaneous connections | ❌ Out | One active connection |
+| Background operation | ❌ Out | Browser limitation |
+
+### Canvas / composer
+
+| Feature | Status | Notes |
+|---|---|---|
+| Photo import (picker, drag-drop, paste) + adjustments | ✅ In | Exposure/saturation/shadows/highlights/tone via wasm pipeline |
+| Freehand drawing | ✅ In | Palette colors, stroke width |
+| Text overlays | ✅ In | Drag, size, palette color |
+| QR codes | ✅ In | ✻ worker-safe QR matrix generator (the site's `/l/qrcode.js` is DOM-bound and cannot run in a worker) |
+| Layers, undo/redo, drafts across reloads | ✅ In | ✻ asset-referenced storage (blobs stored once, snapshots reference them) |
+| High-quality dithering (8 modes, OKLab, serpentine) | ✅ In | `@opendisplay/epaper-dithering` wasm |
+| Measured palettes + faithful preview | ✅ In | Measured RGB for preview only; ideal RGB for encoding paint-back |
+| Panel rotation | ✅ In | ✻ carried in device record and passed to `sendCanvasToDisplay` as the Display Tool does |
+| Color schemes 0–6 and 8 | ✅ In | ✻ scheme 8 (BWGBRY_SPLIT) already supported by the shared encoder |
+| Color scheme 7 (7-color Spectra) | ❌ Out | ✻ hard-rejected — fails closed (the encoder otherwise falls through to mono) |
+| Upload: direct-write, PIPE, compression, encryption | ✅ In | Inherited from unmodified `ble-common.js` |
+| Partial updates | ⚙️ Inherited | Mono only, via `ble-common.js` etag tracking; no dedicated UI |
+| ODL export / templates | ❌ Out | Visual Designer owns ODL |
+
+### Toolbox (excluded by scope)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Config read (0x40) | ⚙️ Internal | Resolution, scheme, rotation, transmission modes only |
+| Config editor / write (0x41/0x42) | ❌ Out | Adapter has no write method |
+| Hardware wizard / presets / WiFi / security provisioning | ❌ Out | |
+| USB firmware install | ❌ Out | |
+| Share-config URLs | ❌ Out | |
+
+### Low-level device controls (Display Tool keeps these)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Reboot / deep sleep / power off / enter-DFU | ❌ Out | Revisitable later at low cost (one-line adapter calls) |
+| LED / buzzer / NFC | ❌ Out | |
+| Raw hex tester + traffic log | ❌ Out | |
+| BLE DFU/OTA firmware transfer | ❌ Out | Unwired in every client today |
+
+### Platform reach
+
+| Platform | Status |
+|---|---|
+| Chrome/Edge/Opera/Samsung Internet — desktop & Android | ✅ Supported |
+| Safari (macOS/iOS/iPadOS), Firefox | ❌ Unsupported (no Web Bluetooth) |
+| iOS via Bluefy | ⚠️ Best-effort, untested tier |
