@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OD App — OpenDisplay</title>
+  <meta name="description" content="OpenDisplay web app: saved devices and a canvas composer for BLE e-paper displays.">
+  <!-- Entry page must revalidate (Cache-Control: no-cache) so a cached copy never
+       pins a superseded v<N>/ asset graph. That header is production server
+       config — verify on the host per DESIGN_WEB_OD_APP_PLAN.md §9 M0. -->
+  <link rel="icon" href="../favicon.ico">
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="v1/app.css">
+</head>
+<body>
+  <main class="odapp">
+    <header class="odapp__header">
+      <a class="odapp__brand" href="../index.html">OpenDisplay</a>
+      <h1 class="odapp__title">OD App <span class="odapp__beta">beta</span></h1>
+      <nav class="odapp__nav" aria-label="Views">
+        <button id="navDevices" class="odapp__navbtn odapp__navbtn--active" type="button">Devices</button>
+        <button id="navComposer" class="odapp__navbtn" type="button" disabled title="Connect a device first">Composer</button>
+      </nav>
+    </header>
+
+    <section id="gateBanner" class="odapp__gate" hidden></section>
+
+    <section id="viewDevices" class="odapp__view">
+      <div class="odapp__toolbar">
+        <button id="btnAddDevice" class="odapp__btn odapp__btn--primary" type="button" disabled>Add device…</button>
+        <span id="statusLine" class="odapp__status" role="status">Loading…</span>
+      </div>
+      <div id="deviceList" class="odapp__cards"></div>
+      <p id="emptyState" class="odapp__empty" hidden>
+        No saved devices yet. Use <strong>Add device…</strong> to pair an OpenDisplay tag over Bluetooth.
+      </p>
+    </section>
+
+    <section id="viewComposer" class="odapp__view" hidden>
+      <p class="odapp__empty">Composer arrives in a later milestone.</p>
+    </section>
+
+    <footer class="odapp__footer">
+      <a href="../firmware/display/index.html">BLE Tester</a>
+      <a href="../firmware/toolbox/index.html">Toolbox</a>
+      <a href="../designer/index.html">Visual Designer</a>
+    </footer>
+  </main>
+
+  <!-- Shared classic runtime: js-yaml MUST precede ble-common (schema parser). -->
+  <script src="../js/js-yaml.min.js"></script>
+  <script src="../js/pako.js"></script>
+  <script src="../js/opendisplay-msd.js"></script>
+  <script src="../js/ble-common.js"></script>
+  <!-- App bridge: constructs the per-connection OpenDisplayBLE instance. -->
+  <script src="v1/boot-bridge.js"></script>
+  <script type="module" src="v1/js/main.js"></script>
+</body>
+</html>

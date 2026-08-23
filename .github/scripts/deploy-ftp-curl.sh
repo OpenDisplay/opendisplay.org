@@ -97,15 +97,31 @@ else
   debug "no remote manifest — first deploy"
 fi
 
+# Upload HTML entrypoints LAST: FTP uploads are sequential and non-atomic, and
+# a sorted manifest would otherwise publish e.g. app/index.html before the
+# app/v<N>/ assets it references, opening a transient-404 window for versioned
+# module graphs (DESIGN_WEB_OD_APP_PLAN.md §2).
 mapfile -t TO_UPLOAD < <(
-  while read -r hash rel; do
-    [[ -z "$rel" ]] && continue
-    if [[ "$has_remote_manifest" == true ]]; then
-      remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
-      [[ "$remote_hash" == "$hash" ]] && continue
-    fi
-    printf '%s\n' "$rel"
-  done < "$LOCAL_MANIFEST"
+  {
+    while read -r hash rel; do
+      [[ -z "$rel" ]] && continue
+      if [[ "$has_remote_manifest" == true ]]; then
+        remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
+        [[ "$remote_hash" == "$hash" ]] && continue
+      fi
+      printf '%s\n' "$rel"
+    done < "$LOCAL_MANIFEST"
+  } | { grep -v '\.html$' || true; }
+  {
+    while read -r hash rel; do
+      [[ -z "$rel" ]] && continue
+      if [[ "$has_remote_manifest" == true ]]; then
+        remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
+        [[ "$remote_hash" == "$hash" ]] && continue
+      fi
+      printf '%s\n' "$rel"
+    done < "$LOCAL_MANIFEST"
+  } | { grep '\.html$' || true; }
 )
 
 upload_count="${#TO_UPLOAD[@]}"

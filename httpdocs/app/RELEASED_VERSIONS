@@ -1,0 +1,4 @@
+# Immutable released app versions (DESIGN_WEB_OD_APP_PLAN.md §2).
+# One directory name per line (e.g. "v1"). CI rejects any change to files under
+# a listed version directory — production asset changes require a NEW version.
+# v1 is not listed until its first production release.

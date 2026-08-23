@@ -1,0 +1,76 @@
+name: Web App tests
+
+# Runs the OD App suite on app changes AND on any shared-runtime change —
+# the shared-dependency compatibility contract (DESIGN_WEB_OD_APP_PLAN.md §2).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "httpdocs/app/**"
+      - "tests/webapp/**"
+      - "httpdocs/js/ble-common.js"
+      - "httpdocs/js/pako.js"
+      - "httpdocs/js/js-yaml.min.js"
+      - "httpdocs/js/opendisplay-msd.js"
+      - "httpdocs/firmware/toolbox/config.yaml"
+      - ".github/workflows/test-webapp.yml"
+  pull_request:
+    paths:
+      - "httpdocs/app/**"
+      - "tests/webapp/**"
+      - "httpdocs/js/ble-common.js"
+      - "httpdocs/js/pako.js"
+      - "httpdocs/js/js-yaml.min.js"
+      - "httpdocs/js/opendisplay-msd.js"
+      - "httpdocs/firmware/toolbox/config.yaml"
+      - ".github/workflows/test-webapp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # CI=true makes the real-browser round-trip mandatory (the ubuntu-latest
+      # image ships google-chrome; the suite fails rather than skips without it).
+      - name: Run webapp test suite (browser proof required)
+        run: node --test tests/webapp/
+
+  immutable-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Released v<N>/ directories are immutable: any production asset change
+      # requires a new version directory (DESIGN_WEB_OD_APP_PLAN.md §2).
+      - name: Reject changes to released app version directories
+        run: |
+          set -euo pipefail
+          released_file="httpdocs/app/RELEASED_VERSIONS"
+          [[ -f "$released_file" ]] || { echo "no $released_file — nothing released"; exit 0; }
+          mapfile -t released < <(grep -v '^\s*#' "$released_file" | grep -v '^\s*$' || true)
+          [[ ${#released[@]} -eq 0 ]] && { echo "no released versions listed"; exit 0; }
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed="$(git diff --name-only "$base" "$head")"
+          fail=0
+          for v in "${released[@]}"; do
+            if grep -q "^httpdocs/app/${v}/" <<< "$changed"; then
+              echo "::error::httpdocs/app/${v}/ is a RELEASED, immutable version — create a new version directory instead:"
+              grep "^httpdocs/app/${v}/" <<< "$changed" >&2
+              fail=1
+            fi
+          done
+          exit "$fail"
