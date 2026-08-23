@@ -3,9 +3,10 @@
  *
  * OpenDisplayBLE is a top-level class in the classic ble-common.js script, not
  * a window export. This bridge is the ONLY code that constructs it, publishing
- * exactly one global: `globalThis.odAppBle`. The name is stable; the instance
- * is not — per-connection isolation requires a FRESH instance after every
- * completed disconnect (the library's disconnect() does not reset
+ * exactly TWO globals: `globalThis.odAppBle` (the current instance) and
+ * `globalThis.odAppBridge` (the factory). The instance name is stable; the
+ * instance is not — per-connection isolation requires a FRESH instance after
+ * every completed disconnect (the library's disconnect() does not reset
  * encryptionSession/partialState, so a stale authenticated session from device
  * A could otherwise encrypt commands to device B).
  *

@@ -118,31 +118,44 @@ function runDeploy({ dir, docs, bin }, { remoteManifest, failPattern } = {}) {
 const FILES = {
   'index.html': '<html>root</html>',
   'app/index.html': '<html>app</html>',
+  'app/current-version.txt': 'v1\n',
   'app/v1/app.css': 'css',
   'app/v1/js/main.js': 'js',
   'js/ble-common.js': 'lib',
 };
 
-test('first deploy: all assets upload before any html; manifest last', () => {
+test('first deploy phase order: assets -> html -> version pointer -> manifest', () => {
   const fx = setup(FILES);
   const { code, uploads } = runDeploy(fx);
   assert.equal(code, 0);
   const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
-  const firstHtml = names.findIndex((n) => n.endsWith('.html'));
-  const lastAsset = names.reduce(
-    (acc, n, i) => (!n.endsWith('.html') && !n.startsWith('.opendisplay') ? i : acc),
-    -1,
-  );
-  assert.ok(firstHtml > lastAsset, `html before asset: ${names.join(', ')}`);
-  assert.ok(names.at(-1).includes('.opendisplay-deploy-manifest'), 'manifest uploaded last');
+  const phase = (n) =>
+    n.includes('.opendisplay-deploy-manifest') ? 3
+    : n.endsWith('current-version.txt') ? 2
+    : n.endsWith('.html') ? 1
+    : 0;
+  const phases = names.map(phase);
+  assert.deepEqual(phases, [...phases].sort((a, b) => a - b), `phase order broken: ${names.join(', ')}`);
+  assert.equal(phases.at(-1), 3, 'manifest uploaded last');
+  assert.ok(phases.includes(2), 'version pointer uploaded');
 });
 
-test('failed asset upload blocks ALL html publication', () => {
+test('failed asset upload blocks html AND version pointer publication', () => {
   const fx = setup(FILES);
   const { code, uploads } = runDeploy(fx, { failPattern: 'main\\.js' });
   assert.notEqual(code, 0);
   const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
   assert.ok(!names.some((n) => n.endsWith('.html')), `html was published: ${names.join(', ')}`);
+  assert.ok(!names.some((n) => n.endsWith('current-version.txt')), 'version pointer withheld');
+  assert.ok(!names.some((n) => n.includes('.opendisplay-deploy-manifest')), 'manifest not updated');
+});
+
+test('failed html upload blocks the version pointer', () => {
+  const fx = setup(FILES);
+  const { code, uploads } = runDeploy(fx, { failPattern: 'app/index\\.html' });
+  assert.notEqual(code, 0);
+  const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
+  assert.ok(!names.some((n) => n.endsWith('current-version.txt')), 'version pointer withheld');
   assert.ok(!names.some((n) => n.includes('.opendisplay-deploy-manifest')), 'manifest not updated');
 });
 

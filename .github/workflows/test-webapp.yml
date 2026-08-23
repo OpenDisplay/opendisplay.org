@@ -14,6 +14,7 @@ on:
       - "httpdocs/js/opendisplay-msd.js"
       - "httpdocs/firmware/toolbox/config.yaml"
       - ".github/workflows/test-webapp.yml"
+      - ".github/scripts/deploy-ftp-curl.sh"
   pull_request:
     paths:
       - "httpdocs/app/**"
@@ -24,6 +25,7 @@ on:
       - "httpdocs/js/opendisplay-msd.js"
       - "httpdocs/firmware/toolbox/config.yaml"
       - ".github/workflows/test-webapp.yml"
+      - ".github/scripts/deploy-ftp-curl.sh"
 
 permissions:
   contents: read
@@ -66,6 +68,15 @@ jobs:
           # make vN's final changes in the same PR.
           released_raw="$(git show "${base}:httpdocs/app/RELEASED_VERSIONS" 2>/dev/null || true)"
           mapfile -t released < <(grep -E '^v[0-9]+$' <<< "$released_raw" || true)
+          # VALIDATE the head manifest: a malformed entry ("v1 ", "V2", junk)
+          # would silently fail to establish immutability for future PRs.
+          head_raw="$(git show "${head}:httpdocs/app/RELEASED_VERSIONS" 2>/dev/null || true)"
+          bad="$(grep -vE '^\s*(#|$)' <<< "$head_raw" | grep -vE '^v[0-9]+$' || true)"
+          if [[ -n "$bad" ]]; then
+            echo "::error::RELEASED_VERSIONS contains malformed entries (expected ^v[0-9]+$ per line):"
+            printf '%s\n' "$bad" >&2
+            exit 1
+          fi
           [[ ${#released[@]} -eq 0 ]] && { echo "no released versions in base manifest"; exit 0; }
           changed="$(git diff --name-only "$base" "$head")"
           fail=0

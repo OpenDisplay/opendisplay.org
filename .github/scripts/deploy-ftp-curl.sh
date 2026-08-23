@@ -99,26 +99,33 @@ else
   debug "no remote manifest — first deploy"
 fi
 
-# Split changed files into assets and HTML entrypoints. HTML uploads LAST, and
-# ONLY if every asset uploaded successfully: FTP uploads are sequential and
-# non-atomic, and publishing an entrypoint whose assets failed (or before they
-# exist) would serve a broken page (DESIGN_WEB_OD_APP_PLAN.md §2).
+# Split changed files into three ordered phases (DESIGN_WEB_OD_APP_PLAN.md §2):
+#   1. assets            — everything else
+#   2. HTML entrypoints  — only if EVERY asset succeeded
+#   3. deployment pointers (*/current-version.txt) — only after HTML, so the
+#      stale-cache recovery marker can never name a version whose entry page
+#      is not yet live (a premature marker triggers a reload loop into the old
+#      HTML and burns the one-shot ?rv= retry).
+# FTP uploads are sequential and non-atomic; each phase gates the next.
 ASSETS_TO_UPLOAD=()
 HTML_TO_UPLOAD=()
+POINTERS_TO_UPLOAD=()
 while read -r hash rel; do
   [[ -z "$rel" ]] && continue
   if [[ "$has_remote_manifest" == true ]]; then
     remote_hash="$(lookup_manifest_hash "$REMOTE_MANIFEST" "$rel")"
     [[ "$remote_hash" == "$hash" ]] && continue
   fi
-  if [[ "$rel" == *.html ]]; then
+  if [[ "$(basename "$rel")" == "current-version.txt" ]]; then
+    POINTERS_TO_UPLOAD+=("$rel")
+  elif [[ "$rel" == *.html ]]; then
     HTML_TO_UPLOAD+=("$rel")
   else
     ASSETS_TO_UPLOAD+=("$rel")
   fi
 done < "$LOCAL_MANIFEST"
 
-upload_count=$(( ${#ASSETS_TO_UPLOAD[@]} + ${#HTML_TO_UPLOAD[@]} ))
+upload_count=$(( ${#ASSETS_TO_UPLOAD[@]} + ${#HTML_TO_UPLOAD[@]} + ${#POINTERS_TO_UPLOAD[@]} ))
 if [[ "$upload_count" -eq 0 ]]; then
   # No files to upload, but the manifests may still differ (deletion-only
   # change): refresh the remote manifest so the diff doesn't reappear forever.
@@ -134,7 +141,7 @@ if [[ "$upload_count" -eq 0 ]]; then
   exit 0
 fi
 
-notice "FTP deploy: uploading ${upload_count}/${local_total} changed file(s) (${#ASSETS_TO_UPLOAD[@]} assets, ${#HTML_TO_UPLOAD[@]} html) -> ${FTP_BASE_URL}"
+notice "FTP deploy: uploading ${upload_count}/${local_total} changed file(s) (${#ASSETS_TO_UPLOAD[@]} assets, ${#HTML_TO_UPLOAD[@]} html, ${#POINTERS_TO_UPLOAD[@]} pointers) -> ${FTP_BASE_URL}"
 
 uploaded=0
 failed=0
@@ -168,6 +175,15 @@ fi
 
 if [[ ${#HTML_TO_UPLOAD[@]} -gt 0 ]]; then
   upload_batch "${HTML_TO_UPLOAD[@]}"
+fi
+
+if [[ "$failed" -gt 0 ]]; then
+  error "html phase had ${failed} failure(s) — deployment pointers NOT published (${uploaded}/${upload_count} ok)"
+  exit 1
+fi
+
+if [[ ${#POINTERS_TO_UPLOAD[@]} -gt 0 ]]; then
+  upload_batch "${POINTERS_TO_UPLOAD[@]}"
 fi
 
 if [[ "$failed" -gt 0 ]]; then
