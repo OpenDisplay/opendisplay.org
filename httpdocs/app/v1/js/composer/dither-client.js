@@ -1,16 +1,20 @@
 /*
  * dither-client.js — main-thread side of the dither worker (plan §6).
  *
- * Currency rules (tightened after review — a stale frame reaching a panel is
- * the worst failure this app can have):
- *  - a result is accepted ONLY if its id is the latest REQUESTED id; a result
- *    that completes while a newer render is queued is dropped, not shown;
- *  - every request carries an `epoch`; results from an earlier epoch (a
- *    different composer session) are discarded even if their id looks current;
- *  - a render is not issued until every asset the document references has been
- *    ACKNOWLEDGED by the worker, so a frame can never be missing a photo;
- *  - at most one pending rerender is queued (rapid edits coalesce);
- *  - a failed asset decode is retryable (never marked sent).
+ * Currency rules (tightened across two review rounds — a stale frame reaching
+ * a panel is the worst failure this app can have):
+ *  - a result is accepted ONLY if its id is the latest REQUESTED id;
+ *  - every request carries an `epoch`; results from an earlier composer
+ *    session are discarded even if their id looks current;
+ *  - EVERY worker callback is checked against the worker that is current NOW.
+ *    terminate() does not unqueue events already sitting in the main thread's
+ *    task queue, so a dead worker's ack/error/result can still arrive after a
+ *    session switch — identity, not termination, is the safe boundary;
+ *  - each asset load carries an attempt token, so a decode that finishes after
+ *    a session switch cannot satisfy (or delete) the new session's claim on
+ *    the same content hash;
+ *  - a render is not issued until every referenced asset is ACKNOWLEDGED;
+ *  - at most one pending rerender is queued (rapid edits coalesce).
  */
 
 export function createDitherClient({ workerUrl, onResult, onError }) {
@@ -20,39 +24,42 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
   let inFlight = null;       // id currently rendering
   let queued = null;         // at most one pending request
   let latestRequested = 0;   // newest id handed out
-  /** assetId -> 'pending' | 'ready' */
+  /** assetId -> {state: 'pending'|'ready', attempt: number} */
   const assetState = new Map();
+  let nextAttempt = 1;
 
   function ensureWorker() {
     if (worker) return worker;
-    worker = new Worker(workerUrl, { type: 'module' });
-    worker.onmessage = (ev) => {
+    const self_ = new Worker(workerUrl, { type: 'module' });
+    worker = self_;
+    self_.onmessage = (ev) => {
+      // A message from a worker we have already replaced is stale by
+      // definition, whatever it says.
+      if (worker !== self_) return;
       const msg = ev.data;
       if (msg.type === 'asset-ack') {
-        if (assetState.get(msg.assetId) === 'pending') assetState.set(msg.assetId, 'ready');
-        pump(); // a render may have been waiting on this asset
+        const entry = assetState.get(msg.assetId);
+        if (entry && entry.attempt === msg.attempt) entry.state = 'ready';
+        pump();
         return;
       }
       if (msg.type !== 'render') return;
       if (msg.id === inFlight) inFlight = null;
-      const current = msg.id === latestRequested && msg.epoch === epoch;
-      if (current) {
+      if (msg.id === latestRequested && msg.epoch === epoch) {
         if (msg.ok) onResult?.(msg);
         else onError?.(new Error(msg.error));
       }
       // Anything else is superseded: silently dropped, never shown or sent.
       pump();
     };
-    worker.onerror = (ev) => {
-      // A fatal worker error leaves it unusable: posting the next render to a
-      // dead worker would wedge the composer. Tear it down and forget the
-      // assets it held so the next request rehydrates a fresh one.
+    self_.onerror = (ev) => {
+      if (worker !== self_) return; // a dead worker's error changes nothing
       inFlight = null;
       queued = null;
       teardownWorker();
       onError?.(new Error(ev.message ?? 'dither worker failed'));
     };
-    return worker;
+    return self_;
   }
 
   function teardownWorker() {
@@ -63,7 +70,7 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
 
   function assetsReady(doc) {
     for (const layer of doc.layers ?? []) {
-      if (layer.assetId && assetState.get(layer.assetId) !== 'ready') return false;
+      if (assetState.get(layer.assetId)?.state !== 'ready' && layer.assetId) return false;
     }
     return true;
   }
@@ -85,14 +92,23 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
     /** Hand the worker its OWN bitmap for an asset (transferred once). */
     async addAsset(assetId, blob, decode) {
       if (assetState.has(assetId)) return;
-      assetState.set(assetId, 'pending');
+      const attempt = nextAttempt++;
+      assetState.set(assetId, { state: 'pending', attempt });
+      const ownerWorkerAtStart = worker;
       try {
         const bitmap = await decode(blob);
-        // A session switch during decode invalidates this bitmap.
-        if (!assetState.has(assetId)) { bitmap.close?.(); return; }
-        ensureWorker().postMessage({ type: 'asset', assetId, bitmap }, [bitmap]);
+        const entry = assetState.get(assetId);
+        // Only OUR attempt may satisfy this claim: after a session switch the
+        // map may hold a new session's pending entry for the same hash.
+        if (!entry || entry.attempt !== attempt || (ownerWorkerAtStart && worker !== ownerWorkerAtStart)) {
+          bitmap.close?.();
+          return;
+        }
+        ensureWorker().postMessage({ type: 'asset', assetId, attempt, bitmap }, [bitmap]);
       } catch (err) {
-        assetState.delete(assetId); // decode failures must stay retryable
+        const entry = assetState.get(assetId);
+        // Never delete a claim that belongs to a newer attempt.
+        if (entry && entry.attempt === attempt) assetState.delete(assetId);
         throw err;
       }
     },
@@ -102,7 +118,7 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
     },
 
     assetReady(assetId) {
-      return assetState.get(assetId) === 'ready';
+      return assetState.get(assetId)?.state === 'ready';
     },
 
     /** Queue a render. Only the newest pending request survives. */
@@ -118,17 +134,14 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
     epoch: () => epoch,
 
     /**
-     * Begin a new composer session: bump the epoch (invalidating in-flight
-     * work), drop the pending queue and release the worker's bitmaps.
+     * Begin a new composer session: bump the epoch, drop the queue and replace
+     * the worker. Callbacks already queued from the old worker are ignored by
+     * the identity checks above.
      */
     newEpoch() {
       epoch += 1;
       queued = null;
       inFlight = null;
-      // TERMINATE rather than reset: an in-flight asset-ack from the old
-      // session could otherwise arrive after the reset and mark a same-hash
-      // asset "ready" in the new session, whose bitmap the worker no longer
-      // holds — wedging every later render. A fresh worker cannot lie.
       teardownWorker();
       return epoch;
     },

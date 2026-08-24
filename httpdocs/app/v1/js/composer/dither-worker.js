@@ -41,7 +41,9 @@ self.onmessage = (ev) => {
   switch (msg.type) {
     case 'asset':
       setAsset(msg.assetId, msg.bitmap);
-      self.postMessage({ type: 'asset-ack', assetId: msg.assetId });
+      // Echo the attempt token: the client uses it to ignore an ack that
+      // belongs to a superseded load of the same content hash.
+      self.postMessage({ type: 'asset-ack', assetId: msg.assetId, attempt: msg.attempt });
       return;
     case 'drop':
       clearAssets(new Set(msg.keep ?? []));

@@ -15,6 +15,8 @@ import { renderDocument, validateDocument, reconcileDocument } from './render.js
 import { makeSurface, blitPreview } from './canvas.js';
 import { createSession } from './session.js';
 import { createDitherClient } from './dither-client.js';
+import { decodeBounded } from './image-size.js';
+import { prepareSend, panelSignature } from './send.js';
 import { paintForSend } from './dither.js';
 import { makeCanvas } from './render.js';
 import * as adapter from '../ble-adapter.js';
@@ -121,40 +123,23 @@ function toast(msg, kind = 'info') {
  * Decode a bitmap for the WORKER (and therefore the sent frame), bounded by
  * what the panel can actually show rather than by the source resolution.
  *
- * The editing proxy (1600px) can be too SMALL for a large panel, but decoding
- * a modern 48-megapixel phone photo at full size would cost hundreds of MB per
- * asset on a phone. The most detail any layer can use is its box in panel
- * pixels, so cap there (×2 for a little headroom on `cover` crops) and never
- * upscale.
+ * The editing proxy (1600px) can be too SMALL for a large panel, but a modern
+ * 48-megapixel phone photo decoded at full size would cost hundreds of MB per
+ * asset — on the device most likely to be a phone. The most detail any layer
+ * can use is its box in panel pixels, so cap there (×2 for headroom on `cover`
+ * crops). decodeBounded reads the header first, so the full-size bitmap is
+ * never allocated at all.
  */
-async function decodeForPanel(blob, panel) {
+function decodeForPanel(blob, panel) {
   const { width, height } = model.artboardSize(panel);
-  const cap = Math.max(1, Math.max(width, height) * 2);
-  const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-  const longest = Math.max(full.width, full.height);
-  if (longest <= cap) return full;
-  const scale = cap / longest;
-  const scaled = await createImageBitmap(full, {
-    resizeWidth: Math.max(1, Math.round(full.width * scale)),
-    resizeHeight: Math.max(1, Math.round(full.height * scale)),
-    resizeQuality: 'high',
-  });
-  full.close?.();
-  return scaled;
+  return decodeBounded(blob, Math.max(1, Math.max(width, height) * 2));
 }
 
-/** Decode a ≤PROXY_MAX_PX editing proxy; originals stay in the asset store. */
-async function decodeProxy(blob) {
-  const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-  const scale = Math.min(1, PROXY_MAX_PX / Math.max(full.width, full.height));
-  if (scale === 1) return full;
-  const proxy = await createImageBitmap(full, {
-    resizeWidth: Math.max(1, Math.round(full.width * scale)),
-    resizeHeight: Math.max(1, Math.round(full.height * scale)),
-    resizeQuality: 'high',
-  });
-  full.close?.();
-  return proxy;
+/** Decode a ≤PROXY_MAX_PX editing proxy for the interactive canvas; the
+ *  original stays in the asset store and the worker gets its own bounded
+ *  decode. Also single-step, so a huge photo never lands full-size in memory. */
+function decodeProxy(blob) {
+  return decodeBounded(blob, PROXY_MAX_PX);
 }
 
 /**
@@ -252,15 +237,6 @@ function wirePhotoControls() {
 
 // --- dithering -------------------------------------------------------------
 
-/** Immutable description of the panel a frame was rendered for. A frame may
- *  only be sent to a panel with an identical signature. */
-function panelSignature(panel) {
-  return [
-    panel.width, panel.height, panel.rotationQuarterTurns ?? 0,
-    panel.colorScheme, panel.panelIcType ?? 'null',
-  ].join(':');
-}
-
 function ditherOptions() {
   return {
     mode: Number($('ditherMode').value),
@@ -357,33 +333,21 @@ async function sendToDisplay() {
   const frame = latestDither;
   const openRecord = owner?.session?.device;
   if (!openRecord || !frame) return;
-  const stillOurs = () =>
-    session === owner && owner.generation() === ownerGen && latestDither === frame;
   sending = true;
   updateSendControls();
   const progress = $('sendProgress');
   progress.hidden = false;
   progress.value = 0;
   try {
-    // Re-read the device record: connecting refreshes it, and the composer
-    // session survives navigation, so the in-memory copy can be stale.
-    const record = await store.getDevice(openRecord.recordId);
-    if (!stillOurs()) {
-      throw new Error('the composition changed while preparing to send — nothing was sent');
-    }
-    if (!record) throw new Error('this device is no longer saved');
-    if (record.bleId !== adapter.connectedBleId()) {
-      throw new Error('the connected device is not the one this composition is for');
-    }
-    // The frame must have been rendered for exactly this panel.
-    const wanted = panelSignature({
-      width: record.width, height: record.height,
-      rotationQuarterTurns: record.rotationQuarterTurns ?? 0,
-      colorScheme: record.colorScheme, panelIcType: record.panelIcType,
+    // All the "may this frame go to this panel?" logic lives in send.js so the
+    // switch-during-await interleavings are unit-testable.
+    const { record } = await prepareSend({
+      owner, ownerGen, frame, record: openRecord,
+      currentSession: () => session,
+      currentFrame: () => latestDither,
+      getDevice: store.getDevice,
+      connectedBleId: adapter.connectedBleId,
     });
-    if (frame.signature !== wanted) {
-      throw new Error('the panel changed since this preview was rendered — reopen the composer');
-    }
     // Build from the CAPTURED frame, never from whatever is current now.
     const { canvas } = buildSendCanvas(frame);
     toast('Uploading…');

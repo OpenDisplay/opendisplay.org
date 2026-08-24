@@ -277,6 +277,29 @@ window.resultPromise = (async () => {
   ok('transparentPhotoDoesNotBlackOut', !(bottom[0] < 40 && bottom[1] < 40 && bottom[2] < 40));
   transparentBitmap.close();
 
+  // --- bounded decode: dimensions come from the HEADER, never a full decode ---
+  const sizeMod = await import('/app/v1/js/composer/image-size.js');
+  const big = new OffscreenCanvas(1200, 300);
+  const bctx = big.getContext('2d');
+  bctx.fillStyle = 'rgb(10,120,200)';
+  bctx.fillRect(0, 0, 1200, 300);
+  let sizeOk = true;
+  for (const type of ['image/png', 'image/jpeg', 'image/webp']) {
+    const blob = await big.convertToBlob({ type });
+    const read = await sizeMod.readImageSize(blob);
+    if (!read || read.width !== 1200 || read.height !== 300) { sizeOk = false; break; }
+    // A bounded decode must respect the cap and keep the aspect ratio.
+    const bmp = await sizeMod.decodeBounded(blob, 100);
+    if (Math.max(bmp.width, bmp.height) !== 100 || bmp.height !== 25) sizeOk = false;
+    bmp.close();
+    // Under the cap: untouched.
+    const small = await sizeMod.decodeBounded(blob, 5000);
+    if (small.width !== 1200) sizeOk = false;
+    small.close();
+    if (!sizeOk) break;
+  }
+  ok('headerSizeAndBoundedDecode', sizeOk);
+
   // --- draft persistence round-trip through IndexedDB ---
   const saved = await store.getDraft('dr-1');
   const restored = model.fromDraft(saved);

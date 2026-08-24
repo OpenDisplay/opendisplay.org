@@ -100,7 +100,10 @@ class FakeWorker {
     this.posted.push(msg);
     // Acknowledge assets the way the real worker does.
     if (msg.type === 'asset') {
-      queueMicrotask(() => this.onmessage({ data: { type: 'asset-ack', assetId: msg.assetId } }));
+      // The real worker echoes the attempt token.
+      queueMicrotask(() => this.onmessage({
+        data: { type: 'asset-ack', assetId: msg.assetId, attempt: msg.attempt },
+      }));
     }
   }
   terminate() { this.terminated = true; }
@@ -183,12 +186,22 @@ test('a device switch TERMINATES the worker so no stale ack or frame survives', 
     oldWorker.onmessage({ data: { type: 'render', id: a, epoch: 0, ok: true, width: 1, height: 1 } });
     assert.deepEqual(results, [], "device A's frame never reaches device B");
 
+    // A late ACK from the dead worker must NOT satisfy anything.
+    oldWorker.onmessage({ data: { type: 'asset-ack', assetId: 'sha-1', attempt: 1 } });
+    assert.equal(client.assetReady('sha-1'), false, 'stale ack ignored');
+
+    // A late ERROR from the dead worker must not tear down its replacement.
     // And a same-hash asset in the NEW session is re-sent to a fresh worker.
     await client.addAsset('sha-1', {}, async () => ({ close() {} }));
     await flush();
-    assert.notEqual(FakeWorker.last, oldWorker, 'a fresh worker was created');
+    const freshWorker = FakeWorker.last;
+    assert.notEqual(freshWorker, oldWorker, 'a fresh worker was created');
+
+    oldWorker.onerror({ message: 'late failure from the dead worker' });
+    assert.equal(freshWorker.terminated, undefined, 'the replacement survives');
+
     const b = client.request({ layers: [{ assetId: 'sha-1' }] }, {});
-    FakeWorker.last.reply(b);
+    freshWorker.reply(b);
     assert.deepEqual(results, [b]);
   } finally { restore(); }
 });
@@ -268,5 +281,57 @@ test('worker errors surface and do not wedge the queue', () => {
     const b = client.request({ layers: [] }, {});
     w.reply(b);
     assert.deepEqual(results, [b], 'the client kept working after the failure');
+  } finally { restore(); }
+});
+
+test('a decode finishing after a session switch cannot satisfy the new claim', async () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    // Start a slow decode in session A.
+    let releaseA;
+    const slowA = client.addAsset('sha-1', {}, () => new Promise((res) => {
+      releaseA = () => res({ close() {}, tag: 'A' });
+    }));
+    assert.equal(client.hasAsset('sha-1'), true, 'A staked its claim');
+
+    client.newEpoch();                       // session B opens
+    assert.equal(client.hasAsset('sha-1'), false, "A's claim was cleared");
+
+    // Session B loads the SAME content hash.
+    await client.addAsset('sha-1', {}, async () => ({ close() {}, tag: 'B' }));
+    await flush();
+    assert.equal(client.assetReady('sha-1'), true, "B's asset is ready");
+    const bWorker = FakeWorker.last;
+    const postedByB = bWorker.posted.filter((m) => m.type === 'asset').length;
+
+    // A's decode finally finishes: it must be discarded, not posted, and must
+    // not disturb B's ready claim.
+    releaseA();
+    await slowA;
+    await flush();
+    assert.equal(client.assetReady('sha-1'), true, "B's claim survives A's late decode");
+    assert.equal(
+      bWorker.posted.filter((m) => m.type === 'asset').length, postedByB,
+      "A's bitmap was never posted",
+    );
+  } finally { restore(); }
+});
+
+test('a decode FAILING after a session switch does not delete the new claim', async () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    let failA;
+    const slowA = client.addAsset('sha-9', {}, () => new Promise((_, rej) => {
+      failA = () => rej(new Error('decode aborted'));
+    }));
+    client.newEpoch();
+    await client.addAsset('sha-9', {}, async () => ({ close() {} }));
+    await flush();
+    assert.equal(client.assetReady('sha-9'), true);
+
+    failA();
+    await assert.rejects(slowA, /decode aborted/);
+    assert.equal(client.assetReady('sha-9'), true,
+      "the new session's asset must survive the old session's failure");
   } finally { restore(); }
 });
