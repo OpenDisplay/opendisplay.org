@@ -420,3 +420,21 @@ test('pruneAssets keeps reachable assets and tells the worker exactly once', asy
     restore();
   }
 });
+
+test('pending() reports whether a render is outstanding', () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    assert.equal(client.pending(), false);
+    const id = client.request({ layers: [] }, {});
+    assert.equal(client.pending(), true, 'in flight');
+    FakeWorker.last.reply(id);
+    assert.equal(client.pending(), false, 'answered');
+    // An invalidated render will never be published, so nothing is coming.
+    client.request({ layers: [] }, {});
+    client.invalidate();
+    assert.equal(client.pending(), false,
+      'a render whose result will be dropped must not count as pending');
+  } finally {
+    restore();
+  }
+});

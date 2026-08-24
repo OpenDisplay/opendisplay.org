@@ -168,6 +168,14 @@ function updateSendControls() {
  * Never onto the render canvas: that would put UI chrome into the image the
  * dither and the panel would receive.
  */
+/** Blit an already-rendered dithered frame onto the preview canvas. */
+function showDitheredFrame(frame) {
+  const { canvas, ctx } = makeCanvas(frame.width, frame.height);
+  ctx.putImageData(new ImageData(frame.preview, frame.width, frame.height), 0, 0);
+  blitPreview($('composerCanvas'), canvas, { width: frame.width, height: frame.height });
+  paintOverlay(); // the blit does not touch the overlay, but selection may have changed
+}
+
 function paintOverlay() {
   const overlay = $('composerOverlay');
   const { W, H } = size();
@@ -374,12 +382,7 @@ function ensureDitherClient() {
       if (!session) return; // the composer closed while this render was in flight
       // Bind the frame to the panel it was rendered for.
       latestDither = { ...msg, signature: panelSignature(doc().panel) };
-      if ($('showDithered').checked) {
-        const { canvas, ctx } = makeCanvas(msg.width, msg.height);
-        ctx.putImageData(new ImageData(msg.preview, msg.width, msg.height), 0, 0);
-        blitPreview($('composerCanvas'), canvas, { width: msg.width, height: msg.height });
-        paintOverlay(); // the blit does not touch the overlay, but selection may have changed
-      }
+      if ($('showDithered').checked) showDitheredFrame(latestDither);
       const note = msg.measured ? ' (measured palette)' : '';
       toast(`Preview ready${note}.`);
       updateSendControls();
@@ -625,9 +628,14 @@ function wire() {
   $('ditherMode').addEventListener('change', ditherOptionChanged);
   $('useMeasured').addEventListener('change', ditherOptionChanged);
   $('showDithered').addEventListener('change', () => {
-    // Showing or hiding the dithered preview changes the editor's view only.
-    if ($('showDithered').checked) requestDither();
-    else repaintOnly();
+    // Showing or hiding the dithered preview changes the editor's view only —
+    // so never spend a render on it. A frame we already have is displayed as
+    // it is; a request is issued only if there is none AND none is coming,
+    // because a fresh request carries a newer id and would supersede the
+    // in-flight one that is about to answer.
+    if (!$('showDithered').checked) { repaintOnly(); return; }
+    if (latestDither) showDitheredFrame(latestDither);
+    else if (!dither?.pending()) requestDither();
   });
   $('sendBtn').addEventListener('click', () => {
     sendToDisplay().catch((err) => reportError(err));

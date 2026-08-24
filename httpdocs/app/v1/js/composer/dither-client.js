@@ -166,6 +166,14 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       if (dropped && worker) worker.postMessage({ type: 'prune', keep: [...keep] });
     },
 
+    /**
+     * True while a render that can still be PUBLISHED is outstanding. An
+     * in-flight render issued before the last invalidate() does not count:
+     * its result will be dropped, so a caller waiting on it would wait
+     * forever.
+     */
+    pending: () => !!(queued || (inFlight && inFlight >= staleBefore)),
+
     /** Current epoch — a result carrying a different one is stale. */
     epoch: () => epoch,
 
