@@ -231,6 +231,40 @@ window.resultPromise = (async () => {
   const coverBg = cr.ctx.getImageData(0, cr.height - 1, 1, 1).data;
   ok('fitModesDiffer', containBg[0] !== coverBg[0] || containBg[1] !== coverBg[1]);
 
+  // "none" draws at the SOURCE's natural pixel size, centred and cropped by the
+  // box — and, critically, does so identically for the editor's downscaled
+  // proxy and the send path's larger decode. Anchoring to bitmap.width would
+  // put a different crop on the panel than the one the user framed.
+  const fullResCanvas = new OffscreenCanvas(80, 40);   // a 2x "full-resolution" copy
+  const frctx = fullResCanvas.getContext('2d');
+  frctx.fillStyle = 'rgb(200,40,40)'; frctx.fillRect(0, 0, 80, 40);
+  const bigBitmap = await createImageBitmap(fullResCanvas);
+
+  const ndoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'none', srcW: 40, srcH: 20 });
+  const nProxy = render.renderDocument(ndoc, new Map([['p1', photoBitmap]]));
+  const nFull = render.renderDocument(ndoc, new Map([['p1', bigBitmap]]));
+  const rowOf = (c) => [...c.ctx.getImageData(0, Math.floor(c.height / 2), c.width, 1).data];
+  ok('noneIsResolutionIndependent', JSON.stringify(rowOf(nProxy)) === JSON.stringify(rowOf(nFull)));
+
+  // 40x20 natural inside a 60x37 artboard leaves background at the edges, and
+  // is NOT the same as contain (which would scale it up to fit).
+  const nEdge = nProxy.ctx.getImageData(0, Math.floor(nProxy.height / 2), 1, 1).data;
+  const nMid = nProxy.ctx.getImageData(Math.floor(nProxy.width / 2), Math.floor(nProxy.height / 2), 1, 1).data;
+  ok('nonePlacedAtNaturalSize', nMid[0] > 100 && nMid[1] < 120 && !(nEdge[0] > 100 && nEdge[1] < 120));
+  const containRow = rowOf(render.renderDocument(pdoc, new Map([['p1', photoBitmap]])));
+  ok('noneDiffersFromContain', JSON.stringify(rowOf(nProxy)) !== JSON.stringify(containRow));
+
+  // A source BIGGER than the artboard is cropped by the box, not shrunk.
+  const cropDoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'none', srcW: 400, srcH: 200 });
+  const cropped = render.renderDocument(cropDoc, new Map([['p1', photoBitmap]]));
+  const cropRow = [...cropped.ctx.getImageData(0, Math.floor(cropped.height / 2), cropped.width, 1).data];
+  let allPhoto = true;
+  for (let i = 0; i < cropRow.length; i += 4) {
+    if (!(cropRow[i] > 100 && cropRow[i + 1] < 120)) allPhoto = false;
+  }
+  ok('noneCropsWhenOversize', allPhoto);
+  bigBitmap.close();
+
   // Adjustments change output pixels (exposure down => darker).
   let adoc = model.updateLayer(pdoc, pdoc.layers[0].id, {
     fit: 'cover', adjustments: { exposure: 0.4, saturation: 1, shadows: 0, highlights: 0 },

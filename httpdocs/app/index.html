@@ -65,41 +65,11 @@
     </dialog>
 
     <section id="viewComposer" class="odapp__view" hidden>
-      <div class="composer__bar">
-        <button id="toolSelect" class="odapp__btn composer__tool composer__tool--active" type="button">Select</button>
-        <button id="toolDraw" class="odapp__btn composer__tool" type="button">Draw</button>
-        <button id="toolText" class="odapp__btn composer__tool" type="button">Text</button>
-        <button id="toolQr" class="odapp__btn composer__tool" type="button">QR</button>
-        <label class="odapp__btn odapp__filebtn">Photo<input id="photoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
-        <select id="inkColor" class="odapp__btn" aria-label="Ink colour">
-          <option value="0">Black</option>
-          <option value="1">White</option>
-          <option value="2">Yellow</option>
-          <option value="3">Red</option>
-          <option value="4">Blue</option>
-          <option value="5">Green</option>
-        </select>
-        <span class="composer__spacer"></span>
-        <button id="undoBtn" class="odapp__btn" type="button" disabled>Undo</button>
-        <button id="redoBtn" class="odapp__btn" type="button" disabled>Redo</button>
-        <button id="deleteLayerBtn" class="odapp__btn" type="button" disabled>Delete</button>
-        <button id="clearBtn" class="odapp__btn" type="button" disabled
-                title="Remove everything from the canvas (undoable)">Clear</button>
-      </div>
-      <p id="composerPanelInfo" class="odapp-card__meta"></p>
-      <div id="photoControls" class="composer__photo" hidden>
-        <label>Fit
-          <select id="photoFit">
-            <option value="contain">Contain</option>
-            <option value="cover">Cover</option>
-          </select>
-        </label>
-        <label>Size <input id="photoSize" type="range" min="0.1" max="1" step="0.05" value="1"></label>
-        <label>Exposure <input id="adjExposure" type="range" min="0.3" max="2" step="0.05" value="1"></label>
-        <label>Saturation <input id="adjSaturation" type="range" min="0" max="2" step="0.05" value="1"></label>
-        <label>Shadows <input id="adjShadows" type="range" min="0" max="1" step="0.05" value="0"></label>
-        <label>Highlights <input id="adjHighlights" type="range" min="0" max="1" step="0.05" value="0"></label>
-      </div>
+      <!-- Layout follows od-app's ComposerView: canvas first, then the always-
+           visible action row, then the tool chips, then the ACTIVE tool's
+           panel. Only one tool's controls are on screen at a time — the old
+           flat toolbar showed all of them at once, which is not how the phone
+           app reads. -->
       <div id="composerStage" class="composer__stage">
         <div class="composer__canvaswrap">
           <canvas id="composerCanvas" class="composer__canvas"></canvas>
@@ -109,27 +79,147 @@
           <canvas id="composerOverlay" class="composer__overlay" aria-hidden="true"></canvas>
         </div>
       </div>
-      <div class="composer__bar">
-        <label>Dither
-          <select id="ditherMode">
-            <option value="1">Burkes</option>
-            <option value="3">Floyd-Steinberg</option>
-            <option value="4">Atkinson</option>
-            <option value="5">Stucki</option>
-            <option value="6">Sierra</option>
-            <option value="7">Sierra Lite</option>
-            <option value="8">Jarvis-Judice-Ninke</option>
-            <option value="2">Ordered</option>
-            <option value="9">Dizzy</option>
-            <option value="0">None</option>
-          </select>
-        </label>
-        <label><input id="useMeasured" type="checkbox" checked> Measured palette</label>
-        <label><input id="showDithered" type="checkbox" checked> Dithered preview</label>
+      <p id="composerPanelInfo" class="composer__panelinfo"></p>
+      <p id="composerWarning" class="composer__warning" role="status" hidden></p>
+
+      <div class="composer__actions">
+        <button id="undoBtn" class="odapp__btn" type="button" disabled>Undo</button>
+        <button id="redoBtn" class="odapp__btn" type="button" disabled>Redo</button>
+        <button id="deleteLayerBtn" class="odapp__btn" type="button" disabled>Delete</button>
+        <button id="clearBtn" class="odapp__btn" type="button" disabled
+                title="Remove everything from the canvas (undoable)">Clear</button>
         <span class="composer__spacer"></span>
         <button id="sendBtn" class="odapp__btn odapp__btn--primary" type="button" disabled>Send to display</button>
       </div>
       <progress id="sendProgress" class="composer__progress" value="0" max="100" hidden></progress>
+
+      <div class="composer__chips" role="tablist" aria-label="Tools">
+        <button id="toolSelect" class="composer__chip composer__chip--active" type="button" role="tab" aria-selected="true" data-panel="panelSelect">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5 12.5 8 8.2 9.1 6.6 13.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Move
+        </button>
+        <button id="toolDraw" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelDraw">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14l1-3.5L10.5 3 13 5.5 5.5 13z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Draw
+        </button>
+        <button id="toolText" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelText">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11M8 3.5v9M5.5 12.5h5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Text
+        </button>
+        <button id="toolQr" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelQr">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h4v4H2zM10 2h4v4h-4zM2 10h4v4H2zM10 10h2v2h-2zM13 13h1v1h-1z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>QR
+        </button>
+        <button id="toolPhoto" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelPhoto">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h13v9h-13zM3 11l3.5-4 2.5 3 2-2 2 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Photo
+        </button>
+        <button id="toolDither" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelDither">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM8 2h3v3H8zM5 5h3v3H5zM11 5h3v3h-3zM2 8h3v3H2zM8 8h3v3H8zM5 11h3v3H5zM11 11h3v3h-3z" fill="currentColor"/></svg>Dither
+        </button>
+      </div>
+
+      <div class="composer__panels">
+        <div id="panelSelect" class="composer__panel">
+          <p class="composer__hint">Tap an element to select it, then drag to move it or pull a
+             corner to resize. Elements may hang off the edge of the canvas — anything past it is
+             cropped when the image is sent.</p>
+        </div>
+
+        <div id="panelDraw" class="composer__panel" hidden>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="drawInk" class="composer__swatches" role="radiogroup" aria-label="Draw ink"></div>
+          </div>
+          <label class="composer__row">
+            <span class="composer__label">Width</span>
+            <input id="drawWidth" type="range" min="0.002" max="0.06" step="0.002" value="0.012">
+          </label>
+        </div>
+
+        <div id="panelText" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Text</span>
+            <input id="textContent" class="composer__field" type="text" placeholder="Hello" value="Hello">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Size</span>
+            <input id="textSize" type="range" min="0.03" max="0.5" step="0.01" value="0.12">
+          </label>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="textInk" class="composer__swatches" role="radiogroup" aria-label="Text ink"></div>
+          </div>
+          <p class="composer__hint">Tap the canvas to place it, or <button id="addTextBtn" class="odapp__btn odapp__btn--link" type="button">add it in the middle</button>.</p>
+        </div>
+
+        <div id="panelQr" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Content</span>
+            <input id="qrContent" class="composer__field" type="text" placeholder="https://opendisplay.org" value="https://opendisplay.org">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Size</span>
+            <input id="qrSize" type="range" min="0.1" max="1" step="0.05" value="0.3">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Error correction</span>
+            <select id="qrEcc" class="composer__field">
+              <option value="L">L — smallest code</option>
+              <option value="M" selected>M</option>
+              <option value="Q">Q</option>
+              <option value="H">H — most robust</option>
+            </select>
+          </label>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="qrInk" class="composer__swatches" role="radiogroup" aria-label="QR ink"></div>
+          </div>
+          <p class="composer__hint">Tap the canvas to place it, or <button id="addQrBtn" class="odapp__btn odapp__btn--link" type="button">add it in the middle</button>.</p>
+        </div>
+
+        <div id="panelPhoto" class="composer__panel" hidden>
+          <div class="composer__row">
+            <label class="odapp__btn odapp__filebtn">Choose photo<input id="photoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+          </div>
+          <div id="photoControls" class="composer__photo" hidden>
+            <label class="composer__row">
+              <span class="composer__label">Fit</span>
+              <select id="photoFit" class="composer__field">
+                <option value="cover">Cover — fills the box, crops the overflow</option>
+                <option value="contain">Contain — whole photo, letterboxed</option>
+                <option value="none">None — natural size, cropped by the box</option>
+              </select>
+            </label>
+            <label class="composer__row">
+              <span class="composer__label">Size</span>
+              <input id="photoSize" type="range" min="0.1" max="1.25" step="0.05" value="1">
+            </label>
+            <p class="composer__subhead">Adjustments</p>
+            <label class="composer__row"><span class="composer__label">Exposure</span><input id="adjExposure" type="range" min="0.3" max="2" step="0.05" value="1"></label>
+            <label class="composer__row"><span class="composer__label">Saturation</span><input id="adjSaturation" type="range" min="0" max="2" step="0.05" value="1"></label>
+            <label class="composer__row"><span class="composer__label">Shadows</span><input id="adjShadows" type="range" min="0" max="1" step="0.05" value="0"></label>
+            <label class="composer__row"><span class="composer__label">Highlights</span><input id="adjHighlights" type="range" min="0" max="1" step="0.05" value="0"></label>
+          </div>
+          <p id="photoEmptyHint" class="composer__hint">No photo selected. Choose one, then use Move to position it.</p>
+        </div>
+
+        <div id="panelDither" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Algorithm</span>
+            <select id="ditherMode" class="composer__field">
+              <option value="1">Burkes</option>
+              <option value="3">Floyd-Steinberg</option>
+              <option value="4">Atkinson</option>
+              <option value="5">Stucki</option>
+              <option value="6">Sierra</option>
+              <option value="7">Sierra Lite</option>
+              <option value="8">Jarvis-Judice-Ninke</option>
+              <option value="2">Ordered</option>
+              <option value="9">Dizzy</option>
+              <option value="0">None</option>
+            </select>
+          </label>
+          <label class="composer__check"><input id="useMeasured" type="checkbox" checked> Measured palette</label>
+          <label class="composer__check"><input id="showDithered" type="checkbox" checked> Dithered preview</label>
+        </div>
+      </div>
+
       <p id="composerStatus" class="odapp__status" role="status">
         Drop or paste an image here.
       </p>

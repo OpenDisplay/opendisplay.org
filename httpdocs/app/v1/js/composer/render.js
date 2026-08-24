@@ -101,11 +101,22 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
   const by = Math.round(layer.y * H);
   const bw = Math.max(1, Math.round(layer.w * W));
   const bh = Math.max(1, Math.round(layer.h * H));
-  const scale = layer.fit === 'cover'
-    ? Math.max(bw / bitmap.width, bh / bitmap.height)
-    : Math.min(bw / bitmap.width, bh / bitmap.height);
-  const dw = bitmap.width * scale;
-  const dh = bitmap.height * scale;
+  let dw;
+  let dh;
+  if (layer.fit === 'none') {
+    // Natural size in PANEL pixels. Deliberately NOT bitmap.width/height: the
+    // editor draws a downscaled proxy and the send path a near-full-resolution
+    // decode, so anchoring to the recorded source size is what keeps the
+    // preview and the panel showing the same crop.
+    dw = layer.srcW ?? bitmap.width;
+    dh = layer.srcH ?? bitmap.height;
+  } else {
+    const scale = layer.fit === 'cover'
+      ? Math.max(bw / bitmap.width, bh / bitmap.height)
+      : Math.min(bw / bitmap.width, bh / bitmap.height);
+    dw = bitmap.width * scale;
+    dh = bitmap.height * scale;
+  }
   const dx = bx + (bw - dw) / 2;
   const dy = by + (bh - dh) / 2;
 
@@ -171,8 +182,11 @@ export const QR_QUIET_MODULES = 4;
  *
  * layer.size is the requested block side as a fraction of min(W, H) and
  * INCLUDES the quiet zone. Module size is snapped to whole pixels for crisp
- * edges; the resulting block is clamped inside the artboard so the quiet zone
- * can never be clipped (a clipped quiet zone is the classic unscannable QR).
+ * edges. The block is placed where the layer says, INCLUDING partly off the
+ * artboard — elements are no longer confined to the canvas. A QR clipped that
+ * way will not scan (a clipped quiet zone is the classic unscannable code), so
+ * the composer warns when one is; it is the user's framing decision, not
+ * something to silently override by moving their code.
  */
 export function qrGeometry(layer, W, H) {
   const { size, modules } = encodeQrMatrix(layer.text, {
@@ -196,9 +210,11 @@ export function qrGeometry(layer, W, H) {
   const modulePx = Math.min(Math.max(1, Math.floor(requestedPx / totalModules)), maxModulePx);
   const blockPx = totalModules * modulePx;
 
-  // Clamp the WHOLE block (quiet zone included) inside the artboard.
-  const x = Math.round(Math.max(0, Math.min(W - blockPx, layer.x * W)));
-  const y = Math.round(Math.max(0, Math.min(H - blockPx, layer.y * H)));
+  // Position is NOT forced onto the artboard: like every other element a QR
+  // may overhang and be clipped by the render (the move tool bounds how far).
+  // A clipped QR will not scan, which is why the composer warns about one.
+  const x = Math.round(layer.x * W);
+  const y = Math.round(layer.y * H);
 
   return {
     size, modules, modulePx, blockPx,

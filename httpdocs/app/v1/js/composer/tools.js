@@ -7,23 +7,48 @@ import { addLayer, updateLayer, strokeLayer, textLayer, qrLayer, photoLayer } fr
 import { hitTest, layerBounds, hitHandle } from './canvas.js';
 
 /**
- * Clamp a layer origin so its RENDERED extent stays on the artboard — moving
- * by origin alone would let a photo or QR slide almost entirely off-canvas.
- * A layer larger than the artboard is pinned at 0 rather than pushed negative.
+ * How far an element may hang off the artboard, as a fraction of it. Elements
+ * are deliberately NOT confined to the canvas — bleeding a photo or a rule off
+ * the edge is ordinary layout, and the render clips whatever crosses it. This
+ * only stops an element being pushed so far that it is gone.
+ */
+export const CANVAS_BLEED = 0.25;
+
+/** …and at least this fraction of the element itself must stay on-canvas, so a
+ *  small element cannot be parked in the bleed where it is invisible. */
+export const MIN_ON_CANVAS = 0.3;
+
+/**
+ * Legal range for one axis of an element's rendered box: it may cross the edge
+ * up to CANVAS_BLEED of the artboard, provided MIN_ON_CANVAS of the element is
+ * still on it. Big elements are limited by the bleed, small ones by the
+ * visibility floor.
+ * @returns {[number, number]} inclusive min/max for the box's leading edge
+ */
+export function bleedRange(extent) {
+  const visible = extent * MIN_ON_CANVAS;
+  return [
+    Math.max(-CANVAS_BLEED, visible - extent),
+    Math.min(1 - visible, 1 + CANVAS_BLEED - extent),
+  ];
+}
+
+/**
+ * Place a layer origin so its RENDERED extent stays within the bleed. Uses the
+ * rendered bounds, so text alignment and the QR quiet zone are accounted for.
  */
 function clampOrigin(layer, x, y, size) {
   const b = layerBounds({ ...layer, x, y }, size);
   const w = b?.w ?? 0;
   const h = b?.h ?? 0;
-  // layerBounds already accounts for text alignment / QR quiet zone, so the
-  // offset between the anchor and the drawn box is preserved here.
+  // The offset between the anchor and the drawn box must be preserved.
   const offX = (b?.x ?? x) - x;
   const offY = (b?.y ?? y) - y;
-  const maxX = Math.max(0, 1 - w);
-  const maxY = Math.max(0, 1 - h);
+  const [minX, maxX] = bleedRange(w);
+  const [minY, maxY] = bleedRange(h);
   return {
-    x: Math.max(-offX, Math.min(maxX - offX, x)),
-    y: Math.max(-offY, Math.min(maxY - offY, y)),
+    x: Math.max(minX - offX, Math.min(maxX - offX, x)),
+    y: Math.max(minY - offY, Math.min(maxY - offY, y)),
   };
 }
 
@@ -106,11 +131,14 @@ export function resizeBox(start, handle, delta) {
     if (handle === 'nw' || handle === 'ne') y = bottom - MIN_LAYER_SIZE;
     h = MIN_LAYER_SIZE;
   }
-  // Keep the box on the artboard without changing the anchored corner.
-  if (x < 0) { w += x; x = 0; }
-  if (y < 0) { h += y; y = 0; }
-  if (x + w > 1) w = 1 - x;
-  if (y + h > 1) h = 1 - y;
+  // Keep the box within the bleed without changing the anchored corner. A box
+  // LARGER than the artboard is fine — the render clips it.
+  const lo = -CANVAS_BLEED;
+  const hi = 1 + CANVAS_BLEED;
+  if (x < lo) { w += x - lo; x = lo; }
+  if (y < lo) { h += y - lo; y = lo; }
+  if (x + w > hi) w = hi - x;
+  if (y + h > hi) h = hi - y;
   w = Math.max(MIN_LAYER_SIZE, w);
   h = Math.max(MIN_LAYER_SIZE, h);
   return { x, y, w, h };
@@ -123,7 +151,7 @@ export function resizeBox(start, handle, delta) {
  * A pointer-down on a corner HANDLE of the selected layer starts a resize;
  * anywhere else on the layer starts a move.
  */
-export function makeSelectTool({ onSelect } = {}) {
+export function makeSelectTool({ onSelect, handlePx } = {}) {
   let selectedId = null;
   let dragId = null;
   let grab = null;
@@ -137,7 +165,7 @@ export function makeSelectTool({ onSelect } = {}) {
       // corner sitting on top of another layer still resizes.
       const selected = selectedId && doc.layers.find((l) => l.id === selectedId);
       if (selected) {
-        const handle = hitHandle(selected, pt, size);
+        const handle = hitHandle(selected, pt, size, handlePx?.());
         if (handle) {
           dragId = selectedId;
           moved = false;
@@ -195,9 +223,13 @@ export function makeSelectTool({ onSelect } = {}) {
         if (!strokeDrag) return { doc, commit: false };
         const xs = strokeDrag.points.map((p) => p.x);
         const ys = strokeDrag.points.map((p) => p.y);
-        // Clamp the translation so the whole polyline stays on the artboard.
-        const dx = Math.max(-Math.min(...xs), Math.min(1 - Math.max(...xs), pt.x - strokeDrag.origin.x));
-        const dy = Math.max(-Math.min(...ys), Math.min(1 - Math.max(...ys), pt.y - strokeDrag.origin.y));
+        // Translate the polyline as a unit, bounded by the same bleed rule.
+        const x0 = Math.min(...xs);
+        const y0 = Math.min(...ys);
+        const [minX, maxX] = bleedRange(Math.max(...xs) - x0);
+        const [minY, maxY] = bleedRange(Math.max(...ys) - y0);
+        const dx = Math.max(minX - x0, Math.min(maxX - x0, pt.x - strokeDrag.origin.x));
+        const dy = Math.max(minY - y0, Math.min(maxY - y0, pt.y - strokeDrag.origin.y));
         if (dx === 0 && dy === 0) return { doc, commit: false };
         moved = true;
         return {
@@ -240,7 +272,7 @@ export function placeQr(doc, pt, { text, size = 0.3, color = 0, errorCorrectLeve
   return addLayer(doc, qrLayer({ text, x: pt.x, y: pt.y, size, color, errorCorrectLevel }));
 }
 
-export function placePhoto(doc, { assetId, fit = 'contain' }) {
+export function placePhoto(doc, { assetId, fit = 'cover', srcW = null, srcH = null }) {
   // Photos default to the full artboard; drag/resize adjusts afterwards.
-  return addLayer(doc, photoLayer({ assetId, x: 0, y: 0, w: 1, h: 1, fit }));
+  return addLayer(doc, photoLayer({ assetId, x: 0, y: 0, w: 1, h: 1, fit, srcW, srcH }));
 }

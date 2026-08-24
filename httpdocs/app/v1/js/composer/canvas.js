@@ -10,17 +10,25 @@ import { qrGeometry } from './render.js';
 export function makeSurface(canvasEl, { onPointerDown, onPointerMove, onPointerUp }) {
   let dragging = false;
 
+  // Deliberately UNCLAMPED. Pointer capture keeps delivering moves once the
+  // finger leaves the canvas, and elements are allowed to bleed off the edge —
+  // clamping here would pin a drag at the boundary no matter how far the user
+  // moved. The tools bound how far an element may actually go.
   const toNorm = (ev) => {
     const rect = canvasEl.getBoundingClientRect();
     return {
-      x: Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height)),
+      x: (ev.clientX - rect.left) / rect.width,
+      y: (ev.clientY - rect.top) / rect.height,
     };
   };
 
   canvasEl.addEventListener('pointerdown', (ev) => {
     dragging = true;
-    canvasEl.setPointerCapture(ev.pointerId);
+    // Capture keeps the drag alive once the pointer leaves the canvas, which
+    // is now normal — elements may be dragged past the edge. It is not
+    // essential to the gesture, so a pointer id the browser will not capture
+    // (a synthetic event, a pointer already released) must not abort it.
+    try { canvasEl.setPointerCapture(ev.pointerId); } catch { /* not capturable */ }
     onPointerDown?.(toNorm(ev), ev);
   });
   canvasEl.addEventListener('pointermove', (ev) => {
@@ -85,23 +93,41 @@ export const HANDLES = ['nw', 'ne', 'se', 'sw'];
  * Handle size in NORMALIZED units for each axis. Handles are square on screen,
  * so the normalized size differs per axis on a non-square artboard.
  */
-export function handleSize({ W, H }, px = 14) {
+export const HANDLE_PX = 14;
+
+/** Touch targets are bigger than what is drawn — od-app allows 10pt of slop
+ *  around a tap for the same reason. */
+export const HANDLE_HIT_SLOP = 1.6;
+
+export function handleSize({ W, H }, px = HANDLE_PX) {
   return { hw: px / W, hh: px / H };
 }
 
 /**
  * Centres of the resize handles for a layer, in normalized coordinates.
+ *
+ * Handles are pulled back inside the artboard when the element bleeds off it —
+ * the overlay canvas is exactly panel-sized, so a handle drawn outside would be
+ * both invisible and untouchable, stranding the element the user just pushed
+ * off the edge. (od-app clamps its selection controls the same way, and for the
+ * same reason: its canvas is .clipped().) The resize maths works from the
+ * element's TRUE bounds plus the pointer delta, so a pulled-back handle changes
+ * only where you grab, never what the grab does.
+ *
  * Returns null for layer types that are not resizable by handle (strokes).
  */
-export function handlePoints(layer, size) {
+export function handlePoints(layer, size, px = HANDLE_PX) {
   if (layer.type === 'stroke') return null;
   const b = layerBounds(layer, size);
   if (!b) return null;
+  const { hw, hh } = handleSize(size, px);
+  const cx = (x) => Math.max(hw, Math.min(1 - hw, x));
+  const cy = (y) => Math.max(hh, Math.min(1 - hh, y));
   return {
-    nw: { x: b.x, y: b.y },
-    ne: { x: b.x + b.w, y: b.y },
-    se: { x: b.x + b.w, y: b.y + b.h },
-    sw: { x: b.x, y: b.y + b.h },
+    nw: { x: cx(b.x), y: cy(b.y) },
+    ne: { x: cx(b.x + b.w), y: cy(b.y) },
+    se: { x: cx(b.x + b.w), y: cy(b.y + b.h) },
+    sw: { x: cx(b.x), y: cy(b.y + b.h) },
   };
 }
 
@@ -109,10 +135,12 @@ export function handlePoints(layer, size) {
  * Which resize handle (if any) is under `pt`. Checked BEFORE layer hit-testing
  * so grabbing a corner resizes rather than moves.
  */
-export function hitHandle(layer, pt, size, px = 14) {
-  const points = handlePoints(layer, size);
+export function hitHandle(layer, pt, size, px = HANDLE_PX) {
+  // Hit-test against where the handles are DRAWN (px), but with a slop margin,
+  // so a small handle is still comfortably grabbable on a touch screen.
+  const points = handlePoints(layer, size, px);
   if (!points) return null;
-  const { hw, hh } = handleSize(size, px);
+  const { hw, hh } = handleSize(size, px * HANDLE_HIT_SLOP);
   for (const name of HANDLES) {
     const c = points[name];
     if (Math.abs(pt.x - c.x) <= hw && Math.abs(pt.y - c.y) <= hh) return name;

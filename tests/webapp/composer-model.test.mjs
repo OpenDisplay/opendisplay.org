@@ -144,7 +144,7 @@ test('draw tool discards a stray tap (single point) without committing', () => {
   assert.equal(up.commit, false);
 });
 
-test('select tool drags by grab offset and keeps the whole layer on-canvas', () => {
+test('select tool drags by grab offset and may bleed off the artboard', () => {
   let doc = model.createDocument(DEVICE);
   doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
   const t = tools.makeSelectTool();
@@ -153,12 +153,43 @@ test('select tool drags by grab offset and keeps the whole layer on-canvas', () 
   assert.equal(t.selectedId(), doc.layers[0].id, 'hit-test selected the layer');
   ({ doc } = t.onMove(doc, { x: 0.62, y: 0.42 }, size));
   assert.ok(Math.abs(doc.layers[0].x - 0.6) < 1e-9, 'moved by pointer delta, not to pointer');
-  // Dragging far off-canvas clamps the layer's EXTENT, not just its origin:
-  // a 0.4-wide photo can reach x = 0.6 at most.
+
+  // Past the edge is allowed — the render clips it. A 0.4-wide element keeps
+  // 30% of itself (0.12) on the artboard, so it may reach x = 0.88.
   ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));
-  assert.ok(Math.abs(doc.layers[0].x - 0.6) < 1e-9, `extent-clamped, got ${doc.layers[0].x}`);
-  assert.ok(Math.abs(doc.layers[0].y - 0.6) < 1e-9);
+  const [, maxX] = tools.bleedRange(0.4);
+  assert.ok(Math.abs(doc.layers[0].x - maxX) < 1e-9,
+    `bled to the limit, got ${doc.layers[0].x}`);
+  assert.ok(doc.layers[0].x > 0.6, 'it really did cross the old boundary');
+  assert.ok(doc.layers[0].x + 0.4 > 1, 'and part of it now hangs off the canvas');
+
+  // The other direction is bounded too, so it cannot be lost.
+  ({ doc } = t.onMove(doc, { x: -5, y: -5 }, size));
+  const [minX] = tools.bleedRange(0.4);
+  assert.ok(Math.abs(doc.layers[0].x - minX) < 1e-9);
+  assert.ok(minX < 0 && doc.layers[0].x + 0.4 > 0.1, 'still reachable');
   assert.equal(t.onUp(doc).commit, true);
+});
+
+test('the bleed limit is the artboard for big elements, the element for small', () => {
+  // A full-artboard photo is limited by CANVAS_BLEED: it may hang 25% off.
+  const [minFull, maxFull] = tools.bleedRange(1);
+  assert.equal(+minFull.toFixed(6), -tools.CANVAS_BLEED);
+  assert.equal(+maxFull.toFixed(6), tools.CANVAS_BLEED);
+
+  // A small element is limited by MIN_ON_CANVAS instead — 25% of the artboard
+  // would swallow it whole.
+  const [minSmall, maxSmall] = tools.bleedRange(0.05);
+  assert.ok(minSmall > -tools.CANVAS_BLEED, 'the visibility floor binds first');
+  assert.equal(+minSmall.toFixed(6), +(-0.05 * (1 - tools.MIN_ON_CANVAS)).toFixed(6));
+  assert.ok(maxSmall < 1, 'and it cannot be parked past the far edge either');
+
+  // Whatever the size, some of the element is always on the artboard.
+  for (const extent of [0.02, 0.1, 0.5, 1, 1.4]) {
+    const [lo, hi] = tools.bleedRange(extent);
+    assert.ok(lo + extent > 0, `left limit keeps ${extent} visible`);
+    assert.ok(hi < 1, `right limit keeps ${extent} visible`);
+  }
 });
 
 test('select tool: selection PERSISTS after pointer-up (Delete acts on it)', () => {
@@ -282,13 +313,14 @@ test('QR geometry reserves a 4-module quiet zone on every side', () => {
   assert.equal(g.codeY - g.y, 4 * g.modulePx);
 });
 
-test('QR is clamped so the quiet zone is never clipped by the artboard edge', () => {
-  for (const [x, y] of [[0, 0], [0.99, 0.99], [-0.5, 0.5]]) {
-    const layer = model.qrLayer({ text: 'clamp me', x, y, size: 0.5 });
+test('QR renders where it is placed, including partly off the artboard', () => {
+  // It used to be shoved back inside, which silently moved the user's code.
+  // Elements bleed now; the composer warns that a clipped QR will not scan.
+  for (const [x, y] of [[0, 0], [0.9, 0.9], [-0.1, 0.5]]) {
+    const layer = model.qrLayer({ text: 'place me', x, y, size: 0.5 });
     const g = render.qrGeometry(layer, 300, 200);
-    assert.ok(g.x >= 0 && g.y >= 0, `origin inside: ${g.x},${g.y}`);
-    assert.ok(g.x + g.blockPx <= 300, `right edge inside: ${g.x + g.blockPx}`);
-    assert.ok(g.y + g.blockPx <= 200, `bottom edge inside: ${g.y + g.blockPx}`);
+    assert.equal(g.x, Math.round(x * 300), 'x is where the layer says');
+    assert.equal(g.y, Math.round(y * 200), 'y is where the layer says');
   }
 });
 
@@ -492,7 +524,7 @@ test('a stroke can be dragged: every point moves by the same delta', () => {
   assert.equal(t.onUp(doc).commit, true, 'the move is one undo step');
 });
 
-test('dragging a stroke keeps the whole polyline on the artboard', () => {
+test('dragging a stroke translates it as a unit, bounded by the same bleed', () => {
   let doc = model.createDocument(DEVICE);
   doc = model.addLayer(doc, model.strokeLayer({
     points: [{ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.5 }],
@@ -502,22 +534,24 @@ test('dragging a stroke keeps the whole polyline on the artboard', () => {
   ({ doc } = t.onDown(doc, { x: 0.3, y: 0.3 }, size));
   ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));   // yank far off-canvas
   const pts = doc.layers[0].points;
-  assert.ok(pts.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1),
-    `all points on canvas: ${JSON.stringify(pts)}`);
-  // The furthest point lands exactly on the edge, preserving the shape.
-  assert.equal(+Math.max(...pts.map((p) => p.x)).toFixed(3), 1);
+  const [, maxX] = tools.bleedRange(0.4);
+  assert.equal(+Math.min(...pts.map((p) => p.x)).toFixed(9), +maxX.toFixed(9),
+    'the leading edge stops at the bleed limit');
+  assert.ok(Math.max(...pts.map((p) => p.x)) > 1, 'the tail really is off-canvas');
   assert.equal(+(pts[1].x - pts[0].x).toFixed(3), 0.4, 'shape preserved');
 });
 
-test('a stroke drag that cannot move (already at the edge) does not commit', () => {
+test('a stroke drag that cannot move (already at the limit) does not commit', () => {
   let doc = model.createDocument(DEVICE);
+  // Spans the whole artboard, so its bleed range is a single point.
   doc = model.addLayer(doc, model.strokeLayer({
-    points: [{ x: 0, y: 0 }, { x: 1, y: 1 }],   // spans the whole artboard
+    points: [{ x: -tools.CANVAS_BLEED, y: -tools.CANVAS_BLEED },
+             { x: 1, y: 1 }],
   }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
   ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
-  ({ doc } = t.onMove(doc, { x: 0.9, y: 0.9 }, size));
+  ({ doc } = t.onMove(doc, { x: -5, y: -5 }, size));
   assert.equal(t.onUp(doc).commit, false, 'no movement was possible, so no history entry');
 });
 
@@ -565,10 +599,13 @@ test('resizeBox: each corner moves its own edges and anchors the opposite one', 
   assert.equal(+ne.y.toFixed(3), 0.3, 'top edge moved');
 });
 
-test('resizeBox clamps to the artboard and to a minimum size', () => {
+test('resizeBox clamps to the bleed and to a minimum size', () => {
   const start = { x: 0.2, y: 0.2, w: 0.4, h: 0.4 };
   const huge = tools.resizeBox(start, 'se', { x: 5, y: 5 });
-  assert.ok(huge.x + huge.w <= 1 + 1e-9 && huge.y + huge.h <= 1 + 1e-9, 'stays on the artboard');
+  const hi = 1 + tools.CANVAS_BLEED;
+  assert.ok(huge.x + huge.w <= hi + 1e-9 && huge.y + huge.h <= hi + 1e-9,
+    'stays within the bleed');
+  assert.ok(huge.x + huge.w > 1, 'but is allowed past the artboard edge');
 
   const tiny = tools.resizeBox(start, 'se', { x: -5, y: -5 });
   assert.equal(+tiny.w.toFixed(3), tools.MIN_LAYER_SIZE);
@@ -626,4 +663,23 @@ test('resizing a QR adjusts its size field, not a width/height box', () => {
   const l = doc.layers[0];
   assert.ok(l.size > before, `QR grew: ${before} -> ${l.size}`);
   assert.equal(l.w, undefined, 'QR has no width/height box');
+});
+
+// --- photo fit modes: cover / contain / none ------------------------------
+
+test('photoLayer accepts only the three fit modes', () => {
+  assert.deepEqual(model.PHOTO_FIT_MODES, ['cover', 'contain', 'none']);
+  for (const fit of model.PHOTO_FIT_MODES) {
+    assert.equal(model.photoLayer({ assetId: 'a', fit }).fit, fit);
+  }
+  assert.equal(model.photoLayer({ assetId: 'a' }).fit, 'cover', 'cover is the default');
+  assert.throws(() => model.photoLayer({ assetId: 'a', fit: 'stretch' }), /unknown photo fit/);
+});
+
+test('a photo records the natural source size, for the "none" fit', () => {
+  const l = model.photoLayer({ assetId: 'a', srcW: 3000, srcH: 2000 });
+  assert.equal(l.srcW, 3000);
+  assert.equal(l.srcH, 2000);
+  const unknown = model.photoLayer({ assetId: 'a' });
+  assert.equal(unknown.srcW, null, 'unknown is explicit, not undefined');
 });

@@ -15,10 +15,11 @@ import { renderDocument, validateDocument, reconcileDocument } from './render.js
 import { makeSurface, blitPreview, layerBounds, handlePoints, handleSize, HANDLES } from './canvas.js';
 import { createSession } from './session.js';
 import { createDitherClient } from './dither-client.js';
-import { decodeBounded, SUPPORTED_IMAGE_TYPES } from './image-size.js';
+import { decodeBounded, readImageSize, SUPPORTED_IMAGE_TYPES } from './image-size.js';
 import { prepareSend, panelSignature } from './send.js';
 import { errorMessage, describeError } from '../errors.js';
 import { paintForSend } from './dither.js';
+import { paletteFor } from './palettes.js';
 import { makeCanvas } from './render.js';
 import * as adapter from '../ble-adapter.js';
 import * as store from '../store.js';
@@ -41,6 +42,8 @@ let lastContentDoc = null;
 let sending = false;
 let drawTool = null;
 let selectTool = null;
+let textTool = null;
+let qrTool = null;
 let activeTool = null;
 
 function doc() {
@@ -65,21 +68,70 @@ const SCHEME_INK_LABELS = {
   8: ['Black', 'White', 'Yellow', 'Red', 'Blue', 'Green'],
 };
 
+/** Chosen ink per tool, by palette index. Kept per tool the way od-app keeps
+ *  drawColorIndex / textColorIndex / qrColorIndex separately. */
+const ink = { draw: 0, text: 0, qr: 0 };
+
+const INK_GROUPS = { drawInk: 'draw', textInk: 'text', qrInk: 'qr' };
+
+/**
+ * Rebuild the ink swatches for the CURRENT panel scheme. Swatches rather than a
+ * <select>: the choice is a colour, and od-app shows it as one. Only legal
+ * indices are offered — Blue on a mono panel would silently render as
+ * something else.
+ */
 function rebuildInkOptions() {
   const scheme = doc().panel.colorScheme;
   const labels = SCHEME_INK_LABELS[scheme] ?? SCHEME_INK_LABELS[0];
-  const select = $('inkColor');
-  const previous = Number(select.value);
-  select.textContent = '';
-  labels.forEach((label, index) => {
-    const opt = document.createElement('option');
-    opt.value = String(index);
-    opt.textContent = label;
-    select.appendChild(opt);
-  });
-  // Keep the choice if it is still legal, else fall back to black.
-  select.value = String(previous < labels.length ? previous : 0);
-  drawTool?.setColor(Number(select.value));
+  const palette = paletteFor(scheme);
+  for (const [groupId, key] of Object.entries(INK_GROUPS)) {
+    const host = $(groupId);
+    if (!host) continue;
+    // Keep the choice if it is still legal, else fall back to black.
+    if (ink[key] >= labels.length) ink[key] = 0;
+    host.textContent = '';
+    labels.forEach((label, index) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'composer__swatch';
+      b.dataset.index = String(index);
+      b.title = label;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-label', label);
+      const [r, g, bl] = palette[index] ?? [0, 0, 0];
+      b.style.background = `rgb(${r},${g},${bl})`;
+      b.addEventListener('click', () => {
+        ink[key] = index;
+        if (key === 'draw') drawTool?.setColor(index);
+        markInk(groupId, key);
+        applyInkToSelection(index);
+      });
+      host.appendChild(b);
+    });
+    markInk(groupId, key);
+  }
+  drawTool?.setColor(ink.draw);
+}
+
+function markInk(groupId, key) {
+  for (const b of $(groupId).children) {
+    const on = Number(b.dataset.index) === ink[key];
+    b.classList.toggle('composer__swatch--active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+}
+
+/** Recolour the selected element, so a swatch acts on what is selected rather
+ *  than only on the next thing placed (od-app binds the picker the same way). */
+function applyInkToSelection(index) {
+  const id = selectTool?.selectedId();
+  const layer = id && doc().layers.find((l) => l.id === id);
+  if (!layer || layer.type === 'photo') return;
+  try {
+    session.apply(model.updateLayer(doc(), id, { color: index }));
+  } catch (err) {
+    reportError(err);
+  }
 }
 
 /**
@@ -138,6 +190,7 @@ function paintNow() {
 
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
   blitPreview($('composerCanvas'), canvas, { width, height });
+  fitCanvasToStage();
   $('undoBtn').disabled = !session.canUndo();
   $('redoBtn').disabled = !session.canRedo();
   $('deleteLayerBtn').disabled = !selectTool?.selectedId();
@@ -148,7 +201,32 @@ function paintNow() {
     `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
     ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`;
   updatePhotoControls();
+  updateClipWarning();
   updateSendControls();
+}
+
+/**
+ * Warn about content that the panel will crop.
+ *
+ * Bleeding a photo or a rule off the edge is a deliberate layout choice, so it
+ * is not worth a warning. A CLIPPED QR is different: it silently stops
+ * scanning, and losing part of the quiet zone is enough to do it. This used to
+ * be impossible because QR position was forced back onto the artboard — which
+ * moved the user's code without telling them.
+ */
+function updateClipWarning() {
+  const { W, H } = size();
+  const clipped = doc().layers.filter((l) => {
+    if (l.type !== 'qr') return false;
+    const b = layerBounds(l, { W, H });
+    return !!b && (b.x < 0 || b.y < 0 || b.x + b.w > 1 || b.y + b.h > 1);
+  });
+  const el = $('composerWarning');
+  el.hidden = clipped.length === 0;
+  el.textContent = clipped.length
+    ? `${clipped.length === 1 ? 'A QR code hangs' : `${clipped.length} QR codes hang`} off the `
+      + 'canvas and will be cropped — a cropped code will not scan.'
+    : '';
 }
 
 function updateSendControls() {
@@ -176,6 +254,50 @@ function showDitheredFrame(frame) {
   paintOverlay(); // the blit does not touch the overlay, but selection may have changed
 }
 
+/**
+ * Size the canvas box to the panel's aspect ratio inside the stage.
+ *
+ * The backing store is always panel-resolution; this is purely the on-screen
+ * box, the way od-app's canvas is `.aspectRatio(ar, .fit)` in the space it is
+ * given. Without it a 122x250 tag renders as a postage stamp and a 1872x1404
+ * one overflows the page.
+ */
+function fitCanvasToStage() {
+  const stage = $('composerStage');
+  const wrap = $('composerCanvas').parentElement;
+  const { W, H } = size();
+  if (!(W > 0 && H > 0)) return;
+  const style = getComputedStyle(stage);
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const availW = Math.max(120, stage.clientWidth - padding);
+  const availH = Math.max(160, window.innerHeight * 0.55);
+  const scale = Math.min(availW / W, availH / H);
+  wrap.style.width = `${Math.round(W * scale)}px`;
+  wrap.style.height = `${Math.round(H * scale)}px`;
+}
+
+/** Selection chrome colour — the same accent the active tool chip uses. */
+const SELECTION_ACCENT = '#2b6cb0';
+
+/** How many PANEL pixels make one on-screen CSS pixel right now. */
+function screenScale() {
+  const wrap = $('composerCanvas').parentElement;
+  const { W } = size();
+  const shown = wrap.clientWidth || W;
+  return W > 0 ? shown / W : 1;
+}
+
+/**
+ * Handle size in PANEL pixels chosen so handles are a constant ~11 CSS px on
+ * screen. The overlay is drawn at panel resolution, so a fixed panel-pixel
+ * size would give tiny handles on a 1872px panel and enormous ones on a 122px
+ * tag — the opposite of what the finger needs.
+ */
+function handlePanelPx() {
+  const scale = screenScale();
+  return Math.max(3, 11 / (scale || 1));
+}
+
 function paintOverlay() {
   const overlay = $('composerOverlay');
   const { W, H } = size();
@@ -197,30 +319,34 @@ function paintOverlay() {
   const px = (v, axis) => v * (axis === 'x' ? W : H);
 
   // Dashed outline, drawn in two passes so it reads on any panel colour.
+  const s_ = screenScale() || 1;
   ctx.save();
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 4]);
+  ctx.lineWidth = Math.max(1, 2 / s_);
+  ctx.setLineDash([6 / s_, 4 / s_]);
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
   ctx.strokeRect(px(b.x, 'x'), px(b.y, 'y'), px(b.w, 'x'), px(b.h, 'y'));
-  ctx.lineDashOffset = 6;
+  ctx.lineDashOffset = 6 / s_;
   ctx.strokeStyle = 'rgba(0,0,0,0.9)';
   ctx.strokeRect(px(b.x, 'x'), px(b.y, 'y'), px(b.w, 'x'), px(b.h, 'y'));
   ctx.restore();
 
   // Corner handles (strokes have none — they move but do not resize).
-  const points = handlePoints(layer, { W, H });
+  const hpx = handlePanelPx();
+  const points = handlePoints(layer, { W, H }, hpx);
   if (!points) return;
-  const { hw, hh } = handleSize({ W, H });
+  const { hw, hh } = handleSize({ W, H }, hpx);
   ctx.save();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = Math.max(1, 2 / (screenScale() || 1));
   for (const name of HANDLES) {
     const c = points[name];
     const x = px(c.x, 'x') - px(hw, 'x');
     const y = px(c.y, 'y') - px(hh, 'y');
     const w = px(hw, 'x') * 2;
     const h = px(hh, 'y') * 2;
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    // Accent fill with a white keyline, like od-app's selection controls: it
+    // reads against both the black and the white end of every panel palette.
+    ctx.fillStyle = SELECTION_ACCENT;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x, y, w, h);
   }
@@ -285,6 +411,10 @@ async function importPhoto(blob) {
   const owner = session;
   const gen = owner.generation();
   const assetId = await store.putAsset(blob);
+  // Record the source's DISPLAY size (EXIF applied) before decoding: the "none"
+  // fit draws at natural pixels, and it must mean the same thing for the
+  // editor's downscaled proxy as for the send path's larger decode.
+  const natural = await readImageSize(blob).catch(() => null);
   const bitmap = await decodeProxy(blob);
   // The session may have been replaced while we hashed and decoded.
   if (!isCurrent(owner, gen)) {
@@ -292,7 +422,9 @@ async function importPhoto(blob) {
     return;
   }
   owner.setBitmap(assetId, bitmap);
-  owner.apply(tools.placePhoto(owner.doc(), { assetId }));
+  owner.apply(tools.placePhoto(owner.doc(), {
+    assetId, srcW: natural?.width ?? null, srcH: natural?.height ?? null,
+  }));
   selectPhotoLayer(owner.doc().layers.at(-1).id);
   toast('Photo added.');
 }
@@ -311,6 +443,10 @@ function selectPhotoLayer(id) {
 function updatePhotoControls() {
   const layer = selectedPhotoLayer();
   $('photoControls').hidden = !layer;
+  $('photoEmptyHint').hidden = !!layer;
+  $('photoEmptyHint').textContent = doc().layers.some((l) => l.type === 'photo')
+    ? 'Select a photo on the canvas with Move to adjust it.'
+    : 'No photo yet. Choose one, then use Move to position it.';
   if (!layer) return;
   $('photoFit').value = layer.fit;
   // Keep the slider in step with the selected layer, or the next drag would
@@ -354,10 +490,13 @@ function wirePhotoControls() {
     const layer = selectedPhotoLayer();
     if (!layer) return;
     const f = Number($('photoSize').value);
-    // Growing a layer that sits near an edge must not push it off-canvas:
-    // re-clamp the origin against the NEW extent.
-    const x = Math.max(0, Math.min(1 - f, layer.x));
-    const y = Math.max(0, Math.min(1 - f, layer.y));
+    // Growing a layer changes what "off the edge" means for it, so re-apply the
+    // bleed rule against the NEW extent — above 1.0 the box is deliberately
+    // larger than the panel and the render crops it.
+    const [minX, maxX] = tools.bleedRange(f);
+    const [minY, maxY] = tools.bleedRange(f);
+    const x = Math.max(minX, Math.min(maxX, layer.x));
+    const y = Math.max(minY, Math.min(maxY, layer.y));
     session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
   });
   $('photoSize').addEventListener('pointerdown', () => session.beginGesture());
@@ -524,6 +663,127 @@ async function sendToDisplay() {
   }
 }
 
+// --- tools ----------------------------------------------------------------
+
+/**
+ * Tap-to-place tool for text and QR, mirroring od-app: the panel holds the
+ * content and the canvas tap chooses the position. The whole placement is one
+ * gesture so it lands as a single undo step, and an invalid result (a QR that
+ * cannot fit) is reported instead of thrown at the pointer handler.
+ */
+function makePlaceTool(kind) {
+  let placed = false;
+  return {
+    name: kind,
+    onDown(document_, pt) {
+      placed = false;
+      const next = placeAt(document_, kind, pt);
+      if (!next) return { doc: document_, commit: false };
+      placed = true;
+      return { doc: next, commit: false };
+    },
+    onMove(document_) { return { doc: document_, commit: false }; },
+    onUp(document_) {
+      const did = placed;
+      placed = false;
+      return { doc: document_, commit: did };
+    },
+  };
+}
+
+/** Build the layer described by the text/QR panel at `pt`, or null if the
+ *  panel has nothing to place. Throws only for content the panel cannot fit. */
+function placeAt(document_, kind, pt) {
+  if (kind === 'text') {
+    const text = $('textContent').value.trim();
+    if (!text) return null;
+    return tools.placeText(document_, pt, {
+      text, size: Number($('textSize').value), color: ink.text,
+    });
+  }
+  const text = $('qrContent').value.trim();
+  if (!text) return null;
+  return tools.placeQr(document_, pt, {
+    text, size: Number($('qrSize').value), color: ink.qr,
+    errorCorrectLevel: $('qrEcc').value,
+  });
+}
+
+/** "Add it in the middle" — the keyboard-reachable equivalent of a canvas tap. */
+function placeCentred(kind) {
+  try {
+    const next = placeAt(doc(), kind, { x: 0.5, y: 0.5 });
+    if (!next) {
+      toast(kind === 'text' ? 'Type some text first.' : 'Enter the QR content first.', 'error');
+      return;
+    }
+    // placeText/placeQr anchor at the point; centre the element on it.
+    const layer = next.layers.at(-1);
+    const b = layerBounds(layer, size());
+    session.apply(model.updateLayer(next, layer.id, {
+      x: layer.x - (b?.w ?? 0) / 2, y: layer.y - (b?.h ?? 0) / 2,
+    }));
+    selectTool.setSelection(next.layers.at(-1).id);
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+/** Push the panel's content/ECC onto the SELECTED element of that kind. */
+function retitleSelected(kind) {
+  const layer = selectedOfType(kind);
+  if (!layer) return;
+  const patch = kind === 'text'
+    ? { text: $('textContent').value.trim() }
+    : { text: $('qrContent').value.trim(), errorCorrectLevel: $('qrEcc').value };
+  if (!patch.text) return;
+  try {
+    session.apply(model.updateLayer(doc(), layer.id, patch));
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+function resizeSelected(kind) {
+  const layer = selectedOfType(kind);
+  if (!layer) return;
+  const value = Number(kind === 'text' ? $('textSize').value : $('qrSize').value);
+  try {
+    session.apply(model.updateLayer(doc(), layer.id, { size: value }));
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+function selectedOfType(kind) {
+  const id = selectTool?.selectedId();
+  const layer = id && doc().layers.find((l) => l.id === id);
+  return layer && layer.type === kind ? layer : null;
+}
+
+const CHIP_TOOLS = {
+  toolSelect: () => selectTool,
+  toolDraw: () => drawTool,
+  toolText: () => textTool,
+  toolQr: () => qrTool,
+  toolPhoto: () => selectTool,
+  toolDither: () => selectTool,
+};
+
+/** Activate a chip: switch the tool AND reveal only that tool's panel. */
+function setTool(chipId) {
+  activeTool = CHIP_TOOLS[chipId]?.() ?? selectTool;
+  for (const chip of document.querySelectorAll('.composer__chip')) {
+    const on = chip.id === chipId;
+    chip.classList.toggle('composer__chip--active', on);
+    chip.setAttribute('aria-selected', on ? 'true' : 'false');
+    const panel = $(chip.dataset.panel);
+    if (panel) panel.hidden = !on;
+  }
+  const canvas = $('composerCanvas');
+  canvas.dataset.tool = activeTool === selectTool ? 'select' : activeTool.name;
+}
+
 // --- wiring ---------------------------------------------------------------
 
 function wire() {
@@ -532,52 +792,61 @@ function wire() {
   $('photoFile').accept = SUPPORTED_IMAGE_TYPES.join(',');
 
   drawTool = tools.makeDrawTool({ color: 0, width: 0.012 });
-  selectTool = tools.makeSelectTool({ onSelect: () => repaintOnly() });
+  selectTool = tools.makeSelectTool({
+    onSelect: () => repaintOnly(),
+    handlePx: () => handlePanelPx(),
+  });
+  textTool = makePlaceTool('text');
+  qrTool = makePlaceTool('qr');
   activeTool = selectTool;
 
-  const setTool = (tool, btnId) => {
-    activeTool = tool;
-    for (const b of document.querySelectorAll('.composer__tool')) {
-      b.classList.toggle('composer__tool--active', b.id === btnId);
-    }
-  };
-  $('toolSelect').addEventListener('click', () => setTool(selectTool, 'toolSelect'));
-  $('toolDraw').addEventListener('click', () => setTool(drawTool, 'toolDraw'));
+  for (const chip of document.querySelectorAll('.composer__chip')) {
+    chip.addEventListener('click', () => setTool(chip.id));
+  }
+  // The Photo chip's panel holds the picker; opening the panel is the whole
+  // action, so it selects the Move tool underneath (od-app does the same —
+  // its photo tool leaves the canvas in .move).
+  $('addTextBtn').addEventListener('click', () => placeCentred('text'));
+  $('addQrBtn').addEventListener('click', () => placeCentred('qr'));
+  $('drawWidth').addEventListener('change', (ev) => drawTool.setWidth(Number(ev.target.value)));
+  // Retyping re-arms placement feedback and re-renders a selected element.
+  $('textContent').addEventListener('change', () => retitleSelected('text'));
+  $('qrContent').addEventListener('change', () => retitleSelected('qr'));
+  $('textSize').addEventListener('change', () => resizeSelected('text'));
+  $('qrSize').addEventListener('change', () => resizeSelected('qr'));
+  $('qrEcc').addEventListener('change', () => retitleSelected('qr'));
 
-  $('toolText').addEventListener('click', () => {
-    const text = window.prompt('Text to place:');
-    if (!text) return;
-    session.apply(tools.placeText(doc(), { x: 0.1, y: 0.1 }, {
-      text, color: Number($('inkColor').value),
-    }));
-  });
-  $('toolQr').addEventListener('click', () => {
-    const text = window.prompt('QR contents (URL or text):', 'https://opendisplay.org');
-    if (!text) return;
+  // A tool may reject the edit it is asked for — a QR whose content cannot fit
+  // the panel is the real case. Report it and abandon the gesture rather than
+  // letting it escape a pointer handler as an unhandled error.
+  const guard = (fn) => (pt) => {
     try {
-      session.apply(tools.placeQr(doc(), { x: 0.1, y: 0.1 }, {
-        text, color: Number($('inkColor').value),
-      }));
+      fn(pt);
     } catch (err) {
+      try { session?.endGesture(doc(), false); } catch { /* already ended */ }
       reportError(err);
     }
-  });
-  $('inkColor').addEventListener('change', (ev) => drawTool.setColor(Number(ev.target.value)));
-
+  };
   makeSurface($('composerCanvas'), {
-    onPointerDown: (pt) => {
+    onPointerDown: guard((pt) => {
       session.beginGesture();
       const r = activeTool.onDown(doc(), pt, size());
       session.updateGesture(r.doc);
-    },
-    onPointerMove: (pt) => {
+    }),
+    onPointerMove: guard((pt) => {
       const r = activeTool.onMove(doc(), pt, size());
       session.updateGesture(r.doc);
-    },
-    onPointerUp: (pt) => {
+    }),
+    onPointerUp: guard((pt) => {
       const r = activeTool.onUp(doc(), pt, size());
       session.endGesture(r.doc, r.commit);
-    },
+      // Placement is a one-shot: hand the canvas back to Move so the next tap
+      // selects what was just placed instead of stamping another copy.
+      if (r.commit && (activeTool === textTool || activeTool === qrTool)) {
+        selectTool.setSelection(doc().layers.at(-1)?.id ?? null);
+        setTool('toolSelect');
+      }
+    }),
   });
 
   $('undoBtn').addEventListener('click', () => session.undo());
@@ -603,6 +872,9 @@ function wire() {
     ev.target.value = '';
     if (file) importPhoto(file).catch((err) => reportError(err));
   });
+
+  // The box is derived from the viewport, so it has to follow it.
+  window.addEventListener('resize', () => { if (session) fitCanvasToStage(); });
 
   // Drag-drop and paste, per plan §6.
   const stage = $('composerStage');
@@ -752,6 +1024,7 @@ export async function openComposer(device) {
 
   if (!wired) wire();
   selectTool?.clearSelection();
+  setTool('toolSelect');   // every open starts on Move, with only its panel up
   rebuildInkOptions();
 
   // Restore editing proxies for referenced assets (owner-guarded).
@@ -817,6 +1090,11 @@ export async function closeComposer({ discard = false } = {}) {
 /** The record id whose composer session is currently open, if any. */
 export function openRecordId() {
   return session?.session?.device?.recordId ?? null;
+}
+
+/** Test seam: the open document. Read-only — the document is immutable. */
+export function _doc() {
+  return session ? doc() : null;
 }
 
 export function hasSession() {

@@ -178,7 +178,10 @@
 .odapp-dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .odapp-dialog__list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
 
-/* --- M2: composer --- */
+/* --- M2: composer -------------------------------------------------------
+   Laid out after od-app's ComposerView: the canvas is a fixed, aspect-locked
+   box on a neutral field, with an action row, a horizontally-scrolling chip
+   bar, and only the ACTIVE tool's controls below it. */
 .composer__bar {
   display: flex;
   gap: 0.5rem;
@@ -189,48 +192,167 @@
 
 .composer__spacer { flex: 1; }
 
-.composer__tool--active {
-  border-color: currentColor;
-  font-weight: 600;
-}
-
 .composer__stage {
   border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
-  padding: 0.75rem;
+  border-radius: 10px;
+  padding: 1rem;
   display: flex;
   justify-content: center;
-  background: rgba(128, 128, 128, 0.08);
+  align-items: center;
+  /* A neutral field so a white panel reads as the panel rather than as page
+     background, and so the area an overhanging element bleeds into is visibly
+     "off the canvas" (od-app gets this for free from the system background). */
+  background: rgba(128, 128, 128, 0.12);
+  min-height: 12rem;
 }
 
 .composer__canvas {
-  max-width: 100%;
-  height: auto;
+  /* Fills the wrapper, which JS sizes to the panel's aspect ratio — od-app's
+     .aspectRatio(ar, .fit) box. Upscaling is deliberate and `pixelated` keeps
+     it honest: an e-paper panel really is that coarse. */
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   touch-action: none; /* pointer events own the gestures */
   background: #fff;
   cursor: crosshair;
+  /* The panel's edge. od-app draws a 1px systemGray4 border for exactly this:
+     the boundary has to be legible now that elements can cross it. */
+  box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.55), 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
-.composer__photo {
+.composer__canvas[data-tool="select"] { cursor: default; }
+
+.composer__panelinfo {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+  text-align: center;
+}
+
+.composer__warning {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  text-align: center;
+  color: #b8862c;
+}
+
+.composer__actions {
   display: flex;
-  gap: 1rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
-  font-size: 0.85rem;
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px dashed rgba(128, 128, 128, 0.4);
-  border-radius: 8px;
+  margin: 0.75rem 0;
 }
 
-.composer__photo label { display: flex; gap: 0.35rem; align-items: center; }
-.composer__photo input[type="range"] { width: 7rem; }
+/* Tool chips: capsules with an icon and a label, exactly one active. */
+.composer__chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 0.5rem;
+  scrollbar-width: thin;
+}
+
+.composer__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  background: rgba(128, 128, 128, 0.08);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.composer__chip:hover { border-color: rgba(128, 128, 128, 0.7); }
+
+.composer__chip--active {
+  background: #2b6cb0;
+  border-color: #2b6cb0;
+  color: #fff;
+  font-weight: 600;
+}
+
+.composer__chipicon { width: 1em; height: 1em; flex: 0 0 auto; }
+
+.composer__panels {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.composer__panel { display: flex; flex-direction: column; gap: 0.6rem; }
+/* display:flex outranks the UA's [hidden]{display:none}, so every panel would
+   otherwise render at once — the whole point of the chips is that only one
+   does. Same for the photo controls inside the Photo panel. */
+.composer__panel[hidden] { display: none; }
+
+.composer__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.composer__label { min-width: 6.5rem; opacity: 0.8; }
+.composer__field { flex: 1 1 12rem; padding: 0.35rem 0.5rem; font: inherit; }
+.composer__row input[type="range"] { flex: 1 1 10rem; }
+.composer__check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.composer__row[hidden], .composer__check[hidden], .composer__swatches[hidden] { display: none; }
+
+.composer__subhead {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.composer__hint { margin: 0; font-size: 0.85rem; opacity: 0.75; }
+
+.odapp__btn--link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Ink swatches, in place of a colour <select> (od-app's colorSwatchPicker). */
+.composer__swatches { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.composer__swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.55);
+  padding: 0;
+  cursor: pointer;
+  background-clip: padding-box;
+}
+
+.composer__swatch--active {
+  outline: 2px solid #2b6cb0;
+  outline-offset: 2px;
+}
+
+.composer__photo { display: flex; flex-direction: column; gap: 0.6rem; }
+.composer__photo[hidden] { display: none; }
 
 .composer__progress { width: 100%; height: 0.5rem; margin: 0.25rem 0 0.5rem; }
 .composer__bar label { display: flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; }
 
-.composer__canvaswrap { position: relative; display: inline-block; max-width: 100%; }
+.composer__canvaswrap { position: relative; display: block; max-width: 100%; }
 .composer__canvaswrap > canvas { display: block; }
 
 .composer__overlay {

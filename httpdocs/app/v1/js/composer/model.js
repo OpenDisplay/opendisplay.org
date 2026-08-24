@@ -54,12 +54,31 @@ export function createDocument(device) {
 
 // --- layer constructors (all geometry normalized 0…1) ---
 
-export function photoLayer({ assetId, x = 0, y = 0, w = 1, h = 1, fit = 'contain', adjustments = {} }) {
+/** How a photo is mapped into its box, mirroring CSS object-fit (and od-app's
+ *  PhotoFitMode, which has the same cover/contain baseline):
+ *   cover   — aspect-fill: covers the box, overflow cropped (od-app's default)
+ *   contain — aspect-fit: whole photo visible, letter/pillar-boxed
+ *   none    — natural size, centred and cropped by the box; no scaling */
+export const PHOTO_FIT_MODES = ['cover', 'contain', 'none'];
+
+export function photoLayer({
+  assetId, x = 0, y = 0, w = 1, h = 1, fit = 'cover', adjustments = {},
+  // Natural size of the SOURCE in pixels, recorded at import. 'none' must draw
+  // at this size rather than at bitmap.width/height: the editor holds a ≤1600px
+  // proxy while the send path decodes near full resolution, so using the
+  // bitmap's own dimensions would put a different crop on the panel than the
+  // one the user framed.
+  srcW = null, srcH = null,
+}) {
+  if (!PHOTO_FIT_MODES.includes(fit)) {
+    throw new Error(`unknown photo fit mode: ${fit}`);
+  }
   return {
     id: newLayerId(),
     type: 'photo',
     assetId,
     x, y, w, h, fit,
+    srcW, srcH,
     adjustments: {
       // Applied per layer when compositing. Tone/gamut are NOT here: they are
       // whole-image pre-dither parameters (doc.tone / doc.gamut), because M3

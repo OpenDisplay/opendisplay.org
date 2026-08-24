@@ -88,6 +88,15 @@ test('the composer works with no device connected, and Send explains why it is o
     const ok = (n, c) => { out.checks[n] = !!c; };
     // paint() coalesces to an animation frame, so settle before reading the DOM.
     const settle = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 250)));
+    // A real tap on the canvas, in normalized artboard coordinates.
+    const tapCanvas = (nx, ny) => {
+      const el = document.getElementById('composerCanvas');
+      const r = el.getBoundingClientRect();
+      const init = { bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+                     clientX: r.left + nx * r.width, clientY: r.top + ny * r.height };
+      el.dispatchEvent(new PointerEvent('pointerdown', init));
+      el.dispatchEvent(new PointerEvent('pointerup', init));
+    };
 
     const adapter = await import(location.origin + '/app/v1/js/ble-adapter.js');
     const composer = await import(location.origin + '/app/v1/js/composer/index.js');
@@ -113,12 +122,16 @@ test('the composer works with no device connected, and Send explains why it is o
     ok('panelInfoFromRecord',
        document.getElementById('composerPanelInfo').textContent.includes('400×300'));
 
-    // Editing works offline.
-    const origPrompt = window.prompt;
-    window.prompt = () => 'https://opendisplay.org';
+    // Editing works offline. QR is now panel content + a canvas tap (od-app's
+    // flow) rather than a window.prompt.
     document.getElementById('toolQr').click();
-    window.prompt = origPrompt;
+    ok('qrPanelShown', document.getElementById('panelQr').hidden === false);
+    ok('otherPanelsHidden', document.getElementById('panelDraw').hidden === true);
+    document.getElementById('qrContent').value = 'https://opendisplay.org';
+    tapCanvas(0.5, 0.5);
     await settle();
+    ok('placementReturnsToMove',
+       document.getElementById('toolSelect').classList.contains('composer__chip--active'));
     await new Promise((r) => setTimeout(r, 600)); // debounced dither
     ok('layerAdded',
        document.getElementById('composerPanelInfo').textContent.includes('1 layer'));
