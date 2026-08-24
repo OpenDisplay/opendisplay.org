@@ -122,7 +122,7 @@ test('unexpected disconnect: renews first, then notifies listener', async () => 
   adapter.setUnexpectedDisconnectListener(() => {
     sawFreshInstance = current() !== before;
   });
-  before.onDisconnect(); // library fires gattserverdisconnected
+  await before.onDisconnect(); // library fires gattserverdisconnected (async handler)
   assert.equal(adapter.getState(), 'idle');
   assert.equal(sawFreshInstance, true, 'listener ran after the bridge renewed');
 });
@@ -258,4 +258,110 @@ test('fresh instance readiness gates the next connect (slow schema load)', async
     inst.calls.indexOf('loadYAMLConfig') < inst.calls.indexOf('connect'),
     'connect waited for the fresh instance schema',
   );
+});
+
+// --- race-condition coverage (M1 review round 2) ---
+
+test('concurrent connects during slow readiness: exactly one wins', async () => {
+  installBridge({
+    loadYAMLConfig: async function () {
+      await new Promise((r) => setTimeout(r, 30));
+      this.packetSchema = { 32: {} };
+      this.packetSizes = { 32: 40 };
+      this.packetFieldOffsets = { 32: GOOD_OFFSETS };
+    },
+  });
+  const results = await Promise.allSettled([
+    adapter.connectViaChooser('OD'),
+    adapter.connectViaChooser('OD'),
+  ]);
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  const rejected = results.filter((r) => r.status === 'rejected');
+  assert.equal(fulfilled.length, 1, 'exactly one connect succeeded');
+  assert.match(String(rejected[0].reason), /while connecting/i);
+  assert.equal(adapter.getState(), 'connected');
+});
+
+test('disconnect during a slow connect: late success is invalidated, never connected', async () => {
+  let releaseConnect;
+  installBridge({
+    connect: () => new Promise((r) => { releaseConnect = r; }),
+  });
+  const connectP = adapter.connectViaChooser('OD');
+  await new Promise((r) => setTimeout(r, 10)); // connect in flight
+  // Unexpected disconnect fires while the connect promise is pending.
+  globalThis.odAppBle.onDisconnect?.();
+  await new Promise((r) => setTimeout(r, 10));
+  releaseConnect(); // the old connect "succeeds" late
+  await assert.rejects(connectP, /torn down|while the operation/i);
+  assert.notEqual(adapter.getState(), 'connected', 'late success must not set connected');
+});
+
+test('unexpected disconnect during an op: op result invalidated', async () => {
+  let releaseConfig;
+  installBridge({
+    readConfig: async (cb) => { releaseConfig = () => cb([1], null); },
+  });
+  await adapter.connectViaChooser('OD');
+  const inst = current();
+  const opP = adapter.readDeviceInfo();
+  await new Promise((r) => setTimeout(r, 10));
+  await inst.onDisconnect(); // async handler: renews before notifying
+  releaseConfig(); // config "arrives" on the discarded instance
+  await assert.rejects(opP, /torn down|Not connected|timed out/i);
+});
+
+test('unexpected disconnect handler awaits readiness before notifying', async () => {
+  await adapter.connectViaChooser('OD');
+  const before = current();
+  let readyAtNotify = null;
+  adapter.setUnexpectedDisconnectListener(() => {
+    // The fresh instance must already be schema-ready when the UI hears.
+    readyAtNotify = !!current().packetSchema?.[32];
+  });
+  await before.onDisconnect();
+  assert.equal(readyAtNotify, true);
+});
+
+test('stored key fails -> exactly one provider ask; provider key succeeds', async () => {
+  let authCalls = 0;
+  let configCalls = 0;
+  installBridge({
+    authenticate: async function () {
+      authCalls++;
+      if (this.encryptionSession.masterKey?.[0] === 0xba) { this.encryptionSession.authenticated = true; return; }
+      throw new Error('Authentication failed: wrong key');
+    },
+    readConfig: async (cb) => {
+      configCalls++;
+      if (configCalls === 1) cb(null, new Error('Authentication required (0xFE)'));
+      else cb([1], null);
+    },
+  });
+  await adapter.connectViaChooser('OD');
+  let asks = 0;
+  adapter.setKeyProvider(async ({ reason }) => {
+    asks++;
+    assert.equal(reason, 'stored-key-failed');
+    return new Uint8Array(16).fill(0xba);
+  });
+  const info = await adapter.readDeviceInfo({ storedKey: new Uint8Array(16).fill(0x01) });
+  assert.equal(asks, 1);
+  assert.equal(authCalls, 2, 'stored key tried, then provider key');
+  assert.equal(info.authKeyFromProvider, true, 'caller told the key came from the dialog');
+});
+
+test('rate-limit error surfaces without burning the provider ask', async () => {
+  installBridge({
+    authenticate: async () => { throw new Error('Authentication rate limit exceeded (10 attempts per minute)'); },
+    readConfig: async (cb) => cb(null, new Error('Authentication required (0xFE)')),
+  });
+  await adapter.connectViaChooser('OD');
+  let asks = 0;
+  adapter.setKeyProvider(async () => { asks++; return new Uint8Array(16); });
+  await assert.rejects(
+    adapter.readDeviceInfo({ storedKey: new Uint8Array(16).fill(1) }),
+    /rate limit/i,
+  );
+  assert.equal(asks, 0, 'provider not consulted while rate limited');
 });

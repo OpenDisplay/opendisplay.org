@@ -35,10 +35,14 @@ export async function saveKey(recordId, key) {
     throw new Error('key must be 16 bytes');
   }
   const existing = await getKeyRecord(recordId);
+  // exportedAt survives only if the BYTES are unchanged: replacing the key
+  // means the backup no longer matches, so the nag must return.
+  const sameBytes =
+    existing && new Uint8Array(existing.psk).every((b, i) => b === key[i]);
   await putKeyRecord({
     recordId,
     psk: key.buffer.slice(key.byteOffset, key.byteOffset + 16),
-    exportedAt: existing?.exportedAt ?? null,
+    exportedAt: sameBytes ? existing.exportedAt : null,
     updatedAt: Date.now(),
   });
 }
@@ -47,11 +51,16 @@ export async function deleteKey(recordId) {
   await deleteKeyRecord(recordId);
 }
 
-/** Export one key as text (hex) and mark it exported. */
-export async function exportKey(recordId) {
+/** Return the key as hex WITHOUT marking it exported — the caller calls
+ *  markExported() only after delivery (clipboard/download) is confirmed. */
+export async function exportKeyHex(recordId) {
   const key = await getKey(recordId);
   if (!key) throw new Error('no key stored for this device');
-  const rec = await getKeyRecord(recordId);
-  await putKeyRecord({ ...rec, exportedAt: Date.now() });
   return keyToHex(key);
+}
+
+export async function markExported(recordId) {
+  const rec = await getKeyRecord(recordId);
+  if (!rec) throw new Error('no key stored for this device');
+  await putKeyRecord({ ...rec, exportedAt: Date.now() });
 }

@@ -90,10 +90,10 @@ async function boot() {
     }
 
     // The saved-device list renders even when Bluetooth is gated (records are
-    // viewable/exportable); only connect-capable controls stay disabled.
-    await initDevices();
-
+    // viewable/exportable); connect-capable controls stay disabled then.
     const reason = webBluetoothBlockReason();
+    await initDevices({ gated: !!reason });
+
     if (reason) {
       document.body.dataset.odGate = reason;
       showGate(gateMessage(reason));
@@ -103,7 +103,6 @@ async function boot() {
 
     document.body.dataset.odGate = 'none';
     status.textContent = 'Ready.';
-    $('btnAddDevice').disabled = false;
   } catch (err) {
     // Belt-and-braces: no code path may strand the page at "Loading…".
     status.textContent = 'Something went wrong while starting the app.';

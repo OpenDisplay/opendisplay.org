@@ -37,12 +37,23 @@ function openDb() {
         db.createObjectStore('assets', { keyPath: 'assetId' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // A future migration in another tab must not deadlock on this one.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => {
       dbPromise = null; // allow retry
       reject(req.error ?? new Error('IndexedDB open failed'));
     };
-    req.onblocked = () => reject(new Error('IndexedDB open blocked'));
+    req.onblocked = () => {
+      dbPromise = null; // blocked must be retryable, same as error
+      reject(new Error('IndexedDB open blocked'));
+    };
   });
   return dbPromise;
 }
@@ -134,17 +145,35 @@ export async function getDevice(recordId) {
 }
 
 /**
- * Two-phase rebind COMMIT (plan §4): validation happened first — this only
- * writes the new binding, in one transaction. Keys/drafts follow via recordId.
+ * Two-phase rebind COMMIT (plan §4): validation (auth + config read) happened
+ * first — this writes the new binding AND the validated metadata patch in ONE
+ * transaction, so a rebind is never observable half-applied. Keys/drafts
+ * follow via recordId.
  */
-export async function commitRebind(recordId, newBleId) {
+export async function commitRebind(recordId, newBleId, patch = {}) {
   const db = await openDb();
   const t = tx(db, ['devices'], 'readwrite');
   const store = t.objectStore('devices');
   const existing = await reqAsPromise(store.get(recordId));
   if (!existing) throw new Error(`device record ${recordId} not found`);
-  store.put({ ...existing, bleId: newBleId, lastSeen: Date.now() });
+  store.put({ ...existing, ...patch, recordId, bleId: newBleId, lastSeen: Date.now() });
   await txDone(t);
+}
+
+/** Minimal draft write (full drafts API arrives with M2; needed now so the
+ *  forget cascade is real and testable). */
+export async function putDraft(draft) {
+  const db = await openDb();
+  const t = tx(db, ['drafts'], 'readwrite');
+  t.objectStore('drafts').put(draft);
+  await txDone(t);
+}
+
+export async function listDraftsFor(recordId) {
+  const db = await openDb();
+  return reqAsPromise(
+    tx(db, ['drafts'], 'readonly').objectStore('drafts').index('recordId').getAll(recordId),
+  );
 }
 
 /** Forget: device row + key + draft links, one transaction. */

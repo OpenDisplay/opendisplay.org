@@ -131,12 +131,24 @@ export class ChromeCdp {
     ws.onmessage = (text) => {
       const msg = JSON.parse(text);
       if (msg.id && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id);
+        const { resolve, reject, timer } = this.pending.get(msg.id);
+        clearTimeout(timer);
         this.pending.delete(msg.id);
         if (msg.error) reject(new Error(`CDP: ${msg.error.message}`));
         else resolve(msg.result);
       }
     };
+    // A dead socket or dead browser must FAIL pending commands, never hang CI.
+    const failAll = (why) => () => {
+      for (const [id, { reject, timer }] of this.pending) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(new Error(`CDP ${why} with command in flight`));
+      }
+    };
+    ws.socket.on('close', failAll('socket closed'));
+    ws.socket.on('error', failAll('socket error'));
+    proc.on('exit', failAll('chrome exited'));
   }
 
   static async launch(chromeBin, { profileDir, args = [] } = {}) {
@@ -148,24 +160,35 @@ export class ChromeCdp {
       'about:blank',
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
-    const wsUrl = await new Promise((resolve, reject) => {
-      let err = '';
-      const timer = setTimeout(() => reject(new Error(`Chrome gave no DevTools URL:\n${err}`)), 20000);
-      proc.stderr.on('data', (chunk) => {
-        err += chunk;
-        const m = err.match(/DevTools listening on (ws:\/\/\S+)/);
-        if (m) { clearTimeout(timer); resolve(m[1]); }
+    let wsUrl;
+    try {
+      wsUrl = await new Promise((resolve, reject) => {
+        let err = '';
+        const timer = setTimeout(() => reject(new Error(`Chrome gave no DevTools URL:\n${err}`)), 20000);
+        proc.stderr.on('data', (chunk) => {
+          err += chunk;
+          const m = err.match(/DevTools listening on (ws:\/\/\S+)/);
+          if (m) { clearTimeout(timer); resolve(m[1]); }
+        });
+        proc.on('exit', () => { clearTimeout(timer); reject(new Error(`Chrome exited early:\n${err}`)); });
       });
-      proc.on('exit', () => { clearTimeout(timer); reject(new Error(`Chrome exited early:\n${err}`)); });
-    });
-
-    const ws = await MiniWebSocket.open(wsUrl);
-    return new ChromeCdp(proc, ws);
+      const ws = await MiniWebSocket.open(wsUrl);
+      return new ChromeCdp(proc, ws);
+    } catch (err) {
+      proc.kill(); // never leak a Chrome on launch/handshake failure
+      throw err;
+    }
   }
 
-  cmd(method, params = {}, sessionId = undefined) {
+  cmd(method, params = {}, sessionId = undefined, { timeoutMs = 15000 } = {}) {
     const id = this.nextId++;
-    const p = new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    const p = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP ${method} timed out after ${timeoutMs} ms`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+    });
     this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     return p;
   }

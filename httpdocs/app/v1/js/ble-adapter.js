@@ -93,7 +93,24 @@ export function ready() {
   return p;
 }
 
+// Generation token: bumped SYNCHRONOUSLY on every renewal. Any async path that
+// captured work before an await validates the generation afterwards, so a late
+// completion can never act on (or report success for) a discarded instance.
+let generation = 0;
+
+export function currentGeneration() {
+  return generation;
+}
+
+class StaleInstanceError extends Error {
+  constructor() {
+    super('Connection was torn down while the operation was in flight');
+    this.name = 'StaleInstanceError';
+  }
+}
+
 export async function renew() {
+  generation++;
   globalThis.odAppBridge.renew();
   return ready();
 }
@@ -129,18 +146,19 @@ export function setUnexpectedDisconnectListener(fn) {
 
 function withDeadline(promise, ms, label) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(async () => {
-      // Disconnect clears the library's in-flight operation state safely; the
-      // adapter never mutates that state directly.
-      try {
-        await forceDisconnect();
-      } finally {
-        reject(new TimeoutError(label, ms));
-      }
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // Reject FIRST so a result racing the teardown can never win, then tear
+      // down in the background (disconnect bumps the generation, so any late
+      // completion is invalidated anyway).
+      reject(new TimeoutError(label, ms));
+      forceDisconnect().catch(() => {});
     }, ms);
     promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
+      (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+      (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } },
     );
   });
 }
@@ -148,37 +166,49 @@ function withDeadline(promise, ms, label) {
 async function withOp(fn) {
   if (opInFlight) throw new Error('Another operation is in progress');
   opInFlight = true;
+  const gen = generation;
   try {
-    return await fn();
+    const result = await fn();
+    if (generation !== gen) throw new StaleInstanceError();
+    return result;
   } finally {
     opInFlight = false;
   }
 }
 
 function wireDisconnectHandler(inst) {
-  inst.onDisconnect = () => {
+  inst.onDisconnect = async () => {
     if (adapterInitiatedDisconnect) return; // explicit path handles renewal
     state = 'idle';
-    // Renew BEFORE notifying, so any listener-triggered operation lands on a
-    // fresh, readiness-pending instance rather than the dead one.
-    renew().catch(() => { /* surfaced on next ready() call */ });
+    // Renew and AWAIT readiness before notifying, so any listener-triggered
+    // operation lands on a fresh, schema-ready instance.
+    try {
+      await renew();
+    } catch { /* surfaced on the listener's next operation */ }
     unexpectedDisconnectListener?.();
   };
 }
 
 async function connectWith(connectFn) {
+  // Reserve the state SYNCHRONOUSLY, before any await: two concurrent
+  // connects must never both pass the idle check.
   if (state !== 'idle') throw new Error(`Cannot connect while ${state}`);
-  await ready();
   state = 'connecting';
-  const inst = instance();
-  wireDisconnectHandler(inst);
+  const gen = generation;
   try {
+    await ready();
+    if (generation !== gen) throw new StaleInstanceError();
+    const inst = instance();
+    wireDisconnectHandler(inst);
     await withDeadline(connectFn(inst), DEADLINES.connect, 'Connect');
+    // A disconnect/renew that happened mid-connect invalidates this success.
+    if (generation !== gen) throw new StaleInstanceError();
     state = 'connected';
   } catch (err) {
-    state = 'idle';
-    // A failed connect may leave partial per-connection state: renew.
-    await renew().catch(() => {});
+    if (state === 'connecting') state = 'idle';
+    // A failed connect may leave partial per-connection state: renew (unless
+    // something else — timeout teardown, unexpected disconnect — already did).
+    if (generation === gen) await renew().catch(() => {});
     throw err;
   }
 }
@@ -197,7 +227,6 @@ export async function connectViaChooser(namePrefix = 'OD') {
  * connect if an upstream change breaks it.
  */
 export async function connectCached(bluetoothDevice) {
-  if (state !== 'idle') throw new Error(`Cannot attach while ${state}`);
   await connectWith((inst) => {
     inst.device = bluetoothDevice;
     return inst.connect(null, { useCachedDevice: true });
@@ -251,22 +280,32 @@ function isAuthRequired(err) {
 }
 
 /**
- * App-owned auth: stored key first, then ONE ask via the key provider; the
- * dialog itself may loop UI-side. Respects the library's rate limit by simply
- * surfacing its error. Returns the key that authenticated (for save-key UX).
+ * App-owned auth: stored key first; if it fails (or none exists), exactly ONE
+ * ask via the key provider — the dialog itself may loop UI-side. Rate-limit
+ * errors surface immediately without burning the provider ask. Returns the
+ * key that authenticated (the CALLER saves it, and only after the protected
+ * replay proves it works end-to-end).
  */
 async function authenticateWith(inst, { storedKey, name }) {
-  let key = storedKey ?? null;
-  let fromProvider = false;
-  if (!key) {
-    if (!keyProvider) throw new AuthRequiredError();
-    key = await keyProvider({ name, reason: 'locked' });
-    if (!key) throw new AuthRequiredError('Key entry cancelled');
-    fromProvider = true;
+  const tryKey = async (key) => {
+    await inst.setEncryptionKey(key);
+    await withDeadline(inst.authenticate(), DEADLINES.auth, 'Authentication');
+  };
+
+  if (storedKey) {
+    try {
+      await tryKey(storedKey);
+      return { key: storedKey, fromProvider: false };
+    } catch (err) {
+      if (/rate limit/i.test(String(err?.message))) throw err;
+      // Stored key rejected (rotated on the device?) — fall through to one ask.
+    }
   }
-  await inst.setEncryptionKey(key);
-  await withDeadline(inst.authenticate(), DEADLINES.auth, 'Authentication');
-  return { key, fromProvider };
+  if (!keyProvider) throw new AuthRequiredError();
+  const key = await keyProvider({ name, reason: storedKey ? 'stored-key-failed' : 'locked' });
+  if (!key) throw new AuthRequiredError('Key entry cancelled');
+  await tryKey(key);
+  return { key, fromProvider: true };
 }
 
 /**

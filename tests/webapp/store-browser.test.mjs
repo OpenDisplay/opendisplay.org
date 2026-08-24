@@ -46,28 +46,52 @@ window.resultPromise = (async () => {
     await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab));
     ok('created', (await store.listDevices()).length === 2);
 
-    // Rebind A: key must follow recordId.
-    await store.commitRebind(a.recordId, 'ble-A2');
+    // Failed validation must leave the record untouched (two-phase contract:
+    // nothing is written before commitRebind).
+    const preRebind = await store.getDevice(a.recordId);
+    ok('noWriteBeforeCommit', preRebind.bleId === 'ble-A' && preRebind.name === 'OD-A');
+
+    // Rebind A with a metadata patch: binding + metadata land atomically in
+    // one transaction; the key follows recordId.
+    await store.commitRebind(a.recordId, 'ble-A2', { name: 'OD-A-renamed', firmwareVersion: '9.9' });
     const a2 = await store.getDevice(a.recordId);
-    ok('rebindBleId', a2.bleId === 'ble-A2');
+    ok('rebindAtomic', a2.bleId === 'ble-A2' && a2.name === 'OD-A-renamed' && a2.firmwareVersion === '9.9');
     const keyAfter = await keys.getKey(a.recordId);
     ok('keyFollowsRecord', keyAfter && keyAfter[0] === 0xab);
 
+    // exportedAt lifecycle: nag until confirmed delivery; replacing the key
+    // bytes revives the nag.
     ok('unexportedNag', await keys.hasUnexportedKey(a.recordId));
-    const hex = await keys.exportKey(a.recordId);
+    const hex = await keys.exportKeyHex(a.recordId);
     ok('exportHex', hex === 'ab'.repeat(16));
+    ok('exportNotMarkedYet', await keys.hasUnexportedKey(a.recordId));
+    await keys.markExported(a.recordId);
     ok('exportedCleared', !(await keys.hasUnexportedKey(a.recordId)));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab)); // same bytes
+    ok('sameBytesKeepExported', !(await keys.hasUnexportedKey(a.recordId)));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xcd)); // rotated
+    ok('newBytesReviveNag', await keys.hasUnexportedKey(a.recordId));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab)); // restore for phase 2
+    await keys.markExported(a.recordId);
 
     const payload = await store.exportDevices();
     ok('exportStripsBleId', payload.devices.every((d) => d.bleId === undefined));
 
+    // REAL forget cascade: B carries a key and a draft; both must go, A's stay.
+    await keys.saveKey(b.recordId, new Uint8Array(16).fill(0xbb));
+    await store.putDraft({ id: 'draft-B', recordId: b.recordId, layers: [] });
     await store.forgetDevice(b.recordId);
     const remaining = await store.listDevices();
-    ok('forgetCascade', remaining.length === 1 && remaining[0].recordId === a.recordId);
+    ok('forgetCascade',
+      remaining.length === 1 && remaining[0].recordId === a.recordId
+      && (await keys.getKey(b.recordId)) === null
+      && (await store.listDraftsFor(b.recordId)).length === 0
+      && (await keys.getKey(a.recordId)) !== null);
   } else {
     const devices = await store.listDevices();
-    ok('persistedDevice', devices.length === 1 && devices[0].name === 'OD-A'
-       && devices[0].bleId === 'ble-A2' && devices[0].rotationQuarterTurns === 1);
+    ok('persistedDevice', devices.length === 1 && devices[0].name === 'OD-A-renamed'
+       && devices[0].bleId === 'ble-A2' && devices[0].rotationQuarterTurns === 1
+       && devices[0].firmwareVersion === '9.9');
     const key = devices.length ? await keys.getKey(devices[0].recordId) : null;
     ok('persistedKey', !!key && key.length === 16 && key[5] === 0xab);
 
