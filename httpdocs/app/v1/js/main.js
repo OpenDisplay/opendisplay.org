@@ -117,5 +117,13 @@ $('navDevices').addEventListener('click', () => {
   $('navComposer').classList.remove('odapp__navbtn--active');
 });
 
+$('navComposer').addEventListener('click', () => {
+  if ($('navComposer').disabled) return;
+  $('viewDevices').hidden = true;
+  $('viewComposer').hidden = false;
+  $('navComposer').classList.add('odapp__navbtn--active');
+  $('navDevices').classList.remove('odapp__navbtn--active');
+});
+
 checkEntryFreshness();
 boot();

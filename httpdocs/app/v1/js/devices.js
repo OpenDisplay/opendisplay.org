@@ -15,6 +15,7 @@ import * as adapter from './ble-adapter.js';
 import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
+import { openComposer } from './composer/index.js';
 import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
 const flows = makeFlows({
@@ -160,6 +161,10 @@ function deviceCard(record) {
       disabled: bluetoothGated,
     });
   }
+  btn('Composer', async () => {
+    await openComposer(record);
+    showComposerView(record);
+  });
   keys.getKey(record.recordId).then(async (k) => {
     if (!k) return;
     const nag = await keys.hasUnexportedKey(record.recordId).catch(() => false);
@@ -175,6 +180,15 @@ function deviceCard(record) {
 async function refresh() {
   await sweepPermissions();
   await renderList();
+}
+
+function showComposerView(record) {
+  $('viewDevices').hidden = true;
+  $('viewComposer').hidden = false;
+  $('navComposer').disabled = false;
+  $('navComposer').classList.add('odapp__navbtn--active');
+  $('navDevices').classList.remove('odapp__navbtn--active');
+  $('navComposer').dataset.recordId = record.recordId;
 }
 
 // ---------------------------------------------------------------------------

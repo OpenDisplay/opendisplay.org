@@ -160,13 +160,24 @@ export async function commitRebind(recordId, newBleId, patch = {}) {
   await txDone(t);
 }
 
-/** Minimal draft write (full drafts API arrives with M2; needed now so the
- *  forget cascade is real and testable). */
+// --- drafts ---
+
 export async function putDraft(draft) {
+  requestPersistence();
   const db = await openDb();
   const t = tx(db, ['drafts'], 'readwrite');
   t.objectStore('drafts').put(draft);
   await txDone(t);
+}
+
+export async function getDraft(id) {
+  const db = await openDb();
+  return reqAsPromise(tx(db, ['drafts'], 'readonly').objectStore('drafts').get(id));
+}
+
+export async function listDrafts() {
+  const db = await openDb();
+  return reqAsPromise(tx(db, ['drafts'], 'readonly').objectStore('drafts').getAll());
 }
 
 export async function listDraftsFor(recordId) {
@@ -174,6 +185,74 @@ export async function listDraftsFor(recordId) {
   return reqAsPromise(
     tx(db, ['drafts'], 'readonly').objectStore('drafts').index('recordId').getAll(recordId),
   );
+}
+
+export async function deleteDraft(id) {
+  const db = await openDb();
+  const t = tx(db, ['drafts'], 'readwrite');
+  t.objectStore('drafts').delete(id);
+  await txDone(t);
+}
+
+// --- assets (content-addressed; stored ONCE, referenced by drafts/layers) ---
+
+async function sha256Hex(buffer) {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Store a blob under its content hash. Identical images added twice occupy one
+ * entry — which is exactly why deletion must be reachability-based (below).
+ */
+export async function putAsset(blob) {
+  requestPersistence();
+  const assetId = await sha256Hex(await blob.arrayBuffer());
+  const db = await openDb();
+  const t = tx(db, ['assets'], 'readwrite');
+  const store = t.objectStore('assets');
+  const existing = await reqAsPromise(store.get(assetId));
+  if (!existing) {
+    store.put({ assetId, blob, type: blob.type, size: blob.size, createdAt: Date.now() });
+  }
+  await txDone(t);
+  return assetId;
+}
+
+export async function getAsset(assetId) {
+  const db = await openDb();
+  return reqAsPromise(tx(db, ['assets'], 'readonly').objectStore('assets').get(assetId));
+}
+
+/**
+ * Reference-safe garbage collection: sweep every asset not reachable from any
+ * draft (layer assetIds + thumbnails). Content-addressed assets are SHARED, so
+ * per-draft deletion would corrupt other drafts; this is the only safe form.
+ * Also reclaims crash-orphans (an asset stored whose draft write never landed).
+ * @param {Set<string>} extraLive ids referenced by unsaved in-memory documents
+ */
+export async function sweepAssets(extraLive = new Set()) {
+  const db = await openDb();
+  const drafts = await reqAsPromise(
+    tx(db, ['drafts'], 'readonly').objectStore('drafts').getAll(),
+  );
+  const live = new Set(extraLive);
+  for (const d of drafts) {
+    if (d.thumbnailAssetId) live.add(d.thumbnailAssetId);
+    for (const l of d.doc?.layers ?? []) if (l.assetId) live.add(l.assetId);
+  }
+  const t = tx(db, ['assets'], 'readwrite');
+  const store = t.objectStore('assets');
+  const ids = await reqAsPromise(store.getAllKeys());
+  let removed = 0;
+  for (const id of ids) {
+    if (!live.has(id)) {
+      store.delete(id);
+      removed++;
+    }
+  }
+  await txDone(t);
+  return removed;
 }
 
 /** Forget: device row + key + draft links, one transaction. */

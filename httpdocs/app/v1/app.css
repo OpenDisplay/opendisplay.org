@@ -177,3 +177,37 @@
 .odapp-dialog__check { display: block; margin: 0.5rem 0 1rem; }
 .odapp-dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .odapp-dialog__list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
+
+/* --- M2: composer --- */
+.composer__bar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.composer__spacer { flex: 1; }
+
+.composer__tool--active {
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.composer__stage {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.composer__canvas {
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  touch-action: none; /* pointer events own the gestures */
+  background: #fff;
+  cursor: crosshair;
+}

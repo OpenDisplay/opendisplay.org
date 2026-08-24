@@ -1,0 +1,91 @@
+/*
+ * tools.js — composer tool behaviours (DESIGN_WEB_OD_APP_PLAN.md §6).
+ * Pure state transitions over the document model: each tool turns pointer
+ * events into layer mutations. Kept DOM-free so it is unit-testable.
+ */
+import { addLayer, updateLayer, strokeLayer, textLayer, qrLayer, photoLayer } from './model.js';
+import { hitTest } from './canvas.js';
+
+/** Freehand drawing: down starts a stroke, move extends it, up commits. */
+export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
+  let activeId = null;
+  return {
+    name: 'draw',
+    onDown(doc, pt) {
+      const layer = strokeLayer({ points: [pt], color, width });
+      activeId = layer.id;
+      return { doc: addLayer(doc, layer), commit: false };
+    },
+    onMove(doc, pt) {
+      if (!activeId) return { doc, commit: false };
+      const layer = doc.layers.find((l) => l.id === activeId);
+      if (!layer) return { doc, commit: false };
+      const last = layer.points.at(-1);
+      // Drop sub-pixel jitter: keeps stroke arrays small for the undo stack.
+      if (last && Math.hypot(pt.x - last.x, pt.y - last.y) < 0.002) return { doc, commit: false };
+      return { doc: updateLayer(doc, activeId, { points: [...layer.points, pt] }), commit: false };
+    },
+    onUp(doc) {
+      const done = activeId;
+      activeId = null;
+      // Discard a stray tap that produced no line.
+      const layer = doc.layers.find((l) => l.id === done);
+      if (layer && layer.points.length < 2) {
+        return { doc: { ...doc, layers: doc.layers.filter((l) => l.id !== done) }, commit: false };
+      }
+      return { doc, commit: true };
+    },
+    setColor(c) { color = c; },
+    setWidth(w) { width = w; },
+  };
+}
+
+/** Select/move: down picks a layer, move drags it, up commits. */
+export function makeSelectTool({ onSelect } = {}) {
+  let dragId = null;
+  let grab = null;
+  return {
+    name: 'select',
+    onDown(doc, pt, size) {
+      dragId = hitTest(doc, pt, size);
+      onSelect?.(dragId);
+      if (!dragId) return { doc, commit: false };
+      const layer = doc.layers.find((l) => l.id === dragId);
+      grab = { dx: pt.x - (layer.x ?? 0), dy: pt.y - (layer.y ?? 0) };
+      return { doc, commit: false };
+    },
+    onMove(doc, pt) {
+      if (!dragId || !grab) return { doc, commit: false };
+      const layer = doc.layers.find((l) => l.id === dragId);
+      if (!layer || layer.type === 'stroke') return { doc, commit: false };
+      return {
+        doc: updateLayer(doc, dragId, {
+          x: Math.max(0, Math.min(1, pt.x - grab.dx)),
+          y: Math.max(0, Math.min(1, pt.y - grab.dy)),
+        }),
+        commit: false,
+      };
+    },
+    onUp(doc) {
+      const moved = !!dragId;
+      dragId = null;
+      grab = null;
+      return { doc, commit: moved };
+    },
+    selectedId() { return dragId; },
+  };
+}
+
+/** Placement tools: a single click drops a text/QR/photo layer. */
+export function placeText(doc, pt, { text, size = 0.08, color = 0 }) {
+  return addLayer(doc, textLayer({ text, x: pt.x, y: pt.y, size, color }));
+}
+
+export function placeQr(doc, pt, { text, size = 0.3, color = 0, errorCorrectLevel = 'M' }) {
+  return addLayer(doc, qrLayer({ text, x: pt.x, y: pt.y, size, color, errorCorrectLevel }));
+}
+
+export function placePhoto(doc, { assetId, fit = 'contain' }) {
+  // Photos default to the full artboard; drag/resize adjusts afterwards.
+  return addLayer(doc, photoLayer({ assetId, x: 0, y: 0, w: 1, h: 1, fit }));
+}

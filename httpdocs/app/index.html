@@ -65,7 +65,32 @@
     </dialog>
 
     <section id="viewComposer" class="odapp__view" hidden>
-      <p class="odapp__empty">Composer arrives in a later milestone.</p>
+      <div class="composer__bar">
+        <button id="toolSelect" class="odapp__btn composer__tool composer__tool--active" type="button">Select</button>
+        <button id="toolDraw" class="odapp__btn composer__tool" type="button">Draw</button>
+        <button id="toolText" class="odapp__btn composer__tool" type="button">Text</button>
+        <button id="toolQr" class="odapp__btn composer__tool" type="button">QR</button>
+        <label class="odapp__btn odapp__filebtn">Photo<input id="photoFile" type="file" accept="image/*" hidden></label>
+        <select id="inkColor" class="odapp__btn" aria-label="Ink colour">
+          <option value="0">Black</option>
+          <option value="1">White</option>
+          <option value="2">Yellow</option>
+          <option value="3">Red</option>
+          <option value="4">Blue</option>
+          <option value="5">Green</option>
+        </select>
+        <span class="composer__spacer"></span>
+        <button id="undoBtn" class="odapp__btn" type="button" disabled>Undo</button>
+        <button id="redoBtn" class="odapp__btn" type="button" disabled>Redo</button>
+        <button id="deleteLayerBtn" class="odapp__btn" type="button" disabled>Delete</button>
+      </div>
+      <p id="composerPanelInfo" class="odapp-card__meta"></p>
+      <div class="composer__stage">
+        <canvas id="composerCanvas" class="composer__canvas"></canvas>
+      </div>
+      <p class="odapp-card__meta">
+        Preview shows ideal palette colours. Dithering and sending arrive in the next milestone.
+      </p>
     </section>
 
     <footer class="odapp__footer">
