@@ -14,7 +14,13 @@
 import * as adapter from './ble-adapter.js';
 import * as store from './store.js';
 import * as keys from './keys.js';
-import { askForKey, askRebind, confirmDanger, toast } from './ui/dialogs.js';
+import { makeFlows } from './flows.js';
+import { askForKey, askRebind, confirmMismatch, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
+
+const flows = makeFlows({
+  adapter, store, keys,
+  ui: { askForKey, askRebind, confirmMismatch, deliverKeyHex, toast },
+});
 
 let grantedById = new Map(); // bleId -> BluetoothDevice
 let connectedRecordId = null;
@@ -172,123 +178,15 @@ async function refresh() {
 }
 
 // ---------------------------------------------------------------------------
-// Flows
+// Flows (logic lives in flows.js; this file owns DOM + selection state)
 // ---------------------------------------------------------------------------
 
-function infoPatch(info, bleId) {
-  return {
-    bleId,
-    name: info.name,
-    width: info.width,
-    height: info.height,
-    rotationQuarterTurns: info.rotationQuarterTurns,
-    colorScheme: info.colorScheme,
-    transmissionModes: info.transmissionModes,
-    partialUpdateSupport: info.partialUpdateSupport,
-    panelIcType: info.panelIcType,
-    resolutionConfirmed: true,
-    // authRequired clear rule (plan §4): a protected read succeeding without
-    // auth proves the device is no longer locked.
-    authRequired: info.authRequired,
-    firmwareVersion: info.firmware,
-    ...(info.msdHex ? { msdSnapshotHex: info.msdHex } : {}),
-    lastSeen: Date.now(),
-  };
-}
-
-/** Wire the key dialog as provider; returns () => pendingKeyToSave. Nothing is
- *  saved until the caller's protected read has succeeded. */
-function armKeyDialog() {
-  let pending = null;
-  adapter.setKeyProvider(async ({ name }) => {
-    const res = await askForKey({ name });
-    if (!res) return null;
-    pending = res.save ? res.key : null;
-    return res.key;
-  });
-  return () => pending;
-}
-
-/** Add device: chooser → connect → read info (validation) → rebind proposal
- *  or new record → save key last. On any failure: disconnect + renew. */
 async function addDevice() {
-  toast('Choose a device in the browser dialog…');
-  await adapter.connectViaChooser('OD');
-  toast('Connected — reading device info…');
-  const pendingKey = armKeyDialog();
-  try {
-    const info = await adapter.readDeviceInfo();
-    const bleId = adapter.connectedBleId();
-
-    const all = await store.listDevices();
-    const existingByBinding = all.find((d) => d.bleId === bleId);
-    if (existingByBinding) {
-      await store.updateDevice(existingByBinding.recordId, infoPatch(info, bleId));
-      if (pendingKey()) await keys.saveKey(existingByBinding.recordId, pendingKey());
-      connectedRecordId = existingByBinding.recordId;
-      toast(`Updated "${info.name}".`);
-      return;
-    }
-
-    // Two-phase rebind: validation (auth + config) has already succeeded on
-    // this physical device; the user's confirmation commits binding+metadata
-    // in ONE transaction. Stored keys were never auto-tried.
-    const candidates = all.filter(
-      (d) =>
-        (!d.bleId || !grantedById.has(d.bleId)) &&
-        d.width === info.width &&
-        d.height === info.height,
-    );
-    if (candidates.length > 0) {
-      const chosen = await askRebind({ name: info.name, candidates });
-      if (chosen) {
-        await store.commitRebind(chosen, bleId, infoPatch(info, bleId));
-        if (pendingKey()) await keys.saveKey(chosen, pendingKey());
-        connectedRecordId = chosen;
-        toast(`Rebound "${info.name}" to its saved record.`);
-        return;
-      }
-    }
-
-    const record = await store.createDevice({ ...infoPatch(info, bleId), bleId });
-    if (pendingKey()) await keys.saveKey(record.recordId, pendingKey());
-    connectedRecordId = record.recordId;
-    toast(`Saved "${info.name}".`);
-  } catch (err) {
-    await adapter.disconnect().catch(() => {});
-    throw err;
-  } finally {
-    adapter.setKeyProvider(null);
-  }
+  connectedRecordId = await flows.addDeviceFlow(grantedById);
 }
 
-/** Connect a saved record: cached handle when granted, else chooser re-pair.
- *  Any post-connect failure disconnects (which renews). */
 async function connectRecord(record) {
-  const handle = record.bleId ? grantedById.get(record.bleId) : null;
-  if (!handle) {
-    toast('Permission missing — pick the device in the chooser to re-pair.');
-    await addDevice();
-    return;
-  }
-  toast(`Connecting to "${record.name}"… (device must be awake and advertising)`);
-  await adapter.connectCached(handle);
-  const pendingKey = armKeyDialog();
-  try {
-    // Known, previously confirmed binding: the stored key may be tried
-    // automatically; if it fails the adapter asks the dialog once.
-    const storedKey = await keys.getKey(record.recordId);
-    const info = await adapter.readDeviceInfo({ storedKey });
-    await store.updateDevice(record.recordId, infoPatch(info, record.bleId));
-    if (pendingKey()) await keys.saveKey(record.recordId, pendingKey());
-    connectedRecordId = record.recordId;
-    toast(`Connected to "${info.name}".`);
-  } catch (err) {
-    await adapter.disconnect().catch(() => {});
-    throw err;
-  } finally {
-    adapter.setKeyProvider(null);
-  }
+  connectedRecordId = await flows.connectRecordFlow(record, grantedById);
 }
 
 async function forgetFlow(record) {
@@ -303,21 +201,8 @@ async function forgetFlow(record) {
   } catch { /* permission revocation is best effort */ }
 }
 
-/** Export a key; exportedAt is set only after delivery is confirmed. */
 async function exportKeyFlow(record) {
-  const hex = await keys.exportKeyHex(record.recordId);
-  let delivered = false;
-  try {
-    await navigator.clipboard.writeText(hex);
-    delivered = true;
-    toast('Key copied to clipboard. Store it somewhere safe — clearing site data deletes it.');
-  } catch {
-    // Clipboard unavailable/denied: show it for manual copy instead.
-    window.prompt(`Encryption key for "${record.name}" — copy it now:`, hex);
-    delivered = true;
-    toast('Key shown for manual copy.');
-  }
-  if (delivered) await keys.markExported(record.recordId);
+  await flows.exportKeyFlow(record);
 }
 
 // ---------------------------------------------------------------------------

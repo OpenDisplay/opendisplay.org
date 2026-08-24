@@ -23,10 +23,14 @@ class MiniWebSocket {
     });
   }
 
-  static async open(wsUrl) {
+  static async open(wsUrl, { timeoutMs = 10000 } = {}) {
     const url = new URL(wsUrl);
     const socket = connect({ host: url.hostname, port: Number(url.port) });
-    await once(socket, 'connect');
+    // The whole connect+upgrade is deadlined: a wedged socket must fail the
+    // launch (whose catch kills Chrome), never hang CI.
+    const killer = setTimeout(() => socket.destroy(new Error('WebSocket connect/upgrade timed out')), timeoutMs);
+    try {
+      await once(socket, 'connect');
     const key = randomBytes(16).toString('base64');
     socket.write(
       `GET ${url.pathname} HTTP/1.1\r\n` +
@@ -52,14 +56,17 @@ class MiniWebSocket {
       socket.on('data', onData);
       socket.on('error', reject);
     });
-    const ws = new MiniWebSocket(socket);
-    if (rest.length) {
-      ws.buffer = Buffer.concat([ws.buffer, rest]);
-      // Drain after the caller has attached onmessage (constructor flow is
-      // synchronous, so setImmediate is late enough).
-      setImmediate(() => ws.drain());
+      const ws = new MiniWebSocket(socket);
+      if (rest.length) {
+        ws.buffer = Buffer.concat([ws.buffer, rest]);
+        // Drain after the caller has attached onmessage (constructor flow is
+        // synchronous, so setImmediate is late enough).
+        setImmediate(() => ws.drain());
+      }
+      return ws;
+    } finally {
+      clearTimeout(killer);
     }
-    return ws;
   }
 
   drain() {

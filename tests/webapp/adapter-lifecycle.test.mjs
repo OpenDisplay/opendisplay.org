@@ -365,3 +365,48 @@ test('rate-limit error surfaces without burning the provider ask', async () => {
   );
   assert.equal(asks, 0, 'provider not consulted while rate limited');
 });
+
+// --- lease/step coverage (M1 review round 3) ---
+
+test('stale connect resolving late does NOT clobber a newer connect\'s state', async () => {
+  let releaseA;
+  installBridge({ connect: () => new Promise((r) => { releaseA = r; }) });
+  const connectA = adapter.connectViaChooser('OD');
+  await new Promise((r) => setTimeout(r, 10));
+  // Unexpected disconnect kills A's attempt and renews.
+  await globalThis.odAppBle.onDisconnect?.();
+  // B starts on the fresh instance; make B's connect slow too.
+  let releaseB;
+  globalThis.odAppBle.connect = () => new Promise((r) => { releaseB = r; });
+  const connectB = adapter.connectViaChooser('OD');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(adapter.getState(), 'connecting', 'B owns the state');
+  releaseA(); // stale A resolves late
+  await assert.rejects(connectA, /torn down|while the operation/i);
+  assert.equal(adapter.getState(), 'connecting', 'stale A must not reset B to idle');
+  // A third connect must STILL be rejected while B is in flight.
+  await assert.rejects(adapter.connectViaChooser('OD'), /while connecting/i);
+  releaseB();
+  await connectB;
+  assert.equal(adapter.getState(), 'connected');
+});
+
+test('mid-op disconnect STOPS the operation: no further BLE calls on the old instance', async () => {
+  let releaseFirmware;
+  installBridge({
+    readFirmwareVersion: async function (cb) {
+      this.calls.push('readFirmwareVersion');
+      await new Promise((r) => { releaseFirmware = () => { cb({ major: 1, minor: 0, patch: 0 }, null); r(); }; });
+    },
+  });
+  await adapter.connectViaChooser('OD');
+  const inst = current();
+  const opP = adapter.readDeviceInfo();
+  await new Promise((r) => setTimeout(r, 10));
+  await inst.onDisconnect(); // renews mid-op
+  releaseFirmware(); // firmware step completes AFTER the disconnect
+  await assert.rejects(opP, /torn down|while the operation/i);
+  // The op must have stopped at the firmware step: config was never issued.
+  assert.ok(!inst.calls.includes('readConfig'),
+    `no post-disconnect BLE call on the old instance: ${inst.calls.join(',')}`);
+});

@@ -126,6 +126,11 @@ export function webBluetoothBlockReason() {
 // ---------------------------------------------------------------------------
 
 let state = 'idle'; // idle | connecting | connected | disconnecting
+// Lease token: every state RESERVATION takes a new lease; only the current
+// leaseholder may mutate state afterwards. This stops a stale connect's
+// catch/finally from clobbering a newer connect's state (generation alone
+// invalidates results, but not state ownership).
+let stateLease = 0;
 let opInFlight = false;
 let adapterInitiatedDisconnect = false;
 let keyProvider = null; // async ({name, reason}) => Uint8Array(16) | null
@@ -179,6 +184,7 @@ async function withOp(fn) {
 function wireDisconnectHandler(inst) {
   inst.onDisconnect = async () => {
     if (adapterInitiatedDisconnect) return; // explicit path handles renewal
+    stateLease++; // take ownership: in-flight attempts may no longer mutate state
     state = 'idle';
     // Renew and AWAIT readiness before notifying, so any listener-triggered
     // operation lands on a fresh, schema-ready instance.
@@ -194,6 +200,7 @@ async function connectWith(connectFn) {
   // connects must never both pass the idle check.
   if (state !== 'idle') throw new Error(`Cannot connect while ${state}`);
   state = 'connecting';
+  const lease = ++stateLease;
   const gen = generation;
   try {
     await ready();
@@ -202,13 +209,15 @@ async function connectWith(connectFn) {
     wireDisconnectHandler(inst);
     await withDeadline(connectFn(inst), DEADLINES.connect, 'Connect');
     // A disconnect/renew that happened mid-connect invalidates this success.
-    if (generation !== gen) throw new StaleInstanceError();
+    if (generation !== gen || stateLease !== lease) throw new StaleInstanceError();
     state = 'connected';
   } catch (err) {
-    if (state === 'connecting') state = 'idle';
+    // Only the current leaseholder may mutate state: a STALE connect failing
+    // late must not reset a newer attempt's 'connecting'/'connected'.
+    if (stateLease === lease && state === 'connecting') state = 'idle';
     // A failed connect may leave partial per-connection state: renew (unless
     // something else — timeout teardown, unexpected disconnect — already did).
-    if (generation === gen) await renew().catch(() => {});
+    if (stateLease === lease && generation === gen) await renew().catch(() => {});
     throw err;
   }
 }
@@ -236,6 +245,7 @@ export async function connectCached(bluetoothDevice) {
 /** Explicit disconnect: always renews the instance (per-connection isolation). */
 export async function disconnect() {
   if (state === 'idle') return;
+  stateLease++; // take ownership: in-flight attempts may no longer mutate state
   state = 'disconnecting';
   adapterInitiatedDisconnect = true;
   try {
@@ -286,8 +296,9 @@ function isAuthRequired(err) {
  * key that authenticated (the CALLER saves it, and only after the protected
  * replay proves it works end-to-end).
  */
-async function authenticateWith(inst, { storedKey, name }) {
+async function authenticateWith(inst, { storedKey, name, assertLive = () => {} }) {
   const tryKey = async (key) => {
+    assertLive(); // a disconnect during the dialog must not reach the radio
     await inst.setEncryptionKey(key);
     await withDeadline(inst.authenticate(), DEADLINES.auth, 'Authentication');
   };
@@ -297,6 +308,7 @@ async function authenticateWith(inst, { storedKey, name }) {
       await tryKey(storedKey);
       return { key: storedKey, fromProvider: false };
     } catch (err) {
+      if (err instanceof StaleInstanceError) throw err;
       if (/rate limit/i.test(String(err?.message))) throw err;
       // Stored key rejected (rotated on the device?) — fall through to one ask.
     }
@@ -319,11 +331,19 @@ async function authenticateWith(inst, { storedKey, name }) {
 export async function readDeviceInfo({ storedKey = null } = {}) {
   if (state !== 'connected') throw new Error('Not connected');
   return withOp(async () => {
+    const gen = generation;
+    // Checked between EVERY awaited step: after a disconnect/renew, no further
+    // BLE call (auth prompt included) may be issued against the old instance —
+    // stopping mid-operation, not merely invalidating the final result.
+    const assertLive = () => {
+      if (generation !== gen || state !== 'connected') throw new StaleInstanceError();
+    };
     const inst = instance();
     const name = inst.device?.name ?? 'OpenDisplay';
 
     // 0x43 is never encrypted — safe before auth.
     const firmware = await withDeadline(readFirmwareOnce(inst), DEADLINES.firmware, 'Firmware read');
+    assertLive();
 
     let authRequired = false;
     let authKey = null;
@@ -334,12 +354,15 @@ export async function readDeviceInfo({ storedKey = null } = {}) {
       configBytes = await withDeadline(readConfigOnce(inst), DEADLINES.config, 'Config read');
     } catch (err) {
       if (!isAuthRequired(err)) throw err;
+      assertLive();
       authRequired = true;
-      const auth = await authenticateWith(inst, { storedKey, name });
+      const auth = await authenticateWith(inst, { storedKey, name, assertLive });
+      assertLive();
       authKey = auth.key;
       authKeyFromProvider = auth.fromProvider;
       configBytes = await withDeadline(readConfigOnce(inst), DEADLINES.config, 'Config read (after auth)');
     }
+    assertLive();
 
     const parsed = inst.parseConfigBytes(new Uint8Array(configBytes));
     const display = inst.extractDisplayConfig(parsed);
@@ -351,8 +374,10 @@ export async function readDeviceInfo({ storedKey = null } = {}) {
     let msdHex = null;
     try {
       const msd = await inst.readMsd();
+      assertLive();
       msdHex = Array.from(msd, (b) => b.toString(16).padStart(2, '0')).join('');
-    } catch {
+    } catch (err) {
+      if (err instanceof StaleInstanceError) throw err;
       /* optional telemetry — absence is fine */
     }
 

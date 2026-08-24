@@ -52,13 +52,22 @@ export function askForKey({ name }) {
 
 /**
  * Rebind proposal: the freshly added device matches saved record(s) whose
- * permission is gone. Resolves the chosen recordId, or null for "save as new".
+ * permission is gone. Shows the VALIDATED metadata of the new device so the
+ * user decides on real identity, not just a name. Resolves the chosen
+ * recordId, or null for "save as new".
  */
-export function askRebind({ name, candidates }) {
+export function askRebind({ name, info, candidates }) {
   return new Promise((resolve) => {
     const dlg = el('rebindDialog');
     const list = el('rebindList');
     el('rebindDeviceName').textContent = name ?? 'device';
+    const metaEl = el('rebindDeviceMeta');
+    if (metaEl && info) {
+      metaEl.textContent =
+        `Validated: ${info.width}×${info.height}, scheme ${info.colorScheme}` +
+        `${info.firmware ? `, fw ${info.firmware}` : ''}` +
+        `${info.authRequired ? ', locked' : ''}`;
+    }
     list.textContent = '';
     let chosen = null;
 
@@ -86,6 +95,34 @@ export function askRebind({ name, candidates }) {
 /** Simple confirm dialog (native confirm() is fine for M1 destructive actions). */
 export function confirmDanger(message) {
   return Promise.resolve(window.confirm(message));
+}
+
+/** Repair-path identity mismatch: present the validated new metadata. */
+export function confirmMismatch({ record, info }) {
+  return Promise.resolve(window.confirm(
+    `"${info.name}" reports ${info.width}×${info.height} (scheme ${info.colorScheme}` +
+    `${info.firmware ? `, fw ${info.firmware}` : ''}), but the saved record ` +
+    `"${record.name}" expects ${record.width}×${record.height}.\n\n` +
+    'Rebind anyway? The saved record will take on the validated values.',
+  ));
+}
+
+/**
+ * Deliver a key for backup. Returns true only on CONFIRMED delivery:
+ * clipboard write succeeded, or the user acknowledged the manual-copy prompt
+ * (Cancel means NOT delivered — the exported flag must not be set).
+ */
+export async function deliverKeyHex({ name, hex }) {
+  try {
+    await navigator.clipboard.writeText(hex);
+    toast('Key copied to clipboard. Store it somewhere safe.');
+    return true;
+  } catch {
+    const ack = window.prompt(
+      `Encryption key for "${name}" — copy it now, then press OK:`, hex,
+    );
+    return ack !== null;
+  }
 }
 
 export function toast(message, kind = 'info') {
