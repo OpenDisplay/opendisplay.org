@@ -420,3 +420,53 @@ test('validateDocument rejects unfittable QRs, bad ink and low contrast', () => 
   const good = model.addLayer(model.createDocument(DEVICE), model.qrLayer({ text: 'ok', color: 0 }));
   assert.equal(render.validateDocument(good), good);
 });
+
+// --- draft reconciliation after a device rebind (review round 4) ---
+
+test('reconcile: colour panel draft opened on a MONO panel remaps inks', () => {
+  const colour = { recordId: 'c', width: 400, height: 300, rotationQuarterTurns: 0, colorScheme: 4 };
+  let doc = model.createDocument(colour);
+  doc = model.addLayer(doc, model.textLayer({ text: 'blue', color: 4 }));   // blue
+  doc = model.addLayer(doc, model.strokeLayer({ points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: 1 })); // white
+  // Rebound to a mono panel: only indices 0 and 1 exist now.
+  const moved = { ...doc, panel: { ...doc.panel, colorScheme: 0 } };
+  const { doc: fixed, changes } = render.reconcileDocument(moved, 4);
+  render.validateDocument(fixed); // must not throw
+  assert.ok(fixed.layers.every((l) => l.color === 0 || l.color === 1), 'inks legal for mono');
+  assert.equal(fixed.layers[1].color, 1, 'white stays white (nearest colour)');
+  assert.ok(changes.length > 0, 'the remap is reported');
+  // The input document is untouched.
+  assert.equal(moved.layers[0].color, 4);
+});
+
+test('reconcile: a QR that no longer fits a smaller panel is dropped, not left broken', () => {
+  const big = { recordId: 'b', width: 800, height: 480, rotationQuarterTurns: 0, colorScheme: 4 };
+  let doc = model.createDocument(big);
+  doc = model.addLayer(doc, model.textLayer({ text: 'keep me' }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'x'.repeat(300), x: 0, y: 0, size: 1 }));
+  const moved = { ...doc, panel: { ...doc.panel, width: 40, height: 30 } };
+  const { doc: fixed, changes } = render.reconcileDocument(moved, 4);
+  render.validateDocument(fixed);
+  assert.equal(fixed.layers.length, 1, 'the unfittable QR was removed');
+  assert.equal(fixed.layers[0].type, 'text', 'other layers survive');
+  assert.ok(changes.some((c) => /no longer fits/.test(c)), `reported: ${changes}`);
+});
+
+test('reconcile: a QR whose ink loses contrast is darkened rather than dropped', () => {
+  const colour = { recordId: 'c', width: 400, height: 300, rotationQuarterTurns: 0, colorScheme: 4 };
+  let doc = model.createDocument(colour);
+  doc = model.addLayer(doc, model.qrLayer({ text: 'https://opendisplay.org', color: 2 })); // yellow
+  const { doc: fixed, changes } = render.reconcileDocument(doc, 4);
+  render.validateDocument(fixed);
+  assert.equal(fixed.layers[0].color, 0, 'darkened to black');
+  assert.ok(changes.some((c) => /darkened/.test(c)));
+});
+
+test('reconcile: an unchanged panel is a no-op with no reported changes', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.textLayer({ text: 'stable', color: 3 }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'https://opendisplay.org', color: 0 }));
+  const { doc: fixed, changes } = render.reconcileDocument(doc, DEVICE.colorScheme);
+  assert.deepEqual(changes, []);
+  assert.deepEqual(fixed.layers.map((l) => l.color), [3, 0]);
+});

@@ -314,6 +314,80 @@ export function validateDocument(doc) {
 }
 
 /**
+ * Reconcile a document against its (possibly changed) panel — used when a
+ * saved draft is reopened after the device was rebound to different hardware,
+ * which repair explicitly allows. Returns a NEW document plus a human-readable
+ * list of what had to change; the caller decides whether to keep it. The input
+ * document is never mutated, so the stored draft stays intact until the user
+ * makes an edit.
+ *
+ * @param {object} doc          document whose `panel` is already the new panel
+ * @param {number} [previousScheme] the scheme the layers were authored for
+ */
+export function reconcileDocument(doc, previousScheme) {
+  const scheme = doc.panel.colorScheme;
+  const palette = paletteFor(scheme);
+  const oldPalette = previousScheme !== undefined && IDEAL_PALETTES[previousScheme]
+    ? IDEAL_PALETTES[previousScheme]
+    : null;
+  const changes = [];
+
+  // Map an ink index from the old palette to the nearest colour available in
+  // the new one (falling back to black when the old palette is unknown).
+  const remap = (index) => {
+    if (index >= 0 && index < palette.length && (!oldPalette || scheme === previousScheme)) {
+      return index;
+    }
+    const source = oldPalette?.[index];
+    if (!source) return 0;
+    let best = 0;
+    let bestDist = Infinity;
+    palette.forEach((c, i) => {
+      const d = (c[0] - source[0]) ** 2 + (c[1] - source[1]) ** 2 + (c[2] - source[2]) ** 2;
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  };
+
+  const next = { ...doc, panel: { ...doc.panel }, layers: [] };
+  const bg = doc.background ?? 1;
+  next.background = (bg >= 0 && bg < palette.length) ? bg : lightestIndex(scheme);
+  if (next.background !== bg) changes.push('background colour remapped');
+
+  for (const layer of doc.layers) {
+    const copy = { ...layer };
+    if (copy.points) copy.points = copy.points.map((p) => ({ ...p }));
+    if (copy.adjustments) copy.adjustments = { ...copy.adjustments };
+
+    if (copy.type === 'qr') {
+      copy.color = remap(copy.color);
+      // A QR must both contrast and fit; try darkening before dropping it.
+      try {
+        assertQrContrast(copy, scheme);
+      } catch {
+        copy.color = darkestIndex();
+        changes.push(`QR "${String(copy.text).slice(0, 20)}" darkened for contrast`);
+      }
+      const { width: W, height: H } = artboardSize(doc.panel);
+      try {
+        qrGeometry(copy, W, H);
+      } catch {
+        changes.push(`QR "${String(copy.text).slice(0, 20)}" removed — it no longer fits this panel`);
+        continue; // drop the layer
+      }
+    } else if (copy.type === 'text' || copy.type === 'stroke') {
+      const mapped = remap(copy.color);
+      if (mapped !== copy.color) {
+        changes.push(`${copy.type} colour remapped for this panel`);
+        copy.color = mapped;
+      }
+    }
+    next.layers.push(copy);
+  }
+  return { doc: next, changes };
+}
+
+/**
  * Composite a document at panel resolution.
  * @param {object} doc composer document
  * @param {Map<string, ImageBitmap>} bitmaps assetId -> decoded bitmap

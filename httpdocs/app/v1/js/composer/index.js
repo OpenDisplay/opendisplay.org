@@ -11,7 +11,7 @@
  */
 import * as model from './model.js';
 import * as tools from './tools.js';
-import { renderDocument, validateDocument, lightestIndex } from './render.js';
+import { renderDocument, validateDocument, reconcileDocument } from './render.js';
 import { makeSurface, blitPreview } from './canvas.js';
 import { createSession } from './session.js';
 import * as store from '../store.js';
@@ -293,10 +293,29 @@ export async function openComposer(device) {
   const draftId = `draft-${device.recordId}`;
   const existing = await store.getDraft(draftId).catch(() => null);
   let document_;
+  let reconcileNote = '';
   if (existing?.doc) {
     document_ = model.fromDraft(existing);
-    // Panel facts may have changed since the draft was written.
+    // The device may have been rebound to different hardware (repair allows
+    // dimension and scheme changes), so the draft's layers can be invalid for
+    // the panel it is about to render on: reconcile BEFORE installing the
+    // session, or paint() throws with an unusable session already in place.
+    const previousScheme = document_.panel?.colorScheme;
     document_.panel = model.createDocument(device).panel;
+    const { doc: reconciled, changes } = reconcileDocument(document_, previousScheme);
+    document_ = reconciled;
+    if (changes.length) {
+      reconcileNote = `Adjusted for this panel: ${changes.join('; ')}.`;
+    }
+    try {
+      validateDocument(document_);
+    } catch (err) {
+      // Unreconcilable: start clean rather than install a session that cannot
+      // paint. The stored draft is left untouched (nothing is saved until the
+      // user edits), so no work is destroyed silently.
+      document_ = model.createDocument(device);
+      reconcileNote = `Saved draft could not be shown on this panel (${err.message ?? err}) — started a new one.`;
+    }
   } else {
     document_ = model.createDocument(device);
   }
@@ -330,6 +349,7 @@ export async function openComposer(device) {
   // Reclaim assets no longer reachable from any draft; protect this session's.
   store.sweepAssets(model.referencedAssets(document_)).catch(() => {});
   paint();
+  if (reconcileNote) toast(reconcileNote, 'error');
 }
 
 /** Flush pending edits without tearing the session down — used when

@@ -138,9 +138,33 @@ window.resultPromise = (async () => {
      && !!(await store.getAsset(live)));
 
   // Re-importing identical content refreshes its claim, so a concurrent sweep
-  // cannot reclaim it during the asset->draft window.
-  const oldish = await store.putAsset(new Blob([new Uint8Array([4,4,4,4])], { type: 'image/png' }));
-  await store.putAsset(new Blob([new Uint8Array([4,4,4,4])], { type: 'image/png' })); // dedup hit
+  // cannot reclaim it during the asset->draft window. The entry is aged past
+  // the grace window first — otherwise the test would pass without the fix.
+  const oldBlob = new Blob([new Uint8Array([4,4,4,4])], { type: 'image/png' });
+  const oldish = await store.putAsset(oldBlob);
+  await (async () => {
+    // Age createdAt AND lastClaimedAt well beyond the 5-minute grace window.
+    const db = await new Promise((res, rej) => {
+      const rq = indexedDB.open('od-app');
+      rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+    });
+    await new Promise((res, rej) => {
+      const t = db.transaction(['assets'], 'readwrite');
+      const st = t.objectStore('assets');
+      const g = st.get(oldish);
+      g.onsuccess = () => {
+        const rec = g.result;
+        const ancient = Date.now() - 60 * 60 * 1000;
+        st.put({ ...rec, createdAt: ancient, lastClaimedAt: ancient });
+      };
+      t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+    });
+    db.close();
+  })();
+  // Sanity: without a refresh this asset WOULD be swept.
+  const aged = await store.getAsset(oldish);
+  ok('assetAged', (Date.now() - aged.lastClaimedAt) > 5 * 60 * 1000);
+  await store.putAsset(oldBlob); // dedup hit -> must refresh the claim
   ok('reimportRefreshesClaim',
      (await store.sweepAssets()) === 0 && !!(await store.getAsset(oldish)));
   await store.sweepAssets(new Set(), { graceMs: 0 });
