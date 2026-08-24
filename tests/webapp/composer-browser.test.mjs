@@ -308,6 +308,10 @@ window.resultPromise = (async () => {
       { type: 'image/avif' }), 100);
   } catch (e) { refusedUnknown = e.name === 'UnsupportedImageError'; }
   ok('unknownFormatRefused', refusedUnknown);
+  // The picker's accept list must be exactly what the decoder supports.
+  ok('acceptListMatchesDecoder',
+     JSON.stringify(sizeMod.SUPPORTED_IMAGE_TYPES) ===
+     JSON.stringify(['image/png', 'image/jpeg', 'image/gif', 'image/webp']));
 
   // --- draft persistence round-trip through IndexedDB ---
   const saved = await store.getDraft('dr-1');

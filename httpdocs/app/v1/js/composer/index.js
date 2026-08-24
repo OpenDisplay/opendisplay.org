@@ -380,6 +380,10 @@ async function sendToDisplay() {
 // --- wiring ---------------------------------------------------------------
 
 function wire() {
+  // Single-source the accepted formats: the picker's accept attribute is set
+  // from the same list the decoder enforces, so they cannot drift.
+  $('photoFile').accept = SUPPORTED_IMAGE_TYPES.join(',');
+
   drawTool = tools.makeDrawTool({ color: 0, width: 0.012 });
   selectTool = tools.makeSelectTool({ onSelect: () => paint() });
   activeTool = selectTool;
