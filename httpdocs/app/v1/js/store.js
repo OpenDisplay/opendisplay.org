@@ -203,7 +203,26 @@ export async function commitRebind(recordId, newBleId, patch = {}) {
  * editing; without the check, its autosave would resurrect an orphan draft
  * (and keep the device's photos alive forever).
  */
-export async function putDraft(draft) {
+export class DraftConflictError extends Error {
+  constructor(id) {
+    super(`another tab saved "${id}" more recently — this draft was not saved`);
+    this.name = 'DraftConflictError';
+  }
+}
+
+/**
+ * Write a draft, verifying IN THE SAME TRANSACTION that:
+ *  1. its device still exists — another tab may have forgotten it while this
+ *     tab was editing, and an autosave would resurrect an orphan draft;
+ *  2. nobody else has written a NEWER revision. Two tabs editing one device
+ *     were previously last-writer-wins, so a stale tab navigating away could
+ *     silently overwrite newer work from the other tab.
+ *
+ * @param {object} draft
+ * @param {number|undefined} expectedRev the revision this session last saw;
+ *   omit to force the write (first save of a session that loaded no draft).
+ */
+export async function putDraft(draft, expectedRev) {
   requestPersistence();
   const db = await openDb();
   const t = tx(db, ['devices', 'drafts'], 'readwrite');
@@ -214,8 +233,17 @@ export async function putDraft(draft) {
       throw new Error(`device ${draft.recordId} no longer exists — draft not saved`);
     }
   }
-  t.objectStore('drafts').put(draft);
+  const drafts = t.objectStore('drafts');
+  const existing = await reqAsPromise(drafts.get(draft.id));
+  const storedRev = existing?.rev ?? 0;
+  if (expectedRev !== undefined && storedRev > expectedRev) {
+    t.abort();
+    throw new DraftConflictError(draft.id);
+  }
+  const rev = storedRev + 1;
+  drafts.put({ ...draft, rev });
   await txDone(t);
+  return rev;
 }
 
 export async function getDraft(id) {

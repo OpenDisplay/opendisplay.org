@@ -63,10 +63,73 @@ export function _resetResizeSupport() {
   resizeSupport = null;
 }
 
+/**
+ * Pixel dimensions AS DISPLAYED.
+ *
+ * JPEGs from phones routinely store the sensor's raw orientation plus an EXIF
+ * tag saying how to rotate it. Since decoding uses `imageOrientation:
+ * 'from-image'`, the browser applies that rotation — so for orientations 5-8
+ * the visible width and height are SWAPPED relative to the SOF header. Using
+ * the raw values to compute resize targets would squash the image to the
+ * wrong aspect ratio.
+ */
 export async function readImageSize(blob) {
   const head = new Uint8Array(await blob.slice(0, HEADER_BYTES).arrayBuffer());
   const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-  return png(head, view) ?? jpeg(head, view) ?? gif(head, view) ?? webp(head, view) ?? null;
+  const raw = png(head, view) ?? jpeg(head, view) ?? gif(head, view) ?? webp(head, view);
+  if (!raw) return null;
+  const orientation = jpegOrientation(head, view);
+  // 5-8 are the transposed orientations (90/270 degree rotations).
+  if (orientation >= 5 && orientation <= 8) {
+    return { width: raw.height, height: raw.width, orientation };
+  }
+  return { ...raw, orientation };
+}
+
+/**
+ * EXIF orientation from a JPEG's APP1 segment, or 1 (none/unknown).
+ * Walks the marker chain to APP1, checks the "Exif\0\0" signature, then reads
+ * IFD0 tag 0x0112 honouring the TIFF header's byte order.
+ */
+function jpegOrientation(b, view) {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return 1;
+  let off = 2;
+  while (off + 4 < b.length) {
+    if (b[off] !== 0xff) { off++; continue; }
+    const marker = b[off + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      off += 2;
+      continue;
+    }
+    if (marker === 0xda) return 1; // start of scan: no EXIF before the data
+    const len = view.getUint16(off + 2);
+    if (len < 2) return 1;
+    if (marker === 0xe1 && off + 10 < b.length) {
+      const sig = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
+      if (sig === 'Exif') {
+        const tiff = off + 10; // after marker(2) + length(2) + "Exif\0\0"(6)
+        if (tiff + 8 > b.length) return 1;
+        const little = b[tiff] === 0x49 && b[tiff + 1] === 0x49;
+        const u16 = (o) => view.getUint16(o, little);
+        const u32 = (o) => view.getUint32(o, little);
+        if (u16(tiff + 2) !== 0x002a) return 1;
+        const ifd = tiff + u32(tiff + 4);
+        if (ifd + 2 > b.length) return 1;
+        const count = u16(ifd);
+        for (let i = 0; i < count; i++) {
+          const entry = ifd + 2 + i * 12;
+          if (entry + 12 > b.length) break;
+          if (u16(entry) === 0x0112) {
+            const value = u16(entry + 8);
+            return value >= 1 && value <= 8 ? value : 1;
+          }
+        }
+        return 1;
+      }
+    }
+    off += 2 + len;
+  }
+  return 1;
 }
 
 function png(b, view) {

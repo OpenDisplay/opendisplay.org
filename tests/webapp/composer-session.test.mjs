@@ -350,3 +350,89 @@ test('undo counts as an edit (it changes what should be stored)', async () => {
   await s.flush();
   assert.ok(store.calls.length > afterFirst, 'undo is persisted');
 });
+
+// --- multi-tab draft safety, Clear, and bitmap pruning ---
+
+test('a stale tab cannot overwrite a newer draft from another tab', async () => {
+  // One shared "database" with revisions, as store.putDraft now implements.
+  const db = new Map();
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev > expectedRev) {
+        const e = new Error('conflict'); e.name = 'DraftConflictError'; throw e;
+      }
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+
+  // Tab A and tab B both opened the draft at rev 0.
+  const a = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {}, rev: 0 });
+  const b = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {}, rev: 0 });
+
+  b.apply(model.addLayer(b.doc(), model.textLayer({ text: 'from B' })));
+  await b.flush();                       // B saves first: rev 1
+  assert.equal(db.get('d').doc.layers[0].text, 'from B');
+
+  a.apply(model.addLayer(a.doc(), model.textLayer({ text: 'from A' })));
+  await assert.rejects(a.flush(), (err) => err.name === 'DraftConflictError');
+  assert.equal(db.get('d').doc.layers[0].text, 'from B', "B's newer work survived");
+});
+
+test('a session keeps saving after its own writes (revision advances)', async () => {
+  const db = new Map();
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev > expectedRev) throw new Error('conflict');
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {}, rev: 0 });
+  for (const text of ['one', 'two', 'three']) {
+    s.apply(model.addLayer(s.doc(), model.textLayer({ text })));
+    await s.flush();
+  }
+  assert.equal(db.get('d').rev, 3, 'each save advanced the revision');
+  assert.equal(db.get('d').doc.layers.length, 3);
+});
+
+test('Clear removes every layer in ONE undo step', () => {
+  const store = makeStore();
+  let doc = model.createDocument(DEVICE_A);
+  for (const t of ['a', 'b', 'c']) doc = model.addLayer(doc, model.textLayer({ text: t }));
+  const s = open(DEVICE_A, store, doc);
+  s.apply(model.clearLayers(s.doc()));
+  assert.equal(s.doc().layers.length, 0);
+  s.undo();
+  assert.equal(s.doc().layers.length, 3, 'one undo brings everything back');
+});
+
+test('pruneBitmaps closes decodes for layers no longer reachable', () => {
+  const store = makeStore();
+  let doc = model.createDocument(DEVICE_A);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'keep' }));
+  const s = open(DEVICE_A, store, doc);
+  const made = {};
+  const fake = (tag) => (made[tag] = { closed: false, close() { this.closed = true; } });
+  s.setBitmap('keep', fake('keep'));
+  s.setBitmap('orphan', fake('orphan'));   // never referenced by any document
+
+  assert.equal(s.pruneBitmaps(), 1, 'only the orphan is closed');
+  assert.equal(made.orphan.closed, true);
+  assert.equal(made.keep.closed, false);
+
+  // Removing the layer does NOT strand its bitmap while undo can restore it.
+  s.apply(model.removeLayer(s.doc(), doc.layers[0].id));
+  assert.equal(s.pruneBitmaps(), 0, 'still reachable through undo history');
+  assert.equal(made.keep.closed, false);
+});

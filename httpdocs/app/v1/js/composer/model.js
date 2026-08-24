@@ -127,6 +127,13 @@ export function moveLayer(doc, layerId, delta) {
   return next;
 }
 
+/** Remove every layer, keeping the panel and page settings. One undo step. */
+export function clearLayers(doc) {
+  const next = cloneDoc(doc);
+  next.layers = [];
+  return next;
+}
+
 /** Asset ids still referenced by a document (for mark-and-sweep GC). */
 export function referencedAssets(doc) {
   const ids = new Set();

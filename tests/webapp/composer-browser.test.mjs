@@ -308,6 +308,22 @@ window.resultPromise = (async () => {
       { type: 'image/avif' }), 100);
   } catch (e) { refusedUnknown = e.name === 'UnsupportedImageError'; }
   ok('unknownFormatRefused', refusedUnknown);
+
+  // EXIF-rotated phone JPEGs: the header says 60x20, but orientation 6 means
+  // it DISPLAYS as 20x60. Using the raw values would resize to the wrong
+  // aspect ratio.
+  const exifRes = await fetch('/__fixtures__/exif-orientation-6.jpg');
+  const exifBlob = await exifRes.blob();
+  const exifSize = await sizeMod.readImageSize(exifBlob);
+  ok('exifOrientationRead', exifSize && exifSize.orientation === 6);
+  ok('exifDimensionsSwapped', exifSize && exifSize.width === 20 && exifSize.height === 60);
+  // A bounded decode must match what the browser actually produces.
+  const exifBmp = await sizeMod.decodeBounded(exifBlob, 30);
+  const decoded = await createImageBitmap(exifBlob, { imageOrientation: 'from-image' });
+  ok('exifAspectPreserved',
+     Math.abs((exifBmp.width / exifBmp.height) - (decoded.width / decoded.height)) < 0.05);
+  ok('exifCapRespected', Math.max(exifBmp.width, exifBmp.height) <= 30);
+  exifBmp.close?.(); decoded.close?.();
   // The picker's accept list must be exactly what the decoder supports.
   // The bounded decode must hold even where createImageBitmap ignores resize
   // options (WebKit/Bluefy): verify-and-fallback, not trust.
@@ -442,6 +458,12 @@ window.resultPromise = (async () => {
 function serve() {
   const server = createServer((req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (path.startsWith('/__fixtures__/')) {
+      const f = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', path.split('/').pop());
+      if (!existsSync(f)) { res.writeHead(404).end('no fixture'); return; }
+      res.writeHead(200, { 'content-type': 'image/jpeg' }).end(readFileSync(f));
+      return;
+    }
     if (path.startsWith('/__test__/composer-fixture')) {
       res.writeHead(200, { 'content-type': 'text/html' }).end(FIXTURE);
       return;

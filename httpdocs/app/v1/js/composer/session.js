@@ -25,6 +25,9 @@ let nextSessionId = 1;
 
 export function createSession({
   device, draftId, document: doc, store, onChange, onSaveError,
+  // Revision of the draft this session loaded; writes are refused if another
+  // tab has since saved a newer one.
+  rev = undefined,
   // Throws for a document that cannot be rendered (e.g. a QR that does not
   // fit). Commits are pre-flighted with it so an invalid layer can never
   // enter the history or be autosaved.
@@ -40,6 +43,7 @@ export function createSession({
     gestureBase: null,   // committed doc when the gesture began
     bitmaps: new Map(),  // assetId -> ImageBitmap (owned; closed on release)
     saveTimer: null,
+    rev,
     pendingSave: null,
     saveFailure: null,
     released: false,
@@ -95,10 +99,10 @@ export function createSession({
     session.pendingSave = prior.then(async () => {
       if (session.released || snapshot.generation !== session.generation) return;
       try {
-        await store.putDraft(model.toDraft(snapshot.doc, {
+        session.rev = await store.putDraft(model.toDraft(snapshot.doc, {
           id: snapshot.id,
           recordId: snapshot.recordId,
-        }));
+        }), session.rev);
         session.saveFailure = null;
       } catch (err) {
         // Never silent: quota and storage failures must reach the user AND
@@ -184,6 +188,27 @@ export function createSession({
       session.working = null;
       scheduleSave();
       notify();
+    },
+
+    /**
+     * Close bitmaps for assets no longer reachable from the document OR any
+     * undo/redo state. Deleting a photo used to leave its decode in memory
+     * until the session ended, so importing and deleting a few phone photos
+     * kept every proxy alive.
+     */
+    pruneBitmaps() {
+      const live = new Set();
+      const docs = [session.history.present, ...session.history.past, ...session.history.future];
+      if (session.working) docs.push(session.working);
+      for (const d of docs) for (const id of model.referencedAssets(d)) live.add(id);
+      let closed = 0;
+      for (const [id, bmp] of session.bitmaps) {
+        if (live.has(id)) continue;
+        bmp.close?.();
+        session.bitmaps.delete(id);
+        closed++;
+      }
+      return closed;
     },
 
     setBitmap(assetId, bitmap) {

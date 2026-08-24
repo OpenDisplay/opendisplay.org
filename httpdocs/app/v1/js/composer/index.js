@@ -110,6 +110,7 @@ function paintNow() {
   $('undoBtn').disabled = !session.canUndo();
   $('redoBtn').disabled = !session.canRedo();
   $('deleteLayerBtn').disabled = !selectTool?.selectedId();
+  $('clearBtn').disabled = doc().layers.length === 0;
   paintOverlay();
   const p = doc().panel;
   $('composerPanelInfo').textContent =
@@ -544,6 +545,17 @@ function wire() {
     if (!id) return;
     selectTool.clearSelection();
     session.apply(model.removeLayer(doc(), id));
+    session.pruneBitmaps();
+  });
+
+  $('clearBtn').addEventListener('click', () => {
+    if (!doc().layers.length) return;
+    selectTool.clearSelection();
+    // One history entry, so a mis-click is a single Undo away. No confirm
+    // dialog for that reason.
+    session.apply(model.clearLayers(doc()));
+    session.pruneBitmaps();
+    toast('Canvas cleared — Undo restores it.');
   });
 
   $('photoFile').addEventListener('change', (ev) => {
@@ -651,6 +663,7 @@ export async function openComposer(device) {
     device,
     draftId,
     document: document_,
+    rev: existing?.rev,
     store,
     validate: validateDocument,
     onChange: () => paint(),

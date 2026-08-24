@@ -185,6 +185,14 @@ const MATCHERS = [
     }),
   },
   {
+    test: (err) => err?.name === 'DraftConflictError',
+    map: () => ({
+      kind: 'error',
+      title: 'Another tab has newer changes for this device.',
+      hint: 'This tab’s edits were NOT saved. Copy anything you need, then reload to pick up the newer draft.',
+    }),
+  },
+  {
     test: (err) => /no longer exists — draft not saved/i.test(text(err)),
     map: () => ({
       kind: 'error',
