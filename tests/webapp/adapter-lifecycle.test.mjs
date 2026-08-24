@@ -455,3 +455,109 @@ test('disconnect during stored-key auth: provider NOT asked, no radio calls afte
   await assert.rejects(opP, /torn down|while the operation/i);
   assert.equal(asks, 0, 'key dialog never opened for a dead session');
 });
+
+// --- sendCanvas (M3) ---
+
+function fakeCanvas(w, h) {
+  return { width: w, height: h };
+}
+
+test('sendCanvas rejects unsupported schemes BEFORE the fail-open encoder sees them', async () => {
+  installBridge({ sendCanvasToDisplay: async () => { throw new Error('should not be reached'); } });
+  await adapter.connectViaChooser('OD');
+  // Scheme 7 packs as MONOCHROME in the shared encoder (proven in the spike).
+  await assert.rejects(
+    adapter.sendCanvas(fakeCanvas(10, 10), 7, { originalWidth: 10, originalHeight: 10 }),
+    /not supported/i,
+  );
+  await assert.rejects(
+    adapter.sendCanvas(fakeCanvas(10, 10), 9, { originalWidth: 10, originalHeight: 10 }),
+    /not supported/i,
+  );
+});
+
+test('sendCanvas rejects a canvas whose size does not match the panel + rotation', async () => {
+  installBridge();
+  await adapter.connectViaChooser('OD');
+  // Unrotated: canvas must equal the native size.
+  await assert.rejects(
+    adapter.sendCanvas(fakeCanvas(100, 50), 0, { originalWidth: 800, originalHeight: 480 }),
+    /does not match panel/,
+  );
+  // Rotated: the canvas must be SWAPPED, so passing native dims is wrong.
+  await assert.rejects(
+    adapter.sendCanvas(fakeCanvas(800, 480), 0,
+      { originalWidth: 800, originalHeight: 480, rotationQuarterTurns: 1 }),
+    /expected 480x800/,
+  );
+});
+
+test('sendCanvas resolves on REFRESH complete and reports transfer separately', async () => {
+  let captured = null;
+  installBridge({
+    sendCanvasToDisplay: async (canvas, scheme, opts) => { captured = opts; },
+  });
+  await adapter.connectViaChooser('OD');
+
+  const events = [];
+  const p = adapter.sendCanvas(fakeCanvas(480, 800), 4, {
+    originalWidth: 800, originalHeight: 480, rotationQuarterTurns: 1,
+    panelIcType: 35, transmissionModes: 0x13,
+    onProgress: (s, t) => events.push(`progress:${s}/${t}`),
+    onTransferComplete: () => events.push('transfer'),
+  });
+  await new Promise((r) => setTimeout(r, 5));
+
+  // The library passes wire quarter-turns plus NATIVE dimensions.
+  assert.equal(captured.rotation, 1);
+  assert.equal(captured.originalWidth, 800);
+  assert.equal(captured.originalHeight, 480);
+  assert.equal(captured.panelIcType, 35);
+
+  captured.onProgress(3, 10);
+  // The ONLY public signal for the data-phase boundary is this status string.
+  captured.onStatusChange('Upload complete (2.10s), refreshing display...');
+  captured.onStatusChange('Upload complete (2.10s), refreshing display...'); // repeat
+  assert.deepEqual(events, ['progress:3/10', 'transfer'], 'transfer announced exactly once');
+
+  // onComplete only fires after refresh-complete (0x73) in the real library.
+  captured.onComplete(true, null);
+  assert.deepEqual(await p, { refreshed: true });
+});
+
+test('sendCanvas surfaces a device-side failure', async () => {
+  let captured = null;
+  installBridge({ sendCanvasToDisplay: async (c, s, opts) => { captured = opts; } });
+  await adapter.connectViaChooser('OD');
+  const p = adapter.sendCanvas(fakeCanvas(10, 10), 0, { originalWidth: 10, originalHeight: 10 });
+  await new Promise((r) => setTimeout(r, 5));
+  captured.onComplete(false, new Error('NACK: etag mismatch'));
+  await assert.rejects(p, /etag mismatch/);
+});
+
+test('a disconnect mid-send invalidates the result and stops progress callbacks', async () => {
+  let captured = null;
+  installBridge({ sendCanvasToDisplay: async (c, s, opts) => { captured = opts; } });
+  await adapter.connectViaChooser('OD');
+  const inst = current();
+  const progress = [];
+  const p = adapter.sendCanvas(fakeCanvas(10, 10), 0, {
+    originalWidth: 10, originalHeight: 10,
+    onProgress: (s, t) => progress.push([s, t]),
+  });
+  await new Promise((r) => setTimeout(r, 5));
+  captured.onProgress(1, 10);
+  await inst.onDisconnect();          // the tag drops mid-upload
+  captured.onProgress(5, 10);          // late callbacks from the dead instance
+  captured.onComplete(true, null);     // and a late "success"
+  await assert.rejects(p, /torn down|while the operation/i);
+  assert.deepEqual(progress, [[1, 10]], 'no progress reported after the disconnect');
+});
+
+test('sendCanvas refuses when not connected', async () => {
+  installBridge();
+  await assert.rejects(
+    adapter.sendCanvas(fakeCanvas(10, 10), 0, { originalWidth: 10, originalHeight: 10 }),
+    /Not connected/,
+  );
+});

@@ -117,6 +117,13 @@ function toast(msg, kind = 'info') {
 
 // --- photo handling -------------------------------------------------------
 
+/** Decode at FULL resolution — used for the worker (and therefore the sent
+ *  frame). The 1600px proxy exists only to keep interactive editing cheap; a
+ *  1872×1404 panel would otherwise be fed an upscaled proxy. */
+function decodeFull(blob) {
+  return createImageBitmap(blob, { imageOrientation: 'from-image' });
+}
+
 /** Decode a ≤PROXY_MAX_PX editing proxy; originals stay in the asset store. */
 async function decodeProxy(blob) {
   const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
@@ -226,6 +233,15 @@ function wirePhotoControls() {
 
 // --- dithering -------------------------------------------------------------
 
+/** Immutable description of the panel a frame was rendered for. A frame may
+ *  only be sent to a panel with an identical signature. */
+function panelSignature(panel) {
+  return [
+    panel.width, panel.height, panel.rotationQuarterTurns ?? 0,
+    panel.colorScheme, panel.panelIcType ?? 'null',
+  ].join(':');
+}
+
 function ditherOptions() {
   return {
     mode: Number($('ditherMode').value),
@@ -239,7 +255,8 @@ function ensureDitherClient() {
   dither = createDitherClient({
     workerUrl: new URL('./dither-worker.js', import.meta.url),
     onResult: (msg) => {
-      latestDither = msg;
+      // Bind the frame to the panel it was rendered for.
+      latestDither = { ...msg, signature: panelSignature(doc().panel) };
       ditherPending = false;
       if ($('showDithered').checked) {
         const { canvas, ctx } = makeCanvas(msg.width, msg.height);
@@ -263,15 +280,30 @@ function ensureDitherClient() {
 function requestDither() {
   if (!session) return;
   const client = ensureDitherClient();
+  const owner = session;
+  const ownerGen = owner.generation();
+  const clientEpoch = client.epoch();
   const current = doc();
+
   // The worker keeps its OWN bitmaps (a transfer would take ours), so send
-  // each asset across exactly once.
+  // each asset across exactly once — at FULL resolution, since this is the
+  // frame that gets sent. The client holds the render until every referenced
+  // asset is acknowledged, so a frame can never be missing a photo.
   for (const layer of current.layers) {
     if (!layer.assetId || client.hasAsset(layer.assetId)) continue;
-    store.getAsset(layer.assetId)
-      .then((asset) => asset?.blob && client.addAsset(layer.assetId, asset.blob, decodeProxy))
-      .then(() => { if (session) client.request(doc(), ditherOptions()); })
-      .catch(() => {});
+    const assetId = layer.assetId;
+    store.getAsset(assetId)
+      .then(async (asset) => {
+        if (!asset?.blob) return;
+        // A device switch during the load invalidates this asset entirely.
+        if (!isCurrent(owner, ownerGen) || client.epoch() !== clientEpoch) return;
+        await client.addAsset(assetId, asset.blob, decodeFull);
+      })
+      .catch((err) => {
+        if (isCurrent(owner, ownerGen)) {
+          toast(`Could not load image: ${err.message ?? err}`, 'error');
+        }
+      });
   }
   ditherPending = true;
   client.request(current, ditherOptions());
@@ -283,6 +315,13 @@ function buildSendCanvas() {
   if (!latestDither) throw new Error('no dithered frame is ready');
   const { width, height, indices } = latestDither;
   const panel = doc().panel;
+  const expected = model.artboardSize(panel);
+  if (width !== expected.width || height !== expected.height) {
+    throw new Error(
+      `dithered frame ${width}x${height} does not match the artboard ` +
+      `${expected.width}x${expected.height}`,
+    );
+  }
   const rgba = paintForSend(indices, panel.colorScheme, panel.panelIcType);
   const { canvas, ctx } = makeCanvas(width, height);
   ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
@@ -290,14 +329,30 @@ function buildSendCanvas() {
 }
 
 async function sendToDisplay() {
-  const record = session?.session?.device;
-  if (!record) return;
+  const openRecord = session?.session?.device;
+  if (!openRecord) return;
   sending = true;
   updateSendControls();
   const progress = $('sendProgress');
   progress.hidden = false;
   progress.value = 0;
   try {
+    // Re-read the device record: connecting refreshes it, and the composer
+    // session survives navigation, so the in-memory copy can be stale.
+    const record = await store.getDevice(openRecord.recordId);
+    if (!record) throw new Error('this device is no longer saved');
+    if (record.bleId !== adapter.connectedBleId()) {
+      throw new Error('the connected device is not the one this composition is for');
+    }
+    // The frame must have been rendered for exactly this panel.
+    const wanted = panelSignature({
+      width: record.width, height: record.height,
+      rotationQuarterTurns: record.rotationQuarterTurns ?? 0,
+      colorScheme: record.colorScheme, panelIcType: record.panelIcType,
+    });
+    if (!latestDither || latestDither.signature !== wanted) {
+      throw new Error('the panel changed since this preview was rendered — reopen the composer');
+    }
     const { canvas } = buildSendCanvas();
     toast('Uploading…');
     await adapter.sendCanvas(canvas, record.colorScheme, {
@@ -310,11 +365,11 @@ async function sendToDisplay() {
       onProgress: (sent, total) => {
         progress.value = total ? Math.round((sent / total) * 100) : 0;
       },
-      onRefresh: () => toast('Panel refresh finished.'),
+      onTransferComplete: () => toast('Transfer complete — the panel is refreshing…'),
     });
-    // Transfer complete is NOT the same as displayed: the panel refresh takes
-    // seconds to tens of seconds and reports separately.
-    toast('Transfer complete — the panel is refreshing now.');
+    // sendCanvas resolves only after the panel's refresh-complete frame, which
+    // is what the shared library actually reports.
+    toast('Done — the panel has refreshed.');
   } catch (err) {
     toast(`Send failed: ${err.message ?? err}`, 'error');
   } finally {
@@ -430,7 +485,9 @@ export async function openComposer(device) {
     session.release();       // closes bitmaps, invalidates in-flight work
   }
   latestDither = null;
-  dither?.dropAssets([]);    // the worker's bitmaps belong to the old document
+  // New epoch: invalidates in-flight renders and releases the worker's bitmaps
+  // so a result for the old device can never be shown or sent for the new one.
+  dither?.newEpoch();
   const draftId = `draft-${device.recordId}`;
   const existing = await store.getDraft(draftId).catch(() => null);
   let document_;

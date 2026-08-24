@@ -1,32 +1,46 @@
 /*
  * dither-client.js — main-thread side of the dither worker (plan §6).
  *
- * Enforces the message contract: generation-tagged requests, stale results
- * discarded, at most ONE pending rerender queued (rapid edits coalesce), and
- * per-asset transfer exactly once.
+ * Currency rules (tightened after review — a stale frame reaching a panel is
+ * the worst failure this app can have):
+ *  - a result is accepted ONLY if its id is the latest REQUESTED id; a result
+ *    that completes while a newer render is queued is dropped, not shown;
+ *  - every request carries an `epoch`; results from an earlier epoch (a
+ *    different composer session) are discarded even if their id looks current;
+ *  - a render is not issued until every asset the document references has been
+ *    ACKNOWLEDGED by the worker, so a frame can never be missing a photo;
+ *  - at most one pending rerender is queued (rapid edits coalesce);
+ *  - a failed asset decode is retryable (never marked sent).
  */
 
 export function createDitherClient({ workerUrl, onResult, onError }) {
   let worker = null;
   let nextId = 1;
-  let inFlight = null;      // id currently being rendered
-  let queued = null;        // at most one pending request
-  let latestAccepted = 0;   // highest id whose result has been applied
-  const sentAssets = new Set();
+  let epoch = 0;
+  let inFlight = null;       // id currently rendering
+  let queued = null;         // at most one pending request
+  let latestRequested = 0;   // newest id handed out
+  /** assetId -> 'pending' | 'ready' */
+  const assetState = new Map();
 
   function ensureWorker() {
     if (worker) return worker;
     worker = new Worker(workerUrl, { type: 'module' });
     worker.onmessage = (ev) => {
       const msg = ev.data;
-      if (msg.type === 'asset-ack') return;
+      if (msg.type === 'asset-ack') {
+        if (assetState.get(msg.assetId) === 'pending') assetState.set(msg.assetId, 'ready');
+        pump(); // a render may have been waiting on this asset
+        return;
+      }
       if (msg.type !== 'render') return;
       if (msg.id === inFlight) inFlight = null;
-      // Discard anything superseded by a newer render.
-      if (msg.id < latestAccepted) { pump(); return; }
-      latestAccepted = msg.id;
-      if (msg.ok) onResult?.(msg);
-      else onError?.(new Error(msg.error));
+      const current = msg.id === latestRequested && msg.epoch === epoch;
+      if (current) {
+        if (msg.ok) onResult?.(msg);
+        else onError?.(new Error(msg.error));
+      }
+      // Anything else is superseded: silently dropped, never shown or sent.
       pump();
     };
     worker.onerror = (ev) => {
@@ -37,51 +51,84 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
     return worker;
   }
 
+  function assetsReady(doc) {
+    for (const layer of doc.layers ?? []) {
+      if (layer.assetId && assetState.get(layer.assetId) !== 'ready') return false;
+    }
+    return true;
+  }
+
   function pump() {
     if (inFlight || !queued) return;
+    // Hold the render until every referenced photo is in the worker: an
+    // otherwise-complete frame missing an image must never become sendable.
+    if (!assetsReady(queued.doc)) return;
     const req = queued;
     queued = null;
     inFlight = req.id;
-    ensureWorker().postMessage({ type: 'render', id: req.id, doc: req.doc, options: req.options });
+    ensureWorker().postMessage({
+      type: 'render', id: req.id, epoch: req.epoch, doc: req.doc, options: req.options,
+    });
   }
 
   return {
     /** Hand the worker its OWN bitmap for an asset (transferred once). */
     async addAsset(assetId, blob, decode) {
-      if (sentAssets.has(assetId)) return;
-      sentAssets.add(assetId);
-      const bitmap = await decode(blob);
-      ensureWorker().postMessage({ type: 'asset', assetId, bitmap }, [bitmap]);
+      if (assetState.has(assetId)) return;
+      assetState.set(assetId, 'pending');
+      try {
+        const bitmap = await decode(blob);
+        // A session switch during decode invalidates this bitmap.
+        if (!assetState.has(assetId)) { bitmap.close?.(); return; }
+        ensureWorker().postMessage({ type: 'asset', assetId, bitmap }, [bitmap]);
+      } catch (err) {
+        assetState.delete(assetId); // decode failures must stay retryable
+        throw err;
+      }
     },
 
     hasAsset(assetId) {
-      return sentAssets.has(assetId);
+      return assetState.has(assetId);
+    },
+
+    assetReady(assetId) {
+      return assetState.get(assetId) === 'ready';
     },
 
     /** Queue a render. Only the newest pending request survives. */
     request(doc, options) {
       const id = nextId++;
-      queued = { id, doc, options };
+      latestRequested = id;
+      queued = { id, epoch, doc, options };
       pump();
       return id;
     },
 
-    /** Drop every asset except `keep` (e.g. when switching devices). */
-    dropAssets(keep = []) {
-      const keepSet = new Set(keep);
-      for (const id of sentAssets) if (!keepSet.has(id)) sentAssets.delete(id);
-      if (worker) worker.postMessage({ type: 'drop', keep: [...keepSet] });
+    /** Current epoch — a result carrying a different one is stale. */
+    epoch: () => epoch,
+
+    /**
+     * Begin a new composer session: bump the epoch (invalidating in-flight
+     * work), drop the pending queue and release the worker's bitmaps.
+     */
+    newEpoch() {
+      epoch += 1;
+      queued = null;
+      inFlight = null;
+      assetState.clear();
+      worker?.postMessage({ type: 'reset' });
+      return epoch;
     },
 
     terminate() {
       worker?.terminate();
       worker = null;
-      sentAssets.clear();
+      assetState.clear();
       inFlight = null;
       queued = null;
     },
 
     // Test seams.
-    _state: () => ({ inFlight, queued: queued?.id ?? null, latestAccepted }),
+    _state: () => ({ inFlight, queued: queued?.id ?? null, latestRequested, epoch }),
   };
 }

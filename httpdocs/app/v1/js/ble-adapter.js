@@ -22,9 +22,10 @@ export const DEADLINES = {
   auth: 12000,
   firmware: 8000,
   config: 15000,
-  // An image upload is long and self-paced (the library has its own per-chunk
-  // ACK timeouts); this only bounds a total stall.
-  send: 180000,
+  // An upload plus the panel refresh: the library settles onComplete only
+  // after refresh-complete (0x73), and a large slow panel can take tens of
+  // seconds to refresh. This only bounds a total stall.
+  send: 240000,
 };
 
 /** Colour schemes this app will send. Scheme 7 is deliberately absent: the
@@ -440,9 +441,14 @@ export async function readDeviceInfo({ storedKey = null } = {}) {
  * Rotation is passed as the WIRE quarter-turn value together with the panel's
  * native dimensions, exactly as the Display Tool does.
  *
- * Resolves when the TRANSFER completes. The panel's refresh finishes seconds
- * later and is reported separately via `onRefresh` — treating transfer as
- * "done on screen" would be a lie.
+ * TWO-PHASE COMPLETION, as the shared library actually reports it (verified in
+ * ble-common.js, not assumed): `onComplete` settles only after the panel's
+ * REFRESH-complete frame (0x73) — seconds to tens of seconds after the bytes
+ * land — while the transfer→refresh transition is announced through
+ * `onStatusChange`. So this promise resolves when the PANEL HAS REFRESHED, and
+ * `onTransferComplete` fires earlier, at the end of the data phase.
+ * (`onCommandAck` is not usable for this: the library invokes it only for
+ * command 0x63 and passes no arguments.)
  */
 export async function sendCanvas(canvas, colorScheme, {
   rotationQuarterTurns = 0,
@@ -452,7 +458,7 @@ export async function sendCanvas(canvas, colorScheme, {
   partialUpdateSupport = 0,
   panelIcType = null,
   onProgress = null,
-  onRefresh = null,
+  onTransferComplete = null,
 } = {}) {
   if (state !== 'connected') throw new Error('Not connected');
   if (!SUPPORTED_COLOR_SCHEMES.has(colorScheme)) {
@@ -461,10 +467,23 @@ export async function sendCanvas(canvas, colorScheme, {
       '(the shared encoder would silently emit monochrome)',
     );
   }
+  // The canvas must match the panel it claims to be for: a rotated frame is
+  // authored in swapped dimensions.
+  const swap = rotationQuarterTurns === 1 || rotationQuarterTurns === 3;
+  const expectW = swap ? originalHeight : originalWidth;
+  const expectH = swap ? originalWidth : originalHeight;
+  if (canvas.width !== expectW || canvas.height !== expectH) {
+    throw new Error(
+      `canvas ${canvas.width}x${canvas.height} does not match panel ` +
+      `${originalWidth}x${originalHeight} at rotation ${rotationQuarterTurns} ` +
+      `(expected ${expectW}x${expectH})`,
+    );
+  }
   return withOp(async () => {
     const gen = generation;
     const inst = instance();
-    const transfer = new Promise((resolve, reject) => {
+    let transferAnnounced = false;
+    const done = new Promise((resolve, reject) => {
       inst.sendCanvasToDisplay(canvas, colorScheme, {
         rotation: rotationQuarterTurns,
         originalWidth,
@@ -476,25 +495,24 @@ export async function sendCanvas(canvas, colorScheme, {
           if (generation !== gen) return;
           onProgress?.(sent, total);
         },
+        onStatusChange: (message) => {
+          if (generation !== gen || transferAnnounced) return;
+          // The library says "Upload complete (Ns), refreshing display..." at
+          // the data-phase boundary; that is the only public signal for it.
+          if (/refreshing display/i.test(String(message))) {
+            transferAnnounced = true;
+            onTransferComplete?.();
+          }
+        },
         onComplete: (ok, err) => {
           if (ok) resolve();
           else reject(err ?? new Error('Upload failed'));
         },
       }).catch(reject);
     });
-    await withDeadline(transfer, DEADLINES.send, 'Image upload');
+    await withDeadline(done, DEADLINES.send, 'Image upload');
     if (generation !== gen) throw new StaleInstanceError();
-    // The panel refresh arrives out of band (0x73), seconds to tens of seconds
-    // later. Surface it if the caller cares, but never block on it.
-    if (onRefresh) {
-      const inst2 = instance();
-      const previous = inst2.onCommandAck;
-      inst2.onCommandAck = (cmd, ...rest) => {
-        if (cmd === 0x73 && generation === gen) onRefresh();
-        previous?.(cmd, ...rest);
-      };
-    }
-    return { transferred: true };
+    return { refreshed: true };
   });
 }
 

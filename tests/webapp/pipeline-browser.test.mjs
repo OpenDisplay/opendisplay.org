@@ -21,7 +21,12 @@ import {
   refGray4, gray4Codes, refGray16,
 } from './lib/reference-encoders.mjs';
 
-const HTTPDOCS = resolve(dirname(fileURLToPath(import.meta.url)), '../../httpdocs');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const HTTPDOCS = resolve(HERE, '../../httpdocs');
+
+/** Indices produced by the PYTHON binding of the same Rust core — a different
+ *  language binding, so agreement proves the dither itself, not just packing. */
+const DITHER_GOLDEN = JSON.parse(readFileSync(join(HERE, 'fixtures/dither-golden.json'), 'utf8'));
 
 const CHROME = ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium']
   .map((n) => `/usr/bin/${n}`)
@@ -59,7 +64,8 @@ window.resultPromise = (async () => {
   const { createDitherClient } = await import('/app/v1/js/composer/dither-client.js');
 
   const PANELS = ${JSON.stringify(PANELS)};
-  const out = { panels: {}, errors: [] };
+  const GOLDEN = ${JSON.stringify(DITHER_GOLDEN)};
+  const out = { panels: {}, dither: {}, errors: [] };
 
   const client = createDitherClient({
     workerUrl: '/app/v1/js/composer/dither-worker.js',
@@ -108,6 +114,40 @@ window.resultPromise = (async () => {
       out.errors.push(panel.name + ': ' + String(err && err.message || err));
     }
   }
+  // --- cross-language dither check: the SAME image through the wasm binding
+  // must produce the SAME indices the Python binding produced.
+  try {
+    const lib = await import('/app/v1/vendor/epaper-dithering.js');
+    const { width: gw, height: gh } = GOLDEN;
+    // Rebuild the reference image exactly as generate_dither_golden.py does.
+    const rgba = new Uint8ClampedArray(gw * gh * 4);
+    const put = (x, y, r, g, b) => {
+      const i = (y * gw + x) * 4;
+      rgba[i] = r; rgba[i+1] = g; rgba[i+2] = b; rgba[i+3] = 255;
+    };
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        put(x, y,
+          Math.floor((x * 255) / (gw - 1)),
+          Math.floor((y * 255) / (gh - 1)),
+          Math.floor(((x + y) * 255) / (gw + gh - 2)));
+      }
+    }
+    for (let y = 2; y < 6; y++) for (let x = 2; x < 10; x++) put(x, y, 255, 40, 40);
+
+    for (const c of GOLDEN.cases) {
+      const target = c.measuredPalette ? lib[c.measuredPalette] : c.colorScheme;
+      const res = lib.ditherImage({ data: rgba, width: gw, height: gh }, target,
+        { mode: c.mode, serpentine: true });
+      out.dither[c.name] = {
+        indices: Array.from(res.indices),
+        palette: res.palette.map((p) => [p.r, p.g, p.b]),
+      };
+    }
+  } catch (err) {
+    out.errors.push('dither-golden: ' + String(err && err.message || err));
+  }
+
   client.terminate();
   out.ok = out.errors.length === 0;
   return out;
@@ -198,6 +238,16 @@ test('composer → wasm dither → paint-back → encoder is byte-identical to t
     const expected = referencePack(panel, nativeIndices);
     assert.equal(got.packedHex, toHex(expected),
       `${panel.name}: encoder output must match the py-opendisplay reference packing`);
+  }
+
+  // --- the dither itself matches the Python binding of the same Rust core ---
+  for (const c of DITHER_GOLDEN.cases) {
+    const got = result.dither[c.name];
+    assert.ok(got, `${c.name} was dithered in the browser`);
+    assert.deepEqual(got.palette, c.palette,
+      `${c.name}: palette (and its ORDER) must match the Python binding`);
+    assert.deepEqual(got.indices, c.indices,
+      `${c.name}: wasm indices must match epaper_dithering@${DITHER_GOLDEN.version} (python)`);
   }
 
   // The measured-palette path must actually have been taken where one exists.

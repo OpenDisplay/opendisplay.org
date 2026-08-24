@@ -188,6 +188,7 @@ PSKs live in same-origin IndexedDB. The `/app/` path is **not** a security bound
 **M2 — Composer core (1–1.5 wk).** Layer model + undo + asset store, editing surface, photo import with proxy + adjustments, stroke/text/qr tools, drafts persistence. Preview initially undithered. *Exit: composition survives reload; renders correctly for 3 panel geometries including one rotated.*
 
 **M3 — Dither + send (1 wk).** Vendor wasm bundle, worker pipeline, measured preview, paint-back (already proven by M-S), send flow with progress. *Exit: hardware pass on the qualification matrix (§10).*
+  **Status: software-complete, NOT qualified.** The full chain (composer → wasm dither → paint-back → shared encoder) is proven byte-identical to py-opendisplay in automated tests, and the wasm dither is proven identical to the Python binding of the same Rust core. No physical tag has been driven yet: `docs/webapp-hardware-qualification.md` holds the checklist and is empty. A scheme with no qualified panel must be removed from `SUPPORTED_COLOR_SCHEMES` rather than shipped untested.
 
 **M4 — Hardening + release (0.5–1 wk).** Fault-path UX (bad key, rate limit, schema 404, disconnect mid-upload, denied persistence, quota), Bluefy best-effort pass, CHANGELOG, release via release-please.
 

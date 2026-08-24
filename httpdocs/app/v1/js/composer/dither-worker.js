@@ -57,8 +57,15 @@ self.onmessage = (ev) => {
   }
 };
 
-function render({ id, doc, options }) {
+function render({ id, epoch, doc, options }) {
   try {
+    // A frame missing a photo must be a hard error, never a silently
+    // incomplete image that could be sent to a panel.
+    for (const layer of doc.layers ?? []) {
+      if (layer.assetId && !assets.has(layer.assetId)) {
+        throw new Error(`asset ${layer.assetId} has not reached the worker`);
+      }
+    }
     const { ctx, width, height } = renderDocument(doc, assets);
     const composite = ctx.getImageData(0, 0, width, height);
 
@@ -88,11 +95,11 @@ function render({ id, doc, options }) {
     const indices = result.indices;
 
     self.postMessage(
-      { type: 'render', id, ok: true, width, height, measured, indices, preview, palette },
+      { type: 'render', id, epoch, ok: true, width, height, measured, indices, preview, palette },
       // Transfer, never clone: these buffers can be megabytes.
       [indices.buffer, preview.buffer],
     );
   } catch (err) {
-    self.postMessage({ type: 'render', id, ok: false, error: String(err?.message ?? err) });
+    self.postMessage({ type: 'render', id, epoch, ok: false, error: String(err?.message ?? err) });
   }
 }

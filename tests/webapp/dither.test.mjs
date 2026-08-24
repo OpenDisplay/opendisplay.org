@@ -96,11 +96,21 @@ class FakeWorker {
     this.onerror = null;
     FakeWorker.last = this;
   }
-  postMessage(msg) { this.posted.push(msg); }
+  postMessage(msg) {
+    this.posted.push(msg);
+    // Acknowledge assets the way the real worker does.
+    if (msg.type === 'asset') {
+      queueMicrotask(() => this.onmessage({ data: { type: 'asset-ack', assetId: msg.assetId } }));
+    }
+  }
   terminate() { this.terminated = true; }
+  renders() { return this.posted.filter((m) => m.type === 'render'); }
   /** Simulate the worker answering a render request. */
   reply(id, extra = {}) {
-    this.onmessage({ data: { type: 'render', id, ok: true, width: 1, height: 1, ...extra } });
+    const req = this.renders().find((m) => m.id === id);
+    this.onmessage({
+      data: { type: 'render', id, epoch: req?.epoch ?? 0, ok: true, width: 1, height: 1, ...extra },
+    });
   }
 }
 
@@ -108,6 +118,7 @@ function clientWithFakeWorker() {
   const results = [];
   const errors = [];
   const originalWorker = globalThis.Worker;
+  FakeWorker.last = null; // the worker is lazy; don't inherit a previous test's
   globalThis.Worker = FakeWorker;
   const client = createDitherClient({
     workerUrl: 'about:blank',
@@ -117,42 +128,76 @@ function clientWithFakeWorker() {
   return { client, results, errors, restore: () => { globalThis.Worker = originalWorker; } };
 }
 
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 test('only ONE render is in flight; rapid edits coalesce to the newest', () => {
   const { client, results, restore } = clientWithFakeWorker();
   try {
-    const a = client.request({ d: 1 }, {});
-    const b = client.request({ d: 2 }, {});
-    const c = client.request({ d: 3 }, {});
+    const a = client.request({ layers: [] }, {});
+    const b = client.request({ layers: [] }, {});
+    const c = client.request({ layers: [] }, {});
     const w = FakeWorker.last;
-    // Only the first went out; b and c collapsed into one pending request.
-    assert.equal(w.posted.filter((m) => m.type === 'render').length, 1);
+    assert.equal(w.renders().length, 1, 'only the first went out');
     assert.equal(client._state().inFlight, a);
     assert.equal(client._state().queued, c, 'the middle request was dropped');
+    assert.ok(b < c);
 
+    // A completes while C is still queued: it is SUPERSEDED and must not be
+    // shown or become sendable.
     w.reply(a);
-    assert.deepEqual(results, [a]);
-    assert.equal(w.posted.filter((m) => m.type === 'render').length, 2, 'queued request sent');
+    assert.deepEqual(results, [], 'superseded result discarded');
+    assert.equal(w.renders().length, 2, 'the queued render was issued');
     w.reply(c);
-    assert.deepEqual(results, [a, c], 'b never produced a result');
-    assert.equal(b < c, true);
+    assert.deepEqual(results, [c], 'only the newest frame is accepted');
   } finally { restore(); }
 });
 
-test('a stale result arriving after a newer one is discarded', () => {
+test('a late duplicate of an older render is discarded', () => {
   const { client, results, restore } = clientWithFakeWorker();
   try {
-    const a = client.request({}, {});
+    const a = client.request({ layers: [] }, {});
     const w = FakeWorker.last;
     w.reply(a);
-    const b = client.request({}, {});
+    const b = client.request({ layers: [] }, {});
     w.reply(b);
-    // A late duplicate of the older render must not overwrite the newer frame.
-    w.reply(a);
+    w.reply(a); // straggler
     assert.deepEqual(results, [a, b]);
   } finally { restore(); }
 });
 
-test('each asset is transferred to the worker exactly once', async () => {
+test('results from a previous epoch are discarded after a device switch', () => {
+  const { client, results, restore } = clientWithFakeWorker();
+  try {
+    const a = client.request({ layers: [] }, {});
+    const w = FakeWorker.last;
+    client.newEpoch();                       // e.g. the composer opened device B
+    w.reply(a, { epoch: 0 });                // A's render finishes late
+    assert.deepEqual(results, [], "device A's frame never reaches device B");
+    const b = client.request({ layers: [] }, {});
+    w.reply(b);
+    assert.deepEqual(results, [b]);
+  } finally { restore(); }
+});
+
+test('a render WAITS until every referenced asset is acknowledged', async () => {
+  const { client, results, restore } = clientWithFakeWorker();
+  try {
+    const doc = { layers: [{ assetId: 'sha-1' }] };
+    const id = client.request(doc, {});
+    // The render is held, so no worker has even been constructed yet.
+    assert.equal(FakeWorker.last, null, 'render held: the photo is not in the worker yet');
+    assert.equal(client._state().queued, id);
+
+    await client.addAsset('sha-1', {}, async () => ({ close() {} }));
+    await flush();
+    const w = FakeWorker.last;
+    assert.equal(w.renders().length, 1, 'render issued once the asset was acknowledged');
+    w.reply(id);
+    assert.deepEqual(results, [id]);
+  } finally { restore(); }
+});
+
+test('each asset is transferred exactly once; a failed decode stays retryable', async () => {
   const { client, restore } = clientWithFakeWorker();
   try {
     const decode = async () => ({ close() {} });
@@ -160,22 +205,30 @@ test('each asset is transferred to the worker exactly once', async () => {
     await client.addAsset('sha-1', {}, decode);
     await client.addAsset('sha-2', {}, decode);
     const w = FakeWorker.last;
-    const assetMsgs = w.posted.filter((m) => m.type === 'asset');
-    assert.deepEqual(assetMsgs.map((m) => m.assetId), ['sha-1', 'sha-2']);
-    assert.equal(client.hasAsset('sha-1'), true);
-    client.dropAssets([]);
-    assert.equal(client.hasAsset('sha-1'), false, 'dropped so a new document re-sends');
+    assert.deepEqual(
+      w.posted.filter((m) => m.type === 'asset').map((m) => m.assetId),
+      ['sha-1', 'sha-2'],
+    );
+
+    await assert.rejects(
+      client.addAsset('sha-3', {}, async () => { throw new Error('decode failed'); }),
+      /decode failed/,
+    );
+    assert.equal(client.hasAsset('sha-3'), false, 'a failed decode can be retried');
+
+    client.newEpoch();
+    assert.equal(client.hasAsset('sha-1'), false, 'a new session re-sends its assets');
   } finally { restore(); }
 });
 
 test('worker errors surface and do not wedge the queue', () => {
   const { client, results, errors, restore } = clientWithFakeWorker();
   try {
-    const a = client.request({}, {});
+    const a = client.request({ layers: [] }, {});
     const w = FakeWorker.last;
-    w.onmessage({ data: { type: 'render', id: a, ok: false, error: 'wasm exploded' } });
+    w.onmessage({ data: { type: 'render', id: a, epoch: 0, ok: false, error: 'wasm exploded' } });
     assert.deepEqual(errors, ['wasm exploded']);
-    const b = client.request({}, {});
+    const b = client.request({ layers: [] }, {});
     w.reply(b);
     assert.deepEqual(results, [b], 'the client kept working after the failure');
   } finally { restore(); }
