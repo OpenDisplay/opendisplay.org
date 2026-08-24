@@ -63,8 +63,9 @@ function openDb() {
 // STRICTLY fire-and-forget: callers never await it, writes never gate on it.
 let persistenceListener = null;
 
-/** Called ONCE if the browser refuses durable storage, so the UI can warn that
- *  devices, drafts and keys may be evicted (plan §9, M4). */
+/** Called ONCE if durable storage could not be CONFIRMED — denied, rejected,
+ *  unsupported or too slow to answer — so the UI can warn that devices, drafts
+ *  and keys may be evicted (plan §9, M4). */
 export function onPersistenceDenied(fn) {
   persistenceListener = fn;
 }
@@ -75,14 +76,17 @@ function requestPersistence() {
   try {
     // Timeboxed AND non-blocking: this can hang where no permission backend
     // exists, and no write may ever wait on it.
+    const UNCONFIRMED = Symbol('unconfirmed');
     Promise.race([
       Promise.resolve(navigator.storage?.persist?.()),
-      new Promise((r) => setTimeout(() => r(undefined), 3000)),
+      new Promise((r) => setTimeout(() => r(UNCONFIRMED), 3000)),
     ])
       .then((granted) => {
-        if (granted === false) persistenceListener?.();
+        // Anything other than an explicit `true` means durability was NOT
+        // established: denied, unsupported (undefined), or timed out.
+        if (granted !== true) persistenceListener?.();
       })
-      .catch(() => {});
+      .catch(() => persistenceListener?.());
   } catch {
     /* unsupported: proceed */
   }

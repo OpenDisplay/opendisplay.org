@@ -81,22 +81,31 @@ fi
 # (DESIGN_WEB_OD_APP_PLAN.md §2).
 APP_POINTER="${HTTPDOCS}/app/current-version.txt"
 APP_RELEASED="${HTTPDOCS}/app/RELEASED_VERSIONS"
-if [[ -f "$APP_POINTER" ]]; then
-  app_version="$(tr -d '[:space:]' < "$APP_POINTER")"
-  if [[ -z "$app_version" ]]; then
-    error "app/current-version.txt is empty"
-    exit 1
+SKIP_APP=false
+if [[ -d "${HTTPDOCS}/app" ]]; then
+  if [[ -f "$APP_POINTER" ]]; then
+    app_version="$(tr -d '[:space:]' < "$APP_POINTER")"
+    if [[ -z "$app_version" ]]; then
+      error "app/current-version.txt is empty"
+      exit 1
+    fi
+    if [[ ! -d "${HTTPDOCS}/app/${app_version}" ]]; then
+      error "app/current-version.txt names ${app_version}, but httpdocs/app/${app_version}/ does not exist"
+      exit 1
+    fi
+    if ! grep -qxF "$app_version" "$APP_RELEASED" 2>/dev/null; then
+      error "app/current-version.txt names ${app_version}, which is NOT listed in app/RELEASED_VERSIONS."
+      error "Add it in the release PR so CI treats ${app_version} as immutable, then re-run."
+      exit 1
+    fi
+    debug "app release preflight ok: ${app_version} is declared immutable"
+  else
+    # No pointer => the app is NOT released. Unreleased is not the same as
+    # unpublished: httpdocs deploys wholesale, so without this the unqualified
+    # app would go live anyway. Skip it and let the rest of the site deploy.
+    SKIP_APP=true
+    notice "app/ is not released (no current-version.txt) — excluded from this deploy"
   fi
-  if [[ ! -d "${HTTPDOCS}/app/${app_version}" ]]; then
-    error "app/current-version.txt names ${app_version}, but httpdocs/app/${app_version}/ does not exist"
-    exit 1
-  fi
-  if ! grep -qxF "$app_version" "$APP_RELEASED" 2>/dev/null; then
-    error "app/current-version.txt names ${app_version}, which is NOT listed in app/RELEASED_VERSIONS."
-    error "Add it in the release PR so CI treats ${app_version} as immutable, then re-run."
-    exit 1
-  fi
-  debug "app release preflight ok: ${app_version} is declared immutable"
 fi
 
 LOCAL_MANIFEST="$(mktemp)"
@@ -104,6 +113,10 @@ REMOTE_MANIFEST="$(mktemp)"
 trap 'rm -f "$LOCAL_MANIFEST" "$REMOTE_MANIFEST"' EXIT
 
 build_manifest "$HTTPDOCS" "$LOCAL_MANIFEST"
+if [[ "$SKIP_APP" == true ]]; then
+  grep -v ' app/' "$LOCAL_MANIFEST" > "${LOCAL_MANIFEST}.filtered" || true
+  mv "${LOCAL_MANIFEST}.filtered" "$LOCAL_MANIFEST"
+fi
 local_total=$(wc -l < "$LOCAL_MANIFEST" | tr -d ' ')
 
 if [[ "$local_total" -eq 0 ]]; then

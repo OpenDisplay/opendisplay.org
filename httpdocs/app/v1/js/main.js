@@ -95,9 +95,9 @@ async function boot() {
     // drafts and keys can be evicted under storage pressure.
     onPersistenceDenied(() => {
       showGate(
-        'This browser would not grant durable storage, so saved devices, drafts and '
-        + 'encryption keys may be evicted if disk space runs low. Export anything you '
-        + 'cannot lose.',
+        'Durable storage could not be confirmed in this browser, so saved devices, '
+        + 'drafts and encryption keys may be evicted if disk space runs low. Export '
+        + 'anything you cannot lose.',
       );
     });
 

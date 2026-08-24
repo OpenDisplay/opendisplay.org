@@ -299,22 +299,21 @@ function requestDither() {
         // A device switch during the load invalidates this asset entirely.
         if (!isCurrent(owner, ownerGen) || client.epoch() !== clientEpoch) return;
         if (!asset?.blob) {
-          // The photo is gone from storage. Drop the layer rather than leaving
-          // the render waiting on an asset that will never arrive.
-          throw new Error('A photo in this composition is missing from storage.');
+          throw new Error(
+            'A photo in this composition is missing from storage — delete that layer '
+            + 'or re-import the image to send this composition.',
+          );
         }
         await client.addAsset(assetId, asset.blob, (b) => decodeForPanel(b, current.panel));
       })
       .catch((err) => {
         if (!isCurrent(owner, ownerGen)) return;
+        // NEVER mutate the document here. A transient storage hiccup must not
+        // delete the user's photo layer (session.apply would also autosave the
+        // deletion), and even a permanently missing asset is the user's to
+        // remove. The dithered frame simply never becomes ready, so Send stays
+        // disabled and the error says what to do.
         reportError(err);
-        // Remove the unusable layer so the preview can complete.
-        const layerToDrop = doc().layers.find((l) => l.assetId === assetId);
-        if (layerToDrop) {
-          try {
-            session.apply(model.removeLayer(doc(), layerToDrop.id));
-          } catch { /* validation will have reported already */ }
-        }
       });
   }
   ditherPending = true;

@@ -97,7 +97,7 @@ const MATCHERS = [
     map: () => ({
       kind: 'error',
       title: 'The device rejected a partial screen update.',
-      hint: 'Send again — the app will fall back to a full-screen update.',
+      hint: 'Send again to retry with a full-screen update.',
     }),
   },
   {
@@ -105,7 +105,7 @@ const MATCHERS = [
     map: () => ({
       kind: 'error',
       title: 'The device disconnected during that operation.',
-      hint: 'Nothing was applied. Wake the tag and reconnect.',
+      hint: 'It may or may not have finished — check the panel, then wake the tag and reconnect.',
     }),
   },
   {

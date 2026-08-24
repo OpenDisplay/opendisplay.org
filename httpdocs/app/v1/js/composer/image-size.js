@@ -15,10 +15,40 @@
 
 const HEADER_BYTES = 64 * 1024; // enough for JPEG SOF markers after EXIF
 
-/** Sources beyond this are refused outright: a browser that ignores the
- *  resize options would allocate the whole thing before any fallback runs.
- *  (A 108 MP phone photo is ~108; 60 admits every mainstream camera.) */
+/** Sources beyond this are refused outright on browsers that DO honour the
+ *  resize options (the decode is bounded, so this is only a sanity limit). */
 export const MAX_SOURCE_MEGAPIXELS = 60;
+
+/** Much lower limit where resize options are ignored: there the FULL bitmap is
+ *  allocated before anything can check it, so ~12 MP (≈48 MB at 4 bytes/px) is
+ *  the most that can be attempted without risking the tab. */
+export const MAX_SOURCE_MEGAPIXELS_UNBOUNDED = 12;
+
+/**
+ * Does createImageBitmap actually honour resizeWidth/resizeHeight? WebKit
+ * (and therefore Bluefy on iOS) ignores them silently. Probed ONCE with a
+ * 2×2 fixture so the answer costs nothing.
+ */
+let resizeSupport = null;
+export async function supportsBitmapResize() {
+  if (resizeSupport !== null) return resizeSupport;
+  try {
+    const probe = new ImageData(new Uint8ClampedArray(2 * 2 * 4).fill(255), 2, 2);
+    const src = await createImageBitmap(probe);
+    const out = await createImageBitmap(src, { resizeWidth: 1, resizeHeight: 1 });
+    resizeSupport = out.width === 1 && out.height === 1;
+    src.close?.();
+    out.close?.();
+  } catch {
+    resizeSupport = false;
+  }
+  return resizeSupport;
+}
+
+/** Test seam. */
+export function _resetResizeSupport() {
+  resizeSupport = null;
+}
 
 export async function readImageSize(blob) {
   const head = new Uint8Array(await blob.slice(0, HEADER_BYTES).arrayBuffer());
@@ -107,14 +137,18 @@ export async function decodeBounded(blob, cap, { imageOrientation = 'from-image'
   if (!size || !(size.width > 0) || !(size.height > 0)) {
     throw new UnsupportedImageError();
   }
-  // Refuse absurd sources BEFORE decoding: on browsers that ignore the resize
-  // options the full bitmap is allocated first, and 100+ megapixels would take
-  // the tab down before any fallback could run.
-  const megapixels = (size.width * size.height) / 1e6;
-  if (megapixels > MAX_SOURCE_MEGAPIXELS) throw new ImageTooLargeError(Math.round(megapixels));
-
   const longest = Math.max(size.width, size.height);
-  if (longest <= cap) return createImageBitmap(blob, { imageOrientation });
+  const megapixels = (size.width * size.height) / 1e6;
+
+  // Refuse absurd sources BEFORE decoding. Where the browser ignores the
+  // resize options the full bitmap is allocated first, so the limit there must
+  // be far lower — closing it afterwards cannot prevent an out-of-memory.
+  const needsDownscale = longest > cap;
+  const bounded = !needsDownscale || await supportsBitmapResize();
+  const limit = bounded ? MAX_SOURCE_MEGAPIXELS : MAX_SOURCE_MEGAPIXELS_UNBOUNDED;
+  if (megapixels > limit) throw new ImageTooLargeError(Math.round(megapixels));
+
+  if (!needsDownscale) return createImageBitmap(blob, { imageOrientation });
 
   const scale = cap / longest;
   const targetW = Math.max(1, Math.round(size.width * scale));

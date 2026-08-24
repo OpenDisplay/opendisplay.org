@@ -5,9 +5,13 @@
 # RELEASE PROCEDURE for the Web OD App:
 #   1. Complete docs/webapp-hardware-qualification.md (the mandatory smoke set
 #      is blocking).
-#   2. In the release PR: add the version here AND create
-#      httpdocs/app/current-version.txt containing the same value.
+#   2. In the release PR: add the version here, create
+#      httpdocs/app/current-version.txt containing the same value, and add the
+#      "OD App" link back to the site footer in httpdocs/index.html.
 #   3. deploy-ftp-curl.sh refuses to publish a version named by
 #      current-version.txt that is not listed here, so the two cannot drift.
 #
 # Nothing is released yet: v1 is still under development and remains editable.
+# While this file lists no version, deploy-ftp-curl.sh EXCLUDES httpdocs/app/
+# from deployment entirely — unreleased must also mean unpublished, because
+# httpdocs deploys wholesale.

@@ -230,16 +230,36 @@ test('a site without the app deploys unaffected by the preflight', () => {
   assert.equal(runDeploy(fx).code, 0);
 });
 
-test('an UNRELEASED app (no version pointer) does not block the rest of the site', () => {
-  // This is the repository's current state: the app ships but is not released,
-  // so no current-version.txt exists and unrelated site deploys must proceed.
+test('an UNRELEASED app is NOT published, and does not block the rest of the site', () => {
+  // The repository's current state. Unreleased must mean unpublished: httpdocs
+  // deploys wholesale, so without the exclusion the unqualified app would go
+  // live regardless of the pointer.
   const fx = setup({
     'index.html': '<html>root</html>',
+    'js/site.js': 'site',
     'app/index.html': '<html>app</html>',
     'app/RELEASED_VERSIONS': '# nothing released yet\n',
     'app/v1/app.css': 'css',
   });
+  const { code, uploads, output } = runDeploy(fx);
+  assert.equal(code, 0, 'unrelated site files still deploy');
+  const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
+  assert.ok(names.some((n) => n.endsWith('js/site.js')), 'the site deployed');
+  assert.ok(!names.some((n) => n.includes('/app/')),
+    `the unreleased app must not be published: ${names.join(', ')}`);
+});
+
+test('once released, the app IS published', () => {
+  const fx = setup({
+    'index.html': '<html>root</html>',
+    'app/index.html': '<html>app</html>',
+    'app/current-version.txt': 'v1\n',
+    'app/RELEASED_VERSIONS': 'v1\n',
+    'app/v1/app.css': 'css',
+  });
   const { code, uploads } = runDeploy(fx);
   assert.equal(code, 0);
-  assert.ok(uploads.length > 0, 'the site still deploys');
+  const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
+  assert.ok(names.some((n) => n.includes('/app/v1/app.css')));
+  assert.ok(names.some((n) => n.endsWith('/app/index.html')));
 });
