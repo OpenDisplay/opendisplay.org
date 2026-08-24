@@ -89,13 +89,34 @@ function rebuildInkOptions() {
  * to a frame keeps dragging responsive on the largest supported panels.
  */
 let paintScheduled = false;
+
+/**
+ * Repaint after a change to what the PANEL shows.
+ *
+ * Invalidation is synchronous, before the frame this call was triggered by:
+ * everything else here may wait for an animation frame, but frame currency may
+ * not — a render completing in the meantime would otherwise be published as if
+ * it depicted the new document.
+ */
 function paint() {
-  // Invalidate SYNCHRONOUSLY, before the frame this call was triggered by.
-  // Everything else here may wait for an animation frame; frame currency may
-  // not — a render completing in the meantime would otherwise be published as
-  // if it depicted the new document.
   latestDither = null;
   dither?.invalidate();
+  schedulePaint();
+}
+
+/**
+ * Repaint WITHOUT invalidating the dithered frame.
+ *
+ * Selection and preview toggles change only what the editor shows, never what
+ * the panel would receive. Routing them through paint() would throw away a
+ * correct in-flight render — on a large panel, clicking around while one is
+ * running could starve it indefinitely and keep Send disabled.
+ */
+function repaintOnly() {
+  schedulePaint();
+}
+
+function schedulePaint() {
   if (paintScheduled) return;
   paintScheduled = true;
   requestAnimationFrame(() => {
@@ -106,11 +127,9 @@ function paint() {
 
 /** Force a synchronous repaint (tests and teardown paths). */
 function paintNow() {
-  // The dithered frame belonged to the PREVIOUS document state. paint()
-  // already dropped it and invalidated the worker's outstanding renders; this
-  // repeats it for the direct paintNow() callers (teardown, tests).
-  latestDither = null;
-  dither?.invalidate();
+  // NOTE: invalidation belongs to paint(), not here — repaintOnly() lands here
+  // too and must leave a correct in-flight render alone. requestDither() is
+  // debounced and idempotent, so asking again costs nothing.
   requestDither();
 
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
@@ -505,7 +524,7 @@ function wire() {
   $('photoFile').accept = SUPPORTED_IMAGE_TYPES.join(',');
 
   drawTool = tools.makeDrawTool({ color: 0, width: 0.012 });
-  selectTool = tools.makeSelectTool({ onSelect: () => paint() });
+  selectTool = tools.makeSelectTool({ onSelect: () => repaintOnly() });
   activeTool = selectTool;
 
   const setTool = (tool, btnId) => {
@@ -601,8 +620,9 @@ function wire() {
   $('ditherMode').addEventListener('change', ditherOptionChanged);
   $('useMeasured').addEventListener('change', ditherOptionChanged);
   $('showDithered').addEventListener('change', () => {
+    // Showing or hiding the dithered preview changes the editor's view only.
     if ($('showDithered').checked) requestDither();
-    else paint();
+    else repaintOnly();
   });
   $('sendBtn').addEventListener('click', () => {
     sendToDisplay().catch((err) => reportError(err));

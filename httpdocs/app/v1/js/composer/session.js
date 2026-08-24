@@ -140,8 +140,11 @@ export function createSession({
         // must fail flush(), or a caller that flushes-then-releases would
         // discard the only good copy of the edits.
         session.saveFailure = err;
-        // Let a retry re-queue: nothing is in flight for these edits any more.
-        session.savingEdits = session.savedEdits;
+        // Let a retry re-queue — but only if WE still own the advertised
+        // value. A newer snapshot may already have claimed savingEdits while
+        // this one was writing; clearing it then would let a third flush
+        // duplicate that newer write and burn a revision.
+        if (session.savingEdits === snapshot.edits) session.savingEdits = session.savedEdits;
         onSaveError?.(err);
         throw err;
       }
@@ -284,6 +287,11 @@ export function createSession({
         if (session.released || !isDirty()) return;
         await flushSave(snapshotNow());
       }
+      // Exhausting the guard means edits kept arriving faster than storage
+      // could settle. Resolving here would tell openComposer the session is
+      // safe to release, which is exactly the data loss the loop exists to
+      // prevent — so fail, and let the caller keep the session.
+      throw new Error('could not finish saving — edits are still arriving; try again in a moment');
     },
 
     /** Release owned resources; the session must not be used afterwards. */

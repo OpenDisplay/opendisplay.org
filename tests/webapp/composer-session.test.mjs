@@ -589,3 +589,61 @@ test('a failed save leaves the session dirty so a retry re-writes', async () => 
   assert.equal(db.get('d').doc.layers.length, 1, 'the retry wrote it');
   assert.equal(s.isDirty(), false);
 });
+
+test('flush REJECTS rather than reporting success while still dirty', async () => {
+  const db = new Map();
+  let writes = 0;
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev !== expectedRev) throw new Error('conflict');
+      writes++;
+      // An edit lands during every write of the flush, so the catch-up loop
+      // can never win. Bounded: otherwise the autosave timer would keep
+      // feeding itself after the assertion and the test would never idle.
+      if (writes <= 16) s.apply(model.addLayer(s.doc(), model.textLayer({ text: `w${writes}` })));
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'first' })));
+  // Resolving here would tell openComposer it is safe to release a session
+  // whose newest edits are not on disk.
+  await assert.rejects(s.flush(), /still arriving/);
+  assert.equal(s.isDirty(), true, 'the caller can see there is work left');
+  s.release();   // the real caller keeps the session; this test just stops it
+});
+
+test('a failed write does not release ownership claimed by a newer one', async () => {
+  const db = new Map();
+  const writes = [];
+  let gate;
+  const store = {
+    putDraft: async (d) => {
+      writes.push(d.doc.layers.length);
+      if (writes.length === 1) { await gate; throw new Error('quota exceeded'); }
+      db.set(d.id, { ...d, rev: (db.get(d.id)?.rev ?? 0) + 1 });
+      return db.get(d.id).rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  let open_;
+  gate = new Promise((r) => { open_ = r; });
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {}, onSaveError: () => {} });
+
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'one' })));
+  const first = s.flush().catch((e) => e.message);      // will fail
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'two' })));
+  const second = s.flush();                             // claims edits=2
+  const third = s.flush();                              // must NOT duplicate it
+  open_();
+  await Promise.all([first, second, third]);
+
+  assert.deepEqual(writes, [1, 2], 'the two-layer document was written once, not twice');
+  assert.equal(db.get('d').rev, 1, 'no phantom revision for another tab to collide with');
+});
