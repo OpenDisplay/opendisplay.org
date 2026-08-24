@@ -470,3 +470,53 @@ test('reconcile: an unchanged panel is a no-op with no reported changes', () => 
   assert.deepEqual(changes, []);
   assert.deepEqual(fixed.layers.map((l) => l.color), [3, 0]);
 });
+
+// --- dragging strokes (they have no origin, so they translate) ---
+
+test('a stroke can be dragged: every point moves by the same delta', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.strokeLayer({
+    points: [{ x: 0.2, y: 0.2 }, { x: 0.4, y: 0.3 }, { x: 0.3, y: 0.5 }], width: 0.02,
+  }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+
+  // Grab the line itself (segment hit-testing), then drag.
+  ({ doc } = t.onDown(doc, { x: 0.3, y: 0.25 }, size));
+  assert.equal(t.selectedId(), doc.layers[0].id, 'the stroke was selected');
+  ({ doc } = t.onMove(doc, { x: 0.4, y: 0.35 }, size));
+
+  const moved = doc.layers[0].points;
+  assert.deepEqual(moved.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]),
+    [[0.3, 0.3], [0.5, 0.4], [0.4, 0.6]], 'translated by exactly +0.1,+0.1');
+  assert.equal(t.onUp(doc).commit, true, 'the move is one undo step');
+});
+
+test('dragging a stroke keeps the whole polyline on the artboard', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.strokeLayer({
+    points: [{ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.5 }],
+  }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+  ({ doc } = t.onDown(doc, { x: 0.3, y: 0.3 }, size));
+  ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));   // yank far off-canvas
+  const pts = doc.layers[0].points;
+  assert.ok(pts.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1),
+    `all points on canvas: ${JSON.stringify(pts)}`);
+  // The furthest point lands exactly on the edge, preserving the shape.
+  assert.equal(+Math.max(...pts.map((p) => p.x)).toFixed(3), 1);
+  assert.equal(+(pts[1].x - pts[0].x).toFixed(3), 0.4, 'shape preserved');
+});
+
+test('a stroke drag that cannot move (already at the edge) does not commit', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.strokeLayer({
+    points: [{ x: 0, y: 0 }, { x: 1, y: 1 }],   // spans the whole artboard
+  }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
+  ({ doc } = t.onMove(doc, { x: 0.9, y: 0.9 }, size));
+  assert.equal(t.onUp(doc).commit, false, 'no movement was possible, so no history entry');
+});

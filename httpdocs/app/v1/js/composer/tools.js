@@ -69,6 +69,7 @@ export function makeSelectTool({ onSelect } = {}) {
   let selectedId = null;
   let dragId = null;
   let grab = null;
+  let strokeDrag = null; // {origin, points} — strokes move by translation
   let moved = false;
   return {
     name: 'select',
@@ -77,16 +78,43 @@ export function makeSelectTool({ onSelect } = {}) {
       selectedId = hit;
       dragId = hit;
       moved = false;
+      strokeDrag = null;
+      grab = null;
       onSelect?.(selectedId);
       if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
-      grab = { dx: pt.x - (layer.x ?? 0), dy: pt.y - (layer.y ?? 0) };
+      if (layer.type === 'stroke') {
+        // A stroke has no origin — remember where the drag started and the
+        // points it started from, then translate the whole polyline.
+        strokeDrag = { origin: pt, points: layer.points.map((p) => ({ ...p })) };
+      } else {
+        grab = { dx: pt.x - (layer.x ?? 0), dy: pt.y - (layer.y ?? 0) };
+      }
       return { doc, commit: false };
     },
     onMove(doc, pt, size) {
-      if (!dragId || !grab) return { doc, commit: false };
+      if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
-      if (!layer || layer.type === 'stroke') return { doc, commit: false };
+      if (!layer) return { doc, commit: false };
+
+      if (layer.type === 'stroke') {
+        if (!strokeDrag) return { doc, commit: false };
+        const xs = strokeDrag.points.map((p) => p.x);
+        const ys = strokeDrag.points.map((p) => p.y);
+        // Clamp the translation so the whole polyline stays on the artboard.
+        const dx = Math.max(-Math.min(...xs), Math.min(1 - Math.max(...xs), pt.x - strokeDrag.origin.x));
+        const dy = Math.max(-Math.min(...ys), Math.min(1 - Math.max(...ys), pt.y - strokeDrag.origin.y));
+        if (dx === 0 && dy === 0) return { doc, commit: false };
+        moved = true;
+        return {
+          doc: updateLayer(doc, dragId, {
+            points: strokeDrag.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+          }),
+          commit: false,
+        };
+      }
+
+      if (!grab) return { doc, commit: false };
       const next = clampOrigin(layer, pt.x - grab.dx, pt.y - grab.dy, size);
       if (next.x === layer.x && next.y === layer.y) return { doc, commit: false };
       moved = true;
@@ -96,6 +124,7 @@ export function makeSelectTool({ onSelect } = {}) {
       const didMove = moved;
       dragId = null;
       grab = null;
+      strokeDrag = null;
       moved = false;
       // Commit only if the layer actually moved: a plain click selects
       // without polluting the undo stack.
