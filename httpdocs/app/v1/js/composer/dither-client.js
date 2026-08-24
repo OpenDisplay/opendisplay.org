@@ -44,11 +44,21 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       pump();
     };
     worker.onerror = (ev) => {
+      // A fatal worker error leaves it unusable: posting the next render to a
+      // dead worker would wedge the composer. Tear it down and forget the
+      // assets it held so the next request rehydrates a fresh one.
       inFlight = null;
+      queued = null;
+      teardownWorker();
       onError?.(new Error(ev.message ?? 'dither worker failed'));
-      pump();
     };
     return worker;
+  }
+
+  function teardownWorker() {
+    worker?.terminate();
+    worker = null;
+    assetState.clear();
   }
 
   function assetsReady(doc) {
@@ -115,15 +125,16 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       epoch += 1;
       queued = null;
       inFlight = null;
-      assetState.clear();
-      worker?.postMessage({ type: 'reset' });
+      // TERMINATE rather than reset: an in-flight asset-ack from the old
+      // session could otherwise arrive after the reset and mark a same-hash
+      // asset "ready" in the new session, whose bitmap the worker no longer
+      // holds — wedging every later render. A fresh worker cannot lie.
+      teardownWorker();
       return epoch;
     },
 
     terminate() {
-      worker?.terminate();
-      worker = null;
-      assetState.clear();
+      teardownWorker();
       inFlight = null;
       queued = null;
     },

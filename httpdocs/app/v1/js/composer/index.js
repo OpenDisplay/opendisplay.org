@@ -117,11 +117,30 @@ function toast(msg, kind = 'info') {
 
 // --- photo handling -------------------------------------------------------
 
-/** Decode at FULL resolution — used for the worker (and therefore the sent
- *  frame). The 1600px proxy exists only to keep interactive editing cheap; a
- *  1872×1404 panel would otherwise be fed an upscaled proxy. */
-function decodeFull(blob) {
-  return createImageBitmap(blob, { imageOrientation: 'from-image' });
+/**
+ * Decode a bitmap for the WORKER (and therefore the sent frame), bounded by
+ * what the panel can actually show rather than by the source resolution.
+ *
+ * The editing proxy (1600px) can be too SMALL for a large panel, but decoding
+ * a modern 48-megapixel phone photo at full size would cost hundreds of MB per
+ * asset on a phone. The most detail any layer can use is its box in panel
+ * pixels, so cap there (×2 for a little headroom on `cover` crops) and never
+ * upscale.
+ */
+async function decodeForPanel(blob, panel) {
+  const { width, height } = model.artboardSize(panel);
+  const cap = Math.max(1, Math.max(width, height) * 2);
+  const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  const longest = Math.max(full.width, full.height);
+  if (longest <= cap) return full;
+  const scale = cap / longest;
+  const scaled = await createImageBitmap(full, {
+    resizeWidth: Math.max(1, Math.round(full.width * scale)),
+    resizeHeight: Math.max(1, Math.round(full.height * scale)),
+    resizeQuality: 'high',
+  });
+  full.close?.();
+  return scaled;
 }
 
 /** Decode a ≤PROXY_MAX_PX editing proxy; originals stay in the asset store. */
@@ -297,7 +316,7 @@ function requestDither() {
         if (!asset?.blob) return;
         // A device switch during the load invalidates this asset entirely.
         if (!isCurrent(owner, ownerGen) || client.epoch() !== clientEpoch) return;
-        await client.addAsset(assetId, asset.blob, decodeFull);
+        await client.addAsset(assetId, asset.blob, (b) => decodeForPanel(b, current.panel));
       })
       .catch((err) => {
         if (isCurrent(owner, ownerGen)) {
@@ -311,9 +330,9 @@ function requestDither() {
 
 /** Build the send canvas: dither indices painted back as EXACT ideal-palette
  *  RGB, which is the only form the shared encoder classifies losslessly. */
-function buildSendCanvas() {
-  if (!latestDither) throw new Error('no dithered frame is ready');
-  const { width, height, indices } = latestDither;
+function buildSendCanvas(frame = latestDither) {
+  if (!frame) throw new Error('no dithered frame is ready');
+  const { width, height, indices } = frame;
   const panel = doc().panel;
   const expected = model.artboardSize(panel);
   if (width !== expected.width || height !== expected.height) {
@@ -329,8 +348,17 @@ function buildSendCanvas() {
 }
 
 async function sendToDisplay() {
-  const openRecord = session?.session?.device;
-  if (!openRecord) return;
+  // Capture the session AND the exact frame SYNCHRONOUSLY: everything below
+  // awaits, and the user can open another composer meanwhile. Two identical
+  // tags share a panel signature, so signature checks alone cannot tell them
+  // apart — only object identity can.
+  const owner = session;
+  const ownerGen = owner?.generation();
+  const frame = latestDither;
+  const openRecord = owner?.session?.device;
+  if (!openRecord || !frame) return;
+  const stillOurs = () =>
+    session === owner && owner.generation() === ownerGen && latestDither === frame;
   sending = true;
   updateSendControls();
   const progress = $('sendProgress');
@@ -340,6 +368,9 @@ async function sendToDisplay() {
     // Re-read the device record: connecting refreshes it, and the composer
     // session survives navigation, so the in-memory copy can be stale.
     const record = await store.getDevice(openRecord.recordId);
+    if (!stillOurs()) {
+      throw new Error('the composition changed while preparing to send — nothing was sent');
+    }
     if (!record) throw new Error('this device is no longer saved');
     if (record.bleId !== adapter.connectedBleId()) {
       throw new Error('the connected device is not the one this composition is for');
@@ -350,12 +381,13 @@ async function sendToDisplay() {
       rotationQuarterTurns: record.rotationQuarterTurns ?? 0,
       colorScheme: record.colorScheme, panelIcType: record.panelIcType,
     });
-    if (!latestDither || latestDither.signature !== wanted) {
+    if (frame.signature !== wanted) {
       throw new Error('the panel changed since this preview was rendered — reopen the composer');
     }
-    const { canvas } = buildSendCanvas();
+    // Build from the CAPTURED frame, never from whatever is current now.
+    const { canvas } = buildSendCanvas(frame);
     toast('Uploading…');
-    await adapter.sendCanvas(canvas, record.colorScheme, {
+    const result = await adapter.sendCanvas(canvas, record.colorScheme, {
       rotationQuarterTurns: record.rotationQuarterTurns ?? 0,
       originalWidth: record.width,
       originalHeight: record.height,
@@ -367,9 +399,11 @@ async function sendToDisplay() {
       },
       onTransferComplete: () => toast('Transfer complete — the panel is refreshing…'),
     });
-    // sendCanvas resolves only after the panel's refresh-complete frame, which
-    // is what the shared library actually reports.
-    toast('Done — the panel has refreshed.');
+    // sendCanvas resolves only after the panel's refresh-complete frame —
+    // unless the library found nothing to send at all.
+    toast(result.skipped
+      ? 'Already up to date — the panel image is unchanged.'
+      : 'Done — the panel has refreshed.');
   } catch (err) {
     toast(`Send failed: ${err.message ?? err}`, 'error');
   } finally {

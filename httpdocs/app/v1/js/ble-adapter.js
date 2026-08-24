@@ -449,6 +449,9 @@ export async function readDeviceInfo({ storedKey = null } = {}) {
  * `onTransferComplete` fires earlier, at the end of the data phase.
  * (`onCommandAck` is not usable for this: the library invokes it only for
  * command 0x63 and passes no arguments.)
+ *
+ * @returns {Promise<{skipped: boolean, refreshed: boolean}>} `skipped` is true
+ *   when the library found no pixel changes and sent nothing at all.
  */
 export async function sendCanvas(canvas, colorScheme, {
   rotationQuarterTurns = 0,
@@ -483,6 +486,11 @@ export async function sendCanvas(canvas, colorScheme, {
     const gen = generation;
     const inst = instance();
     let transferAnnounced = false;
+    // The library can finish WITHOUT sending anything: a mono partial update
+    // whose region is unchanged reports "No pixel changes — upload skipped"
+    // and calls onComplete(true) immediately. Claiming "the panel refreshed"
+    // there would be a lie.
+    let skipped = false;
     const done = new Promise((resolve, reject) => {
       inst.sendCanvasToDisplay(canvas, colorScheme, {
         rotation: rotationQuarterTurns,
@@ -496,10 +504,15 @@ export async function sendCanvas(canvas, colorScheme, {
           onProgress?.(sent, total);
         },
         onStatusChange: (message) => {
-          if (generation !== gen || transferAnnounced) return;
+          if (generation !== gen) return;
+          const text = String(message);
+          if (/upload skipped/i.test(text)) {
+            skipped = true;
+            return;
+          }
           // The library says "Upload complete (Ns), refreshing display..." at
           // the data-phase boundary; that is the only public signal for it.
-          if (/refreshing display/i.test(String(message))) {
+          if (!transferAnnounced && /refreshing display/i.test(text)) {
             transferAnnounced = true;
             onTransferComplete?.();
           }
@@ -512,7 +525,7 @@ export async function sendCanvas(canvas, colorScheme, {
     });
     await withDeadline(done, DEADLINES.send, 'Image upload');
     if (generation !== gen) throw new StaleInstanceError();
-    return { refreshed: true };
+    return skipped ? { skipped: true, refreshed: false } : { skipped: false, refreshed: true };
   });
 }
 

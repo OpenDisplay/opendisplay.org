@@ -67,7 +67,9 @@ test('palette ORDER matches the ideal wire palettes the paint-back assumes', asy
   // A 2x1 probe is enough: what matters is the palette the library REPORTS,
   // since paint-back maps index -> IDEAL_PALETTES[scheme][index].
   const probe = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]);
-  for (const scheme of [0, 1, 2, 3, 4, 6, 8]) {
+  // EVERY supported scheme, including 5 (4-grey), whose palette runs
+  // dark->light and is the one most likely to be reordered upstream.
+  for (const scheme of [0, 1, 2, 3, 4, 5, 6, 8]) {
     const res = lib.ditherImage({ data: probe, width: 2, height: 1 }, scheme, { mode: 0 });
     const got = res.palette.map((c) => [c.r, c.g, c.b]);
     assert.deepEqual(got, IDEAL_PALETTES[scheme],

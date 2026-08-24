@@ -522,7 +522,24 @@ test('sendCanvas resolves on REFRESH complete and reports transfer separately', 
 
   // onComplete only fires after refresh-complete (0x73) in the real library.
   captured.onComplete(true, null);
-  assert.deepEqual(await p, { refreshed: true });
+  assert.deepEqual(await p, { skipped: false, refreshed: true });
+});
+
+test('a no-change partial update reports SKIPPED, not "refreshed"', async () => {
+  let captured = null;
+  installBridge({ sendCanvasToDisplay: async (c, s, opts) => { captured = opts; } });
+  await adapter.connectViaChooser('OD');
+  const events = [];
+  const p = adapter.sendCanvas(fakeCanvas(10, 10), 0, {
+    originalWidth: 10, originalHeight: 10,
+    onTransferComplete: () => events.push('transfer'),
+  });
+  await new Promise((r) => setTimeout(r, 5));
+  // The library skips the upload entirely and completes immediately.
+  captured.onStatusChange('No pixel changes — upload skipped');
+  captured.onComplete(true, null);
+  assert.deepEqual(await p, { skipped: true, refreshed: false });
+  assert.deepEqual(events, [], 'nothing was transferred, so nothing is announced');
 });
 
 test('sendCanvas surfaces a device-side failure', async () => {

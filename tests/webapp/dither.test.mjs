@@ -165,17 +165,54 @@ test('a late duplicate of an older render is discarded', () => {
   } finally { restore(); }
 });
 
-test('results from a previous epoch are discarded after a device switch', () => {
+test('a device switch TERMINATES the worker so no stale ack or frame survives', async () => {
   const { client, results, restore } = clientWithFakeWorker();
   try {
-    const a = client.request({ layers: [] }, {});
-    const w = FakeWorker.last;
-    client.newEpoch();                       // e.g. the composer opened device B
-    w.reply(a, { epoch: 0 });                // A's render finishes late
+    await client.addAsset('sha-1', {}, async () => ({ close() {} }));
+    await flush();
+    const a = client.request({ layers: [{ assetId: 'sha-1' }] }, {});
+    const oldWorker = FakeWorker.last;
+    assert.equal(client.assetReady('sha-1'), true);
+
+    client.newEpoch();                      // e.g. the composer opened device B
+    assert.equal(oldWorker.terminated, true, 'the old worker is torn down');
+    assert.equal(client.hasAsset('sha-1'), false,
+      'its assets are forgotten, so a stale ack cannot mark them ready');
+
+    // A late result from the dead worker must be ignored entirely.
+    oldWorker.onmessage({ data: { type: 'render', id: a, epoch: 0, ok: true, width: 1, height: 1 } });
     assert.deepEqual(results, [], "device A's frame never reaches device B");
-    const b = client.request({ layers: [] }, {});
-    w.reply(b);
+
+    // And a same-hash asset in the NEW session is re-sent to a fresh worker.
+    await client.addAsset('sha-1', {}, async () => ({ close() {} }));
+    await flush();
+    assert.notEqual(FakeWorker.last, oldWorker, 'a fresh worker was created');
+    const b = client.request({ layers: [{ assetId: 'sha-1' }] }, {});
+    FakeWorker.last.reply(b);
     assert.deepEqual(results, [b]);
+  } finally { restore(); }
+});
+
+test('a fatal worker error tears the worker down instead of wedging the queue', async () => {
+  const { client, results, errors, restore } = clientWithFakeWorker();
+  try {
+    await client.addAsset('sha-1', {}, async () => ({ close() {} }));
+    await flush();
+    client.request({ layers: [{ assetId: 'sha-1' }] }, {});
+    const dead = FakeWorker.last;
+
+    dead.onerror({ message: 'wasm out of memory' });
+    assert.deepEqual(errors, ['wasm out of memory']);
+    assert.equal(dead.terminated, true, 'the dead worker is not reused');
+    assert.equal(client.hasAsset('sha-1'), false, 'assets must be rehydrated');
+
+    // Recovery: re-send the asset, render on a fresh worker.
+    await client.addAsset('sha-1', {}, async () => ({ close() {} }));
+    await flush();
+    const id = client.request({ layers: [{ assetId: 'sha-1' }] }, {});
+    assert.notEqual(FakeWorker.last, dead);
+    FakeWorker.last.reply(id);
+    assert.deepEqual(results, [id]);
   } finally { restore(); }
 });
 
