@@ -36,6 +36,31 @@ function rgbCss([r, g, b]) {
   return `rgb(${r},${g},${b})`;
 }
 
+/** Relative luminance 0..1 of a palette entry. */
+function luma([r, g, b]) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Darkest ink in a scheme — index 0 in every supported palette. */
+export function darkestIndex() {
+  return 0;
+}
+
+/**
+ * Lightest ink. NOT always index 1: the grey schemes run dark→light, so white
+ * is the LAST entry there (index 1 is dark grey, which would make a useless
+ * QR quiet zone).
+ */
+export function lightestIndex(scheme) {
+  const p = paletteFor(scheme);
+  let best = 0;
+  for (let i = 1; i < p.length; i++) if (luma(p[i]) > luma(p[best])) best = i;
+  return best;
+}
+
+/** Minimum module-vs-quiet-zone luminance gap for a scannable QR. */
+export const QR_MIN_CONTRAST = 0.4;
+
 function paletteColor(scheme, index) {
   const p = paletteFor(scheme);
   const i = index | 0;
@@ -198,8 +223,8 @@ export function qrGeometry(layer, W, H) {
     // unscannable block, so fail loudly instead.
     throw new Error(
       `QR needs ${totalModules}px minimum (incl. quiet zone) but the panel is ` +
-      `${Math.min(W, H)}px on its short side — shorten the text or raise the ` +
-      'error-correction level',
+      `${Math.min(W, H)}px on its short side — shorten the text or LOWER the ` +
+      'error-correction level (higher ECC needs a bigger code)',
     );
   }
   const modulePx = Math.min(Math.max(1, Math.floor(requestedPx / totalModules)), maxModulePx);
@@ -218,12 +243,32 @@ export function qrGeometry(layer, W, H) {
   };
 }
 
+/**
+ * A QR only scans if its modules contrast with the quiet zone. White-on-white
+ * (and yellow-on-white) are silently unscannable, so reject them outright.
+ */
+export function assertQrContrast(layer, scheme) {
+  const palette = paletteFor(scheme);
+  const ink = palette[layer.color | 0];
+  if (!ink) throw new Error(`palette index ${layer.color} is not valid for colour scheme ${scheme}`);
+  const quiet = palette[lightestIndex(scheme)];
+  const delta = Math.abs(luma(quiet) - luma(ink));
+  if (delta < QR_MIN_CONTRAST) {
+    throw new Error(
+      `QR ink is too light to scan against its quiet zone (contrast ${delta.toFixed(2)} ` +
+      `< ${QR_MIN_CONTRAST}) — use a darker colour`,
+    );
+  }
+}
+
 function drawQr(ctx, layer, scheme, W, H) {
   const g = qrGeometry(layer, W, H);
+  assertQrContrast(layer, scheme);
   ctx.save();
   // The quiet zone must be light and OPAQUE (never transparent) or the code
-  // will not scan.
-  ctx.fillStyle = paletteColor(scheme, 1);
+  // will not scan. Index 1 is NOT always the lightest ink — on the grey
+  // schemes it is dark grey.
+  ctx.fillStyle = paletteColor(scheme, lightestIndex(scheme));
   ctx.fillRect(g.x, g.y, g.blockPx, g.blockPx);
   ctx.fillStyle = paletteColor(scheme, layer.color);
   for (let r = 0; r < g.size; r++) {
@@ -234,6 +279,38 @@ function drawQr(ctx, layer, scheme, W, H) {
     }
   }
   ctx.restore();
+}
+
+/**
+ * Validate a document WITHOUT drawing it: every QR must fit its artboard and
+ * contrast with its quiet zone, and every ink index must exist in the panel's
+ * palette. Sessions run this BEFORE committing an edit, so an invalid layer
+ * can never enter the history or be autosaved.
+ * @throws {Error} describing the first problem found
+ */
+export function validateDocument(doc) {
+  const { width: W, height: H } = artboardSize(doc.panel);
+  const scheme = doc.panel.colorScheme;
+  const palette = paletteFor(scheme);
+  const checkInk = (index, what) => {
+    if (!(index >= 0 && index < palette.length)) {
+      throw new Error(`${what}: colour ${index} is not valid for scheme ${scheme}`);
+    }
+  };
+  checkInk(doc.background ?? 1, 'background');
+  for (const layer of doc.layers) {
+    switch (layer.type) {
+      case 'qr':
+        checkInk(layer.color, 'QR');
+        assertQrContrast(layer, scheme);
+        qrGeometry(layer, W, H); // throws when it cannot fit
+        break;
+      case 'text': checkInk(layer.color, 'text'); break;
+      case 'stroke': checkInk(layer.color, 'stroke'); break;
+      default: break;
+    }
+  }
+  return doc;
 }
 
 /**

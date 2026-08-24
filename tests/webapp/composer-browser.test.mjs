@@ -89,6 +89,13 @@ window.resultPromise = (async () => {
   ok('scheme7Rejected', threw);
 
   // --- assets: content-addressing + reachability GC ---
+  // Drafts are only accepted for devices that still exist (cross-tab orphan
+  // guard), so create the owning record first.
+  const dev = await store.createDevice({
+    bleId: 'ble-c', name: 'OD-C', width: 61, height: 37,
+    colorScheme: 4, resolutionConfirmed: true,
+  });
+  const REC = dev.recordId;
   const blobA = new Blob([new Uint8Array([1,2,3,4])], { type: 'image/png' });
   const blobADup = new Blob([new Uint8Array([1,2,3,4])], { type: 'image/png' });
   const blobB = new Blob([new Uint8Array([9,9,9,9])], { type: 'image/png' });
@@ -103,8 +110,8 @@ window.resultPromise = (async () => {
   let d2 = model.createDocument(DEVICE);
   d2 = model.addLayer(d2, model.photoLayer({ assetId: idA }));
   d2 = model.addLayer(d2, model.photoLayer({ assetId: idB }));
-  await store.putDraft(model.toDraft(d1, { id: 'dr-1', recordId: 'rec-c' }));
-  await store.putDraft(model.toDraft(d2, { id: 'dr-2', recordId: 'rec-c' }));
+  await store.putDraft(model.toDraft(d1, { id: 'dr-1', recordId: REC }));
+  await store.putDraft(model.toDraft(d2, { id: 'dr-2', recordId: REC }));
 
   ok('sweepKeepsLive', (await store.sweepAssets(new Set(), { graceMs: 0 })) === 0
      && !!(await store.getAsset(idA)) && !!(await store.getAsset(idB)));
@@ -129,6 +136,14 @@ window.resultPromise = (async () => {
   const live = await store.putAsset(new Blob([new Uint8Array([5,5])], { type: 'image/png' }));
   ok('extraLiveProtected', (await store.sweepAssets(new Set([live]), { graceMs: 0 })) === 0
      && !!(await store.getAsset(live)));
+
+  // Re-importing identical content refreshes its claim, so a concurrent sweep
+  // cannot reclaim it during the asset->draft window.
+  const oldish = await store.putAsset(new Blob([new Uint8Array([4,4,4,4])], { type: 'image/png' }));
+  await store.putAsset(new Blob([new Uint8Array([4,4,4,4])], { type: 'image/png' })); // dedup hit
+  ok('reimportRefreshesClaim',
+     (await store.sweepAssets()) === 0 && !!(await store.getAsset(oldish)));
+  await store.sweepAssets(new Set(), { graceMs: 0 });
 
   // --- fidelity: extracted QR core vs the shipped MIT library ---
   const qrmod = await import('/app/v1/js/composer/qr.js');
@@ -242,6 +257,15 @@ window.resultPromise = (async () => {
   const saved = await store.getDraft('dr-1');
   const restored = model.fromDraft(saved);
   ok('draftRoundTrip', restored.layers.length === 1 && restored.layers[0].assetId === idA);
+
+  // A draft for a FORGOTTEN device must be refused, not resurrected — run
+  // last, since forgetting cascades the drafts other checks rely on.
+  await store.forgetDevice(REC);
+  let orphanRefused = false;
+  try {
+    await store.putDraft(model.toDraft(d1, { id: 'dr-1', recordId: REC }));
+  } catch { orphanRefused = true; }
+  ok('orphanDraftRefused', orphanRefused);
 
   out.ok = Object.values(out.checks).every(Boolean);
   return out;

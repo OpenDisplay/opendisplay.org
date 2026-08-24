@@ -23,7 +23,13 @@ export const AUTOSAVE_MS = 500;
 // owner object itself (see isCurrent() in composer/index.js).
 let nextSessionId = 1;
 
-export function createSession({ device, draftId, document: doc, store, onChange, onSaveError }) {
+export function createSession({
+  device, draftId, document: doc, store, onChange, onSaveError,
+  // Throws for a document that cannot be rendered (e.g. a QR that does not
+  // fit). Commits are pre-flighted with it so an invalid layer can never
+  // enter the history or be autosaved.
+  validate = () => {},
+}) {
   const session = {
     id: nextSessionId++,
     generation: 0,
@@ -114,16 +120,27 @@ export function createSession({ device, draftId, document: doc, store, onChange,
      */
     endGesture(next, commit) {
       if (commit && next !== session.gestureBase) {
-        session.history = model.commit(session.history, next);
-        scheduleSave();
+        try {
+          validate(next);
+          session.history = model.commit(session.history, next);
+          scheduleSave();
+        } catch (err) {
+          // Invalid result: drop the whole gesture, keep the committed state.
+          session.working = null;
+          session.gestureBase = null;
+          notify();
+          throw err;
+        }
       }
       session.working = null;
       session.gestureBase = null;
       notify();
     },
 
-    /** Discrete edit outside a gesture (place text/QR/photo, delete layer). */
+    /** Discrete edit outside a gesture (place text/QR/photo, delete layer).
+     *  Rejected edits leave history, the draft and the view untouched. */
     apply(next) {
+      validate(next); // throws before anything is committed or scheduled
       session.history = model.commit(session.history, next);
       session.working = null;
       scheduleSave();

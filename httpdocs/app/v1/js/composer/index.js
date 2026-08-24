@@ -11,7 +11,7 @@
  */
 import * as model from './model.js';
 import * as tools from './tools.js';
-import { renderDocument } from './render.js';
+import { renderDocument, validateDocument, lightestIndex } from './render.js';
 import { makeSurface, blitPreview } from './canvas.js';
 import { createSession } from './session.js';
 import * as store from '../store.js';
@@ -144,6 +144,9 @@ function updatePhotoControls() {
   $('photoControls').hidden = !layer;
   if (!layer) return;
   $('photoFit').value = layer.fit;
+  // Keep the slider in step with the selected layer, or the next drag would
+  // jump it to a stale value.
+  $('photoSize').value = String(layer.w ?? 1);
   for (const [id, key] of Object.entries(ADJUST_INPUTS)) {
     $(id).value = String(layer.adjustments[key] ?? (key === 'exposure' || key === 'saturation' ? 1 : 0));
   }
@@ -182,7 +185,11 @@ function wirePhotoControls() {
     const layer = selectedPhotoLayer();
     if (!layer) return;
     const f = Number($('photoSize').value);
-    session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f }));
+    // Growing a layer that sits near an edge must not push it off-canvas:
+    // re-clamp the origin against the NEW extent.
+    const x = Math.max(0, Math.min(1 - f, layer.x));
+    const y = Math.max(0, Math.min(1 - f, layer.y));
+    session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
   });
   $('photoSize').addEventListener('pointerdown', () => session.beginGesture());
   $('photoSize').addEventListener('change', () => session.endGesture(doc(), true));
@@ -299,6 +306,7 @@ export async function openComposer(device) {
     draftId,
     document: document_,
     store,
+    validate: validateDocument,
     onChange: () => paint(),
     onSaveError: (err) => toast(`Could not save draft: ${err.message ?? err}`, 'error'),
   });

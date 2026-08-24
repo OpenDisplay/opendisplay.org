@@ -379,3 +379,44 @@ test('applyAdjustments clamps into range', () => {
   render.applyAdjustments(px, { exposure: 0 });
   assert.equal(px[1], 0);
 });
+
+// --- QR ink contrast and quiet-zone ink (review round 3) ---
+
+test('QR rejects ink with too little contrast against its quiet zone', () => {
+  // White-on-white and yellow-on-white are silently unscannable.
+  assert.throws(() => render.assertQrContrast({ text: 'x', color: 1 }, 4), /too light/i);
+  assert.throws(() => render.assertQrContrast({ text: 'x', color: 2 }, 4), /too light/i);
+  // Black and red scan fine against white.
+  render.assertQrContrast({ text: 'x', color: 0 }, 4);
+  render.assertQrContrast({ text: 'x', color: 3 }, 4);
+});
+
+test('lightest ink is scheme-aware (index 1 is DARK grey on the grey schemes)', () => {
+  assert.equal(render.lightestIndex(0), 1);       // mono: white
+  assert.equal(render.lightestIndex(4), 1);       // 6-colour: white
+  assert.equal(render.lightestIndex(5), 3);       // 4-grey: white is LAST
+  assert.equal(render.lightestIndex(6), 15);      // 16-grey: white is LAST
+  assert.equal(render.darkestIndex(), 0);
+});
+
+test('validateDocument rejects unfittable QRs, bad ink and low contrast', () => {
+  const tiny = { recordId: 't', width: 40, height: 30, rotationQuarterTurns: 0, colorScheme: 4 };
+  assert.throws(
+    () => render.validateDocument(model.addLayer(model.createDocument(tiny),
+      model.qrLayer({ text: 'x'.repeat(400) }))),
+    /shorten the text or LOWER/,
+  );
+  assert.throws(
+    () => render.validateDocument(model.addLayer(model.createDocument({ ...DEVICE, colorScheme: 0 }),
+      model.textLayer({ text: 'blue?', color: 4 }))),
+    /not valid for scheme/,
+  );
+  assert.throws(
+    () => render.validateDocument(model.addLayer(model.createDocument(DEVICE),
+      model.qrLayer({ text: 'ok', color: 1 }))),
+    /too light/i,
+  );
+  // A valid document passes through unchanged.
+  const good = model.addLayer(model.createDocument(DEVICE), model.qrLayer({ text: 'ok', color: 0 }));
+  assert.equal(render.validateDocument(good), good);
+});

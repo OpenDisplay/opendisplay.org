@@ -242,3 +242,46 @@ test('overlapping saves are serialized and land in order', async () => {
   await Promise.all([first, second]);
   assert.deepEqual(order, [1, 2], 'newer save must not be overtaken by an older one');
 });
+
+// --- commit poisoning (review round 3): invalid edits must not enter history ---
+
+test('a rejected discrete edit leaves history, document and draft untouched', async () => {
+  const store = makeStore();
+  const s = createSession({
+    device: DEVICE_A,
+    draftId: 'draft-rec-A',
+    document: model.createDocument(DEVICE_A),
+    store,
+    onChange: () => {},
+    validate: (d) => {
+      if (d.layers.some((l) => l.type === 'qr')) throw new Error('QR does not fit');
+    },
+  });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'ok' })));
+  const before = s.doc();
+
+  assert.throws(() => s.apply(model.addLayer(s.doc(), model.qrLayer({ text: 'too big' }))),
+    /does not fit/);
+  assert.equal(s.doc(), before, 'document unchanged');
+  assert.equal(s.doc().layers.length, 1, 'invalid layer not present');
+  await s.flush();
+  const saved = await store.getDraft('draft-rec-A');
+  assert.equal(saved.doc.layers.length, 1, 'invalid layer never autosaved');
+  s.undo();
+  assert.equal(s.doc().layers.length, 0, 'history holds only the valid edit');
+});
+
+test('a gesture whose result is invalid is discarded wholesale', () => {
+  const store = makeStore();
+  let doc = model.createDocument(DEVICE_A);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.2, h: 0.2 }));
+  const s = createSession({
+    device: DEVICE_A, draftId: 'd', document: doc, store, onChange: () => {},
+    validate: (d) => { if (d.layers[0].x > 0.5) throw new Error('out of bounds'); },
+  });
+  s.beginGesture();
+  s.updateGesture(model.updateLayer(s.doc(), doc.layers[0].id, { x: 0.9 }));
+  assert.throws(() => s.endGesture(s.doc(), true), /out of bounds/);
+  assert.equal(s.doc().layers[0].x, 0.1, 'reverted to the pre-gesture state');
+  assert.equal(s.canUndo(), false, 'nothing recorded');
+});

@@ -162,10 +162,23 @@ export async function commitRebind(recordId, newBleId, patch = {}) {
 
 // --- drafts ---
 
+/**
+ * Write a draft, verifying IN THE SAME TRANSACTION that its device still
+ * exists. Another tab may have forgotten the device while this tab was
+ * editing; without the check, its autosave would resurrect an orphan draft
+ * (and keep the device's photos alive forever).
+ */
 export async function putDraft(draft) {
   requestPersistence();
   const db = await openDb();
-  const t = tx(db, ['drafts'], 'readwrite');
+  const t = tx(db, ['devices', 'drafts'], 'readwrite');
+  if (draft.recordId) {
+    const device = await reqAsPromise(t.objectStore('devices').get(draft.recordId));
+    if (!device) {
+      t.abort();
+      throw new Error(`device ${draft.recordId} no longer exists — draft not saved`);
+    }
+  }
   t.objectStore('drafts').put(draft);
   await txDone(t);
 }
@@ -212,8 +225,17 @@ export async function putAsset(blob) {
   const t = tx(db, ['assets'], 'readwrite');
   const store = t.objectStore('assets');
   const existing = await reqAsPromise(store.get(assetId));
-  if (!existing) {
-    store.put({ assetId, blob, type: blob.type, size: blob.size, createdAt: Date.now() });
+  const now = Date.now();
+  if (existing) {
+    // Re-importing identical content must REFRESH the claim: an old,
+    // currently-unreferenced entry would otherwise be swept by another tab
+    // during this import's asset→draft window.
+    store.put({ ...existing, lastClaimedAt: now });
+  } else {
+    store.put({
+      assetId, blob, type: blob.type, size: blob.size,
+      createdAt: now, lastClaimedAt: now,
+    });
   }
   await txDone(t);
   return assetId;
@@ -254,7 +276,10 @@ export async function sweepAssets(extraLive = new Set(), { graceMs = ASSET_GRACE
   let removed = 0;
   for (const asset of all) {
     if (live.has(asset.assetId)) continue;
-    if ((asset.createdAt ?? 0) > cutoff) continue; // in-flight import window
+    // lastClaimedAt covers re-imports of pre-existing content, not just new
+    // uploads; fall back to createdAt for records written before it existed.
+    const claimed = asset.lastClaimedAt ?? asset.createdAt ?? 0;
+    if (claimed > cutoff) continue; // in-flight import window
     assets.delete(asset.assetId);
     removed++;
   }
