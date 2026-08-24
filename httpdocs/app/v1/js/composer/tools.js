@@ -4,7 +4,7 @@
  * events into layer mutations. Kept DOM-free so it is unit-testable.
  */
 import { addLayer, updateLayer, strokeLayer, textLayer, qrLayer, photoLayer } from './model.js';
-import { hitTest, layerBounds } from './canvas.js';
+import { hitTest, layerBounds, hitHandle } from './canvas.js';
 
 /**
  * Clamp a layer origin so its RENDERED extent stays on the artboard — moving
@@ -61,25 +61,100 @@ export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
   };
 }
 
+/** A layer may not be resized smaller than this (normalized), so it can never
+ *  become impossible to grab again. */
+export const MIN_LAYER_SIZE = 0.05;
+
 /**
- * Select/move. `selectedId` PERSISTS after pointer-up (the Delete button acts
- * on it); `dragId` is the transient gesture target and is cleared on up.
+ * Apply a corner-handle resize to a photo layer's box, keeping it on the
+ * artboard and never smaller than MIN_LAYER_SIZE. Pure, so it is unit-testable
+ * without pointer plumbing.
+ * @param {{x,y,w,h}} start  the box when the gesture began
+ * @param {string} handle    'nw' | 'ne' | 'se' | 'sw'
+ * @param {{x,y}} delta      pointer movement since the gesture began
+ */
+export function resizeBox(start, handle, delta) {
+  let { x, y, w, h } = start;
+  const right = start.x + start.w;
+  const bottom = start.y + start.h;
+
+  if (handle === 'se') {
+    w = start.w + delta.x;
+    h = start.h + delta.y;
+  } else if (handle === 'ne') {
+    w = start.w + delta.x;
+    y = start.y + delta.y;
+    h = bottom - y;
+  } else if (handle === 'sw') {
+    x = start.x + delta.x;
+    w = right - x;
+    h = start.h + delta.y;
+  } else { // nw
+    x = start.x + delta.x;
+    y = start.y + delta.y;
+    w = right - x;
+    h = bottom - y;
+  }
+
+  // Enforce the minimum by pushing the moving EDGE back, so the anchored
+  // corner stays put rather than the whole box sliding.
+  if (w < MIN_LAYER_SIZE) {
+    if (handle === 'nw' || handle === 'sw') x = right - MIN_LAYER_SIZE;
+    w = MIN_LAYER_SIZE;
+  }
+  if (h < MIN_LAYER_SIZE) {
+    if (handle === 'nw' || handle === 'ne') y = bottom - MIN_LAYER_SIZE;
+    h = MIN_LAYER_SIZE;
+  }
+  // Keep the box on the artboard without changing the anchored corner.
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > 1) w = 1 - x;
+  if (y + h > 1) h = 1 - y;
+  w = Math.max(MIN_LAYER_SIZE, w);
+  h = Math.max(MIN_LAYER_SIZE, h);
+  return { x, y, w, h };
+}
+
+/**
+ * Select/move/resize. `selectedId` PERSISTS after pointer-up (the Delete
+ * button acts on it); `dragId` is the transient gesture target.
+ *
+ * A pointer-down on a corner HANDLE of the selected layer starts a resize;
+ * anywhere else on the layer starts a move.
  */
 export function makeSelectTool({ onSelect } = {}) {
   let selectedId = null;
   let dragId = null;
   let grab = null;
   let strokeDrag = null; // {origin, points} — strokes move by translation
+  let resize = null;     // {handle, origin, box} — corner-handle resize
   let moved = false;
   return {
     name: 'select',
     onDown(doc, pt, size) {
+      // A handle on the ALREADY-selected layer wins over hit-testing, so a
+      // corner sitting on top of another layer still resizes.
+      const selected = selectedId && doc.layers.find((l) => l.id === selectedId);
+      if (selected) {
+        const handle = hitHandle(selected, pt, size);
+        if (handle) {
+          dragId = selectedId;
+          moved = false;
+          grab = null;
+          strokeDrag = null;
+          resize = { handle, origin: pt, box: layerBounds(selected, size) };
+          return { doc, commit: false };
+        }
+      }
+
       const hit = hitTest(doc, pt, size);
       selectedId = hit;
       dragId = hit;
       moved = false;
       strokeDrag = null;
       grab = null;
+      resize = null;
       onSelect?.(selectedId);
       if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
@@ -96,6 +171,25 @@ export function makeSelectTool({ onSelect } = {}) {
       if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
       if (!layer) return { doc, commit: false };
+
+      if (resize) {
+        // Only box-shaped layers resize by handle; QR and text scale via their
+        // own `size` field, driven from the shorter artboard edge.
+        const delta = { x: pt.x - resize.origin.x, y: pt.y - resize.origin.y };
+        const box = resizeBox(resize.box, resize.handle, delta);
+        moved = true;
+        if (layer.type === 'photo') {
+          return { doc: updateLayer(doc, dragId, box), commit: false };
+        }
+        const shorter = Math.min(box.w * size.W, box.h * size.H);
+        return {
+          doc: updateLayer(doc, dragId, {
+            x: box.x, y: box.y,
+            size: Math.max(0.02, shorter / Math.min(size.W, size.H)),
+          }),
+          commit: false,
+        };
+      }
 
       if (layer.type === 'stroke') {
         if (!strokeDrag) return { doc, commit: false };
@@ -125,6 +219,7 @@ export function makeSelectTool({ onSelect } = {}) {
       dragId = null;
       grab = null;
       strokeDrag = null;
+      resize = null;
       moved = false;
       // Commit only if the layer actually moved: a plain click selects
       // without polluting the undo stack.

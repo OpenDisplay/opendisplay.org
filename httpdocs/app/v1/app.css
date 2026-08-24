@@ -229,3 +229,14 @@
 
 .composer__progress { width: 100%; height: 0.5rem; margin: 0.25rem 0 0.5rem; }
 .composer__bar label { display: flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; }
+
+.composer__canvaswrap { position: relative; display: inline-block; max-width: 100%; }
+.composer__canvaswrap > canvas { display: block; }
+
+.composer__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* input belongs to the render canvas underneath */
+}

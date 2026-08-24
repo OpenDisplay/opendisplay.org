@@ -12,7 +12,7 @@
 import * as model from './model.js';
 import * as tools from './tools.js';
 import { renderDocument, validateDocument, reconcileDocument } from './render.js';
-import { makeSurface, blitPreview } from './canvas.js';
+import { makeSurface, blitPreview, layerBounds, handlePoints, handleSize, HANDLES } from './canvas.js';
 import { createSession } from './session.js';
 import { createDitherClient } from './dither-client.js';
 import { decodeBounded, SUPPORTED_IMAGE_TYPES } from './image-size.js';
@@ -92,6 +92,7 @@ function paint() {
   $('undoBtn').disabled = !session.canUndo();
   $('redoBtn').disabled = !session.canRedo();
   $('deleteLayerBtn').disabled = !selectTool?.selectedId();
+  paintOverlay();
   const p = doc().panel;
   $('composerPanelInfo').textContent =
     `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
@@ -110,6 +111,58 @@ function updateSendControls() {
   $('sendBtn').title = connected
     ? (latestDither ? '' : 'Preparing the dithered image…')
     : 'Connect this device on the Devices tab first';
+}
+
+/**
+ * Draw the selection outline and resize handles onto the OVERLAY canvas.
+ * Never onto the render canvas: that would put UI chrome into the image the
+ * dither and the panel would receive.
+ */
+function paintOverlay() {
+  const overlay = $('composerOverlay');
+  const { W, H } = size();
+  overlay.width = W;
+  overlay.height = H;
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const id = selectTool?.selectedId();
+  const layer = id && doc().layers.find((l) => l.id === id);
+  if (!layer) return;
+
+  const b = layerBounds(layer, { W, H });
+  if (!b) return;
+  const px = (v, axis) => v * (axis === 'x' ? W : H);
+
+  // Dashed outline, drawn in two passes so it reads on any panel colour.
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.strokeRect(px(b.x, 'x'), px(b.y, 'y'), px(b.w, 'x'), px(b.h, 'y'));
+  ctx.lineDashOffset = 6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.strokeRect(px(b.x, 'x'), px(b.y, 'y'), px(b.w, 'x'), px(b.h, 'y'));
+  ctx.restore();
+
+  // Corner handles (strokes have none — they move but do not resize).
+  const points = handlePoints(layer, { W, H });
+  if (!points) return;
+  const { hw, hh } = handleSize({ W, H });
+  ctx.save();
+  ctx.lineWidth = 2;
+  for (const name of HANDLES) {
+    const c = points[name];
+    const x = px(c.x, 'x') - px(hw, 'x');
+    const y = px(c.y, 'y') - px(hh, 'y');
+    const w = px(hw, 'x') * 2;
+    const h = px(hh, 'y') * 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+  }
+  ctx.restore();
 }
 
 function toast(msg, kind = 'info') {
@@ -264,6 +317,7 @@ function ensureDitherClient() {
         const { canvas, ctx } = makeCanvas(msg.width, msg.height);
         ctx.putImageData(new ImageData(msg.preview, msg.width, msg.height), 0, 0);
         blitPreview($('composerCanvas'), canvas, { width: msg.width, height: msg.height });
+        paintOverlay(); // the blit does not touch the overlay, but selection may have changed
       }
       const note = msg.measured ? ' (measured palette)' : '';
       toast(`Preview ready${note}.`);

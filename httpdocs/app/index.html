@@ -99,7 +99,13 @@
         <label>Highlights <input id="adjHighlights" type="range" min="0" max="1" step="0.05" value="0"></label>
       </div>
       <div id="composerStage" class="composer__stage">
-        <canvas id="composerCanvas" class="composer__canvas"></canvas>
+        <div class="composer__canvaswrap">
+          <canvas id="composerCanvas" class="composer__canvas"></canvas>
+          <!-- Selection outline and resize handles live on a SEPARATE canvas:
+               the render canvas must never contain UI chrome, or it could end
+               up in a sent image. pointer-events:none keeps input on the base. -->
+          <canvas id="composerOverlay" class="composer__overlay" aria-hidden="true"></canvas>
+        </div>
       </div>
       <div class="composer__bar">
         <label>Dither

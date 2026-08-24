@@ -520,3 +520,110 @@ test('a stroke drag that cannot move (already at the edge) does not commit', () 
   ({ doc } = t.onMove(doc, { x: 0.9, y: 0.9 }, size));
   assert.equal(t.onUp(doc).commit, false, 'no movement was possible, so no history entry');
 });
+
+// --- resize handles ---
+
+const canvasMod2 = await loadAppModule('composer/canvas.js');
+
+test('handles sit on the rendered corners, and strokes have none', () => {
+  const size = { W: 800, H: 480 };
+  const photo = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.1, w: 0.4, h: 0.5 });
+  const pts = canvasMod2.handlePoints(photo, size);
+  assert.deepEqual(pts.nw, { x: 0.2, y: 0.1 });
+  assert.deepEqual(pts.se, { x: 0.6000000000000001, y: 0.6 });
+  assert.deepEqual(pts.ne.x, pts.se.x);
+  assert.deepEqual(pts.sw.y, pts.se.y);
+  assert.equal(canvasMod2.handlePoints(model.strokeLayer({ points: [{ x: 0, y: 0 }] }), size), null);
+});
+
+test('handles are square on screen, so their normalized size differs per axis', () => {
+  const { hw, hh } = canvasMod2.handleSize({ W: 800, H: 400 }, 16);
+  assert.equal(hw, 0.02);
+  assert.equal(hh, 0.04, 'a shorter axis needs a larger normalized handle');
+});
+
+test('hitHandle finds a corner and ignores the layer middle', () => {
+  const size = { W: 400, H: 400 };
+  const photo = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 });
+  assert.equal(canvasMod2.hitHandle(photo, { x: 0.2, y: 0.2 }, size), 'nw');
+  assert.equal(canvasMod2.hitHandle(photo, { x: 0.6, y: 0.6 }, size), 'se');
+  assert.equal(canvasMod2.hitHandle(photo, { x: 0.4, y: 0.4 }, size), null, 'middle is a move');
+});
+
+test('resizeBox: each corner moves its own edges and anchors the opposite one', () => {
+  const start = { x: 0.2, y: 0.2, w: 0.4, h: 0.4 };
+  const se = tools.resizeBox(start, 'se', { x: 0.1, y: 0.1 });
+  assert.deepEqual([+se.x.toFixed(3), +se.y.toFixed(3)], [0.2, 0.2], 'origin anchored');
+  assert.deepEqual([+se.w.toFixed(3), +se.h.toFixed(3)], [0.5, 0.5]);
+
+  const nw = tools.resizeBox(start, 'nw', { x: 0.1, y: 0.1 });
+  assert.deepEqual([+nw.x.toFixed(3), +nw.y.toFixed(3)], [0.3, 0.3]);
+  assert.deepEqual([+nw.w.toFixed(3), +nw.h.toFixed(3)], [0.3, 0.3], 'far corner stayed put');
+
+  const ne = tools.resizeBox(start, 'ne', { x: 0.1, y: 0.1 });
+  assert.equal(+ne.x.toFixed(3), 0.2, 'left edge anchored');
+  assert.equal(+ne.y.toFixed(3), 0.3, 'top edge moved');
+});
+
+test('resizeBox clamps to the artboard and to a minimum size', () => {
+  const start = { x: 0.2, y: 0.2, w: 0.4, h: 0.4 };
+  const huge = tools.resizeBox(start, 'se', { x: 5, y: 5 });
+  assert.ok(huge.x + huge.w <= 1 + 1e-9 && huge.y + huge.h <= 1 + 1e-9, 'stays on the artboard');
+
+  const tiny = tools.resizeBox(start, 'se', { x: -5, y: -5 });
+  assert.equal(+tiny.w.toFixed(3), tools.MIN_LAYER_SIZE);
+  assert.equal(+tiny.x.toFixed(3), 0.2, 'anchored corner did not slide');
+
+  // Collapsing from the NW handle pins the box against its bottom-right.
+  const tinyNw = tools.resizeBox(start, 'nw', { x: 5, y: 5 });
+  assert.equal(+tinyNw.w.toFixed(3), tools.MIN_LAYER_SIZE);
+  assert.equal(+(tinyNw.x + tinyNw.w).toFixed(3), 0.6, 'bottom-right corner held');
+});
+
+test('dragging a handle resizes the photo instead of moving it', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 400, H: 400 };
+
+  // First click selects; the handle is only live once the layer is selected.
+  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
+  t.onUp(doc);
+  ({ doc } = t.onDown(doc, { x: 0.6, y: 0.6 }, size));   // grab the SE handle
+  ({ doc } = t.onMove(doc, { x: 0.8, y: 0.8 }, size));
+
+  const l = doc.layers[0];
+  assert.deepEqual([+l.x.toFixed(3), +l.y.toFixed(3)], [0.2, 0.2], 'did NOT move');
+  assert.deepEqual([+l.w.toFixed(3), +l.h.toFixed(3)], [0.6, 0.6], 'grew by the drag');
+  assert.equal(t.onUp(doc).commit, true, 'one undo step');
+});
+
+test('grabbing the middle of a selected layer still moves it', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 400, H: 400 };
+  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
+  t.onUp(doc);
+  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
+  ({ doc } = t.onMove(doc, { x: 0.5, y: 0.5 }, size));
+  const l = doc.layers[0];
+  assert.deepEqual([+l.x.toFixed(3), +l.y.toFixed(3)], [0.3, 0.3], 'moved');
+  assert.deepEqual([+l.w.toFixed(3), +l.h.toFixed(3)], [0.4, 0.4], 'size unchanged');
+});
+
+test('resizing a QR adjusts its size field, not a width/height box', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.qrLayer({ text: 'https://opendisplay.org', x: 0.1, y: 0.1, size: 0.4 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 400, H: 400 };
+  const before = doc.layers[0].size;
+  const b = canvasMod2.handlePoints(doc.layers[0], size);
+  ({ doc } = t.onDown(doc, { x: 0.3, y: 0.3 }, size));    // select
+  t.onUp(doc);
+  ({ doc } = t.onDown(doc, b.se, size));                   // grab SE handle
+  ({ doc } = t.onMove(doc, { x: b.se.x + 0.2, y: b.se.y + 0.2 }, size));
+  const l = doc.layers[0];
+  assert.ok(l.size > before, `QR grew: ${before} -> ${l.size}`);
+  assert.equal(l.w, undefined, 'QR has no width/height box');
+});

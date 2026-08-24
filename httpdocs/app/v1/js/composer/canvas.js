@@ -78,6 +78,48 @@ export function layerBounds(layer, { W, H }) {
   }
 }
 
+/** Corner handles, in draw order. */
+export const HANDLES = ['nw', 'ne', 'se', 'sw'];
+
+/**
+ * Handle size in NORMALIZED units for each axis. Handles are square on screen,
+ * so the normalized size differs per axis on a non-square artboard.
+ */
+export function handleSize({ W, H }, px = 14) {
+  return { hw: px / W, hh: px / H };
+}
+
+/**
+ * Centres of the resize handles for a layer, in normalized coordinates.
+ * Returns null for layer types that are not resizable by handle (strokes).
+ */
+export function handlePoints(layer, size) {
+  if (layer.type === 'stroke') return null;
+  const b = layerBounds(layer, size);
+  if (!b) return null;
+  return {
+    nw: { x: b.x, y: b.y },
+    ne: { x: b.x + b.w, y: b.y },
+    se: { x: b.x + b.w, y: b.y + b.h },
+    sw: { x: b.x, y: b.y + b.h },
+  };
+}
+
+/**
+ * Which resize handle (if any) is under `pt`. Checked BEFORE layer hit-testing
+ * so grabbing a corner resizes rather than moves.
+ */
+export function hitHandle(layer, pt, size, px = 14) {
+  const points = handlePoints(layer, size);
+  if (!points) return null;
+  const { hw, hh } = handleSize(size, px);
+  for (const name of HANDLES) {
+    const c = points[name];
+    if (Math.abs(pt.x - c.x) <= hw && Math.abs(pt.y - c.y) <= hh) return name;
+  }
+  return null;
+}
+
 /** Shortest distance from a point to a line segment (normalized units). */
 function distToSegment(p, a, b) {
   const dx = b.x - a.x;
