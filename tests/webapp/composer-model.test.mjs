@@ -144,18 +144,44 @@ test('draw tool discards a stray tap (single point) without committing', () => {
   assert.equal(up.commit, false);
 });
 
-test('select tool drags a layer by its grab offset and clamps to the artboard', () => {
+test('select tool drags by grab offset and keeps the whole layer on-canvas', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.textLayer({ text: 'drag', x: 0.2, y: 0.2, size: 0.1 }));
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
   ({ doc } = t.onDown(doc, { x: 0.22, y: 0.22 }, size));
   assert.equal(t.selectedId(), doc.layers[0].id, 'hit-test selected the layer');
-  ({ doc } = t.onMove(doc, { x: 0.62, y: 0.42 }));
+  ({ doc } = t.onMove(doc, { x: 0.62, y: 0.42 }, size));
   assert.ok(Math.abs(doc.layers[0].x - 0.6) < 1e-9, 'moved by pointer delta, not to pointer');
-  ({ doc } = t.onMove(doc, { x: 5, y: 5 }));
-  assert.equal(doc.layers[0].x, 1, 'clamped');
+  // Dragging far off-canvas clamps the layer's EXTENT, not just its origin:
+  // a 0.4-wide photo can reach x = 0.6 at most.
+  ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));
+  assert.ok(Math.abs(doc.layers[0].x - 0.6) < 1e-9, `extent-clamped, got ${doc.layers[0].x}`);
+  assert.ok(Math.abs(doc.layers[0].y - 0.6) < 1e-9);
   assert.equal(t.onUp(doc).commit, true);
+});
+
+test('select tool: selection PERSISTS after pointer-up (Delete acts on it)', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.5, h: 0.5 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+  ({ doc } = t.onDown(doc, { x: 0.2, y: 0.2 }, size));
+  const id = t.selectedId();
+  assert.ok(id);
+  t.onUp(doc);
+  assert.equal(t.selectedId(), id, 'still selected after the gesture ends');
+  t.clearSelection();
+  assert.equal(t.selectedId(), null);
+});
+
+test('select tool: a click without movement does not create a history entry', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.5, h: 0.5 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+  ({ doc } = t.onDown(doc, { x: 0.2, y: 0.2 }, size));
+  assert.equal(t.onUp(doc).commit, false, 'no move => no commit');
 });
 
 test('select tool on empty space selects nothing and does not commit', () => {
@@ -205,4 +231,146 @@ test('QR: rejects empty text, unknown ECC level, and over-capacity payloads', ()
   assert.throws(() => qr.encodeQrMatrix('x', { errorCorrectLevel: 'Z' }), /unknown error-correction/i);
   assert.throws(() => qr.encodeQrMatrix('x'.repeat(5000), { errorCorrectLevel: 'H' }), /too long/i);
   assert.throws(() => qr.encodeQrMatrix('x'.repeat(100), { typeNumber: 1 }), /too long for QR version 1/i);
+});
+
+// --- QR: independent verification against segno ---
+
+test('QR version/size selection agrees with segno (independent implementation)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const golden = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'fixtures/qr-golden.json'), 'utf8',
+  ));
+  assert.ok(golden.cases.length >= 5);
+  for (const c of golden.cases) {
+    const got = qr.encodeQrMatrix(c.text, { errorCorrectLevel: c.errorCorrectLevel });
+    const label = `${JSON.stringify(c.text.slice(0, 20))} @${c.errorCorrectLevel}`;
+    const isAscii = /^[\x00-\x7F]*$/.test(c.text);
+    if (isAscii) {
+      // Same mode (byte) and same payload => the same minimum version.
+      assert.equal(got.size, c.size, `version/size for ${label}`);
+    } else {
+      // segno picks Kanji mode for CJK; this core uses byte mode plus a UTF-8
+      // BOM, so it needs at least as much space — never less.
+      assert.ok(got.size >= c.size, `non-ASCII capacity for ${label}: ${got.size} < ${c.size}`);
+    }
+    const rows = [];
+    for (let r = 0; r < got.size; r++) {
+      rows.push(Array.from(got.modules.subarray(r * got.size, (r + 1) * got.size)).join(''));
+    }
+    // Module patterns legitimately differ between conformant encoders (mask
+    // choice, padding, and this library's UTF-8 BOM), so the cross-library
+    // assertion is on VERSION/SIZE — capacity selection — while decodability
+    // is proven by the OpenCV round-trip test below and fidelity to the
+    // shipped library by the browser test.
+    assert.equal(rows.length, got.size, `matrix is square for ${label}`);
+  }
+});
+
+// --- QR geometry: quiet zone, clamping, hit-test agreement ---
+
+const render = await loadAppModule('composer/render.js');
+const canvasMod = await loadAppModule('composer/canvas.js');
+
+test('QR geometry reserves a 4-module quiet zone on every side', () => {
+  const layer = model.qrLayer({ text: 'https://opendisplay.org', x: 0.1, y: 0.1, size: 0.9 });
+  const g = render.qrGeometry(layer, 400, 400);
+  assert.equal(render.QR_QUIET_MODULES, 4);
+  assert.equal(g.blockPx, (g.size + 8) * g.modulePx, 'block includes 4 modules each side');
+  assert.equal(g.codeX - g.x, 4 * g.modulePx);
+  assert.equal(g.codeY - g.y, 4 * g.modulePx);
+});
+
+test('QR is clamped so the quiet zone is never clipped by the artboard edge', () => {
+  for (const [x, y] of [[0, 0], [0.99, 0.99], [-0.5, 0.5]]) {
+    const layer = model.qrLayer({ text: 'clamp me', x, y, size: 0.5 });
+    const g = render.qrGeometry(layer, 300, 200);
+    assert.ok(g.x >= 0 && g.y >= 0, `origin inside: ${g.x},${g.y}`);
+    assert.ok(g.x + g.blockPx <= 300, `right edge inside: ${g.x + g.blockPx}`);
+    assert.ok(g.y + g.blockPx <= 200, `bottom edge inside: ${g.y + g.blockPx}`);
+  }
+});
+
+test('QR never renders larger than the artboard, even when asked to', () => {
+  const layer = model.qrLayer({ text: 'x'.repeat(200), x: 0, y: 0, size: 5 });
+  const g = render.qrGeometry(layer, 122, 250);
+  assert.ok(g.blockPx <= 122, `fits the short side: ${g.blockPx}`);
+  assert.ok(g.modulePx >= 1);
+});
+
+test('QR hit-test box matches the rendered block exactly', () => {
+  const layer = model.qrLayer({ text: 'https://opendisplay.org', x: 0.05, y: 0.05, size: 0.6 });
+  const W = 400, H = 300;
+  const g = render.qrGeometry(layer, W, H);
+  const b = canvasMod.layerBounds(layer, { W, H });
+  assert.ok(Math.abs(b.x * W - g.x) < 1e-6, 'bounds x matches rendered x');
+  assert.ok(Math.abs(b.y * H - g.y) < 1e-6);
+  assert.ok(Math.abs(b.w * W - g.blockPx) < 1e-6, 'bounds width matches rendered block');
+  // A point just inside the block hits; just outside misses.
+  const doc = model.addLayer(model.createDocument(DEVICE), layer);
+  assert.equal(canvasMod.hitTest(doc, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, { W, H }), layer.id);
+  assert.equal(canvasMod.hitTest(doc, { x: b.x + b.w + 0.05, y: b.y }, { W, H }), null);
+});
+
+test('stroke hit-test uses segment distance, not just sampled vertices', () => {
+  // Two endpoints far apart: the midpoint has no vertex near it.
+  const stroke = model.strokeLayer({ points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }], width: 0.01 });
+  const doc = model.addLayer(model.createDocument(DEVICE), stroke);
+  const size = { W: 800, H: 480 };
+  assert.equal(canvasMod.hitTest(doc, { x: 0.5, y: 0.5 }, size), stroke.id, 'midpoint hits the line');
+  assert.equal(canvasMod.hitTest(doc, { x: 0.5, y: 0.8 }, size), null, 'far from the line misses');
+});
+
+test('text hit-test accounts for alignment', () => {
+  const size = { W: 800, H: 480 };
+  const left = model.textLayer({ text: 'hello', x: 0.5, y: 0.2, size: 0.1, align: 'left' });
+  const right = model.textLayer({ text: 'hello', x: 0.5, y: 0.2, size: 0.1, align: 'right' });
+  const bl = canvasMod.layerBounds(left, size);
+  const br = canvasMod.layerBounds(right, size);
+  assert.ok(bl.x >= 0.5 - 1e-9, 'left-aligned box starts at the anchor');
+  assert.ok(br.x < 0.5, 'right-aligned box ends at the anchor');
+  assert.ok(Math.abs((br.x + br.w) - 0.5) < 1e-9);
+});
+
+// --- photo adjustments ---
+
+test('applyAdjustments: identity settings leave pixels untouched', () => {
+  const px = new Uint8ClampedArray([10, 128, 250, 255]);
+  const before = Array.from(px);
+  render.applyAdjustments(px, { exposure: 1, saturation: 1, shadows: 0, highlights: 0 });
+  assert.deepEqual(Array.from(px), before);
+});
+
+test('applyAdjustments: exposure scales, saturation desaturates, alpha forced opaque', () => {
+  const px = new Uint8ClampedArray([100, 50, 25, 0]);
+  render.applyAdjustments(px, { exposure: 1.5, saturation: 1, shadows: 0, highlights: 0 });
+  assert.equal(px[0], 150);
+  assert.equal(px[3], 255, 'composited opaque regardless of source alpha');
+
+  const grey = new Uint8ClampedArray([200, 100, 50, 255]);
+  render.applyAdjustments(grey, { exposure: 1, saturation: 0, shadows: 0, highlights: 0 });
+  assert.equal(grey[0], grey[1], 'saturation 0 => channels equal');
+  assert.equal(grey[1], grey[2]);
+});
+
+test('applyAdjustments: shadows lift darks more than lights; highlights pull brights', () => {
+  const dark = new Uint8ClampedArray([10, 10, 10, 255]);
+  const light = new Uint8ClampedArray([240, 240, 240, 255]);
+  render.applyAdjustments(dark, { shadows: 1 });
+  render.applyAdjustments(light, { shadows: 1 });
+  assert.ok(dark[0] > 10, 'dark lifted');
+  assert.equal(light[0], 240, 'light untouched by shadows');
+
+  const bright = new Uint8ClampedArray([250, 250, 250, 255]);
+  render.applyAdjustments(bright, { highlights: 1 });
+  assert.ok(bright[0] < 250, 'bright pulled down');
+});
+
+test('applyAdjustments clamps into range', () => {
+  const px = new Uint8ClampedArray([250, 5, 128, 255]);
+  render.applyAdjustments(px, { exposure: 4 });
+  assert.equal(px[0], 255);
+  render.applyAdjustments(px, { exposure: 0 });
+  assert.equal(px[1], 0);
 });

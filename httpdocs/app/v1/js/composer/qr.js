@@ -185,6 +185,15 @@
 
 /**
  * Encode text to a QR module matrix — pure computation, safe in a Worker.
+ *
+ * NOTE ON NON-ASCII TEXT: the upstream core prepends a UTF-8 BOM (EF BB BF)
+ * whenever the payload contains multi-byte characters. That is how this
+ * library signals UTF-8 to decoders (QR's default ECI is ISO-8859-1), and it
+ * is preserved deliberately — verified by an OpenCV decode round-trip, which
+ * returns "\ufeff" + text for non-ASCII payloads and the exact text for
+ * ASCII ones. Callers encoding non-ASCII should expect scanners to surface a
+ * leading U+FEFF.
+ *
  * @param {string} text
  * @param {{errorCorrectLevel?: 'L'|'M'|'Q'|'H', typeNumber?: number}} opts
  * @returns {{size: number, modules: Uint8Array}} row-major, 1 = dark

@@ -23,7 +23,9 @@ const MIME = {
   '.yaml': 'text/yaml', '.json': 'application/json',
 };
 
-const FIXTURE = `<!DOCTYPE html><html><body><script type="module">
+const FIXTURE = `<!DOCTYPE html><html><body>
+<script src="/l/qrcode.js"></script>
+<script type="module">
 window.resultPromise = (async () => {
   const model = await import('/app/v1/js/composer/model.js');
   const render = await import('/app/v1/js/composer/render.js');
@@ -119,6 +121,77 @@ window.resultPromise = (async () => {
   const live = await store.putAsset(new Blob([new Uint8Array([5,5])], { type: 'image/png' }));
   ok('extraLiveProtected', (await store.sweepAssets(new Set([live]))) === 0
      && !!(await store.getAsset(live)));
+
+  // --- fidelity: extracted QR core vs the shipped MIT library ---
+  const qrmod = await import('/app/v1/js/composer/qr.js');
+  let fidelity = true;
+  for (const [text, lvl] of [['hi','L'], ['https://opendisplay.org','M'], ['OD-2F41 tag','Q']]) {
+    const holder = document.createElement('div');
+    const orig = new QRCode(holder, { text, correctLevel: QRCode.CorrectLevel[lvl] })._oQRCode;
+    const n = orig.getModuleCount();
+    const mine = qrmod.encodeQrMatrix(text, { errorCorrectLevel: lvl });
+    if (mine.size !== n) { fidelity = false; break; }
+    for (let r = 0; r < n && fidelity; r++) {
+      for (let c = 0; c < n; c++) {
+        if ((orig.isDark(r, c) ? 1 : 0) !== mine.modules[r * n + c]) { fidelity = false; break; }
+      }
+    }
+  }
+  ok('qrMatchesShippedLibrary', fidelity);
+
+  // --- three panel geometries render at the right size (M2 exit) ---
+  const GEOMETRIES = [
+    { width: 800, height: 480, rotationQuarterTurns: 0, colorScheme: 4 },   // 7.3" 6-colour
+    { width: 122, height: 250, rotationQuarterTurns: 0, colorScheme: 0 },   // EP213 mono
+    { width: 400, height: 300, rotationQuarterTurns: 1, colorScheme: 1 },   // 4.2" BWR, rotated
+  ];
+  let geomOk = true;
+  for (const g of GEOMETRIES) {
+    let gd = model.createDocument({ recordId: 'g', ...g });
+    gd = model.addLayer(gd, model.textLayer({ text: 'Panel', x: 0.05, y: 0.05, size: 0.2 }));
+    gd = model.addLayer(gd, model.qrLayer({ text: 'https://opendisplay.org', x: 0.4, y: 0.4, size: 0.5 }));
+    const rendered = render.renderDocument(gd, new Map());
+    const expect = model.artboardSize(gd.panel);
+    if (rendered.width !== expect.width || rendered.height !== expect.height) geomOk = false;
+    // Every pixel opaque on every geometry.
+    const px = rendered.ctx.getImageData(0, 0, rendered.width, rendered.height).data;
+    for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) { geomOk = false; break; }
+  }
+  ok('threeGeometries', geomOk);
+
+  // --- photo rendering: proxy bitmap, fit modes, adjustments ---
+  const photoCanvas = new OffscreenCanvas(40, 20);
+  const pctx = photoCanvas.getContext('2d');
+  pctx.fillStyle = 'rgb(200,40,40)'; pctx.fillRect(0, 0, 40, 20);
+  const photoBitmap = await createImageBitmap(photoCanvas);
+
+  let pdoc = model.createDocument(DEVICE);
+  pdoc = model.addLayer(pdoc, model.photoLayer({ assetId: 'p1', x: 0, y: 0, w: 1, h: 1, fit: 'contain' }));
+  const pr = render.renderDocument(pdoc, new Map([['p1', photoBitmap]]));
+  const ppx = pr.ctx.getImageData(0, 0, pr.width, pr.height).data;
+  let sawPhoto = false, photoOpaque = true;
+  for (let i = 0; i < ppx.length; i += 4) {
+    if (ppx[i] > 100 && ppx[i+1] < 120) sawPhoto = true;
+    if (ppx[i+3] !== 255) photoOpaque = false;
+  }
+  ok('photoDrawn', sawPhoto);
+  ok('photoOpaque', photoOpaque);
+
+  // Cover fills the whole box; contain letterboxes (background visible).
+  const containBg = pr.ctx.getImageData(0, pr.height - 1, 1, 1).data;
+  let cdoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'cover' });
+  const cr = render.renderDocument(cdoc, new Map([['p1', photoBitmap]]));
+  const coverBg = cr.ctx.getImageData(0, cr.height - 1, 1, 1).data;
+  ok('fitModesDiffer', containBg[0] !== coverBg[0] || containBg[1] !== coverBg[1]);
+
+  // Adjustments change output pixels (exposure down => darker).
+  let adoc = model.updateLayer(pdoc, pdoc.layers[0].id, {
+    fit: 'cover', adjustments: { exposure: 0.4, saturation: 1, shadows: 0, highlights: 0 },
+  });
+  const ar = render.renderDocument(adoc, new Map([['p1', photoBitmap]]));
+  const mid = (c) => c.ctx.getImageData(Math.floor(c.width/2), Math.floor(c.height/2), 1, 1).data;
+  ok('adjustmentsApplied', mid(ar)[0] < mid(cr)[0]);
+  photoBitmap.close();
 
   // --- draft persistence round-trip through IndexedDB ---
   const saved = await store.getDraft('dr-1');

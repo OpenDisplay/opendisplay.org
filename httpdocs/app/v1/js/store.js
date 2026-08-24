@@ -233,21 +233,22 @@ export async function getAsset(assetId) {
  */
 export async function sweepAssets(extraLive = new Set()) {
   const db = await openDb();
-  const drafts = await reqAsPromise(
-    tx(db, ['drafts'], 'readonly').objectStore('drafts').getAll(),
-  );
+  // ONE transaction spanning both stores: reading drafts and deleting assets
+  // separately would let a draft acquire a reference in between and lose its
+  // asset. IndexedDB gives us the isolation for free — use it.
+  const t = tx(db, ['drafts', 'assets'], 'readwrite');
+  const drafts = await reqAsPromise(t.objectStore('drafts').getAll());
   const live = new Set(extraLive);
   for (const d of drafts) {
     if (d.thumbnailAssetId) live.add(d.thumbnailAssetId);
     for (const l of d.doc?.layers ?? []) if (l.assetId) live.add(l.assetId);
   }
-  const t = tx(db, ['assets'], 'readwrite');
-  const store = t.objectStore('assets');
-  const ids = await reqAsPromise(store.getAllKeys());
+  const assets = t.objectStore('assets');
+  const ids = await reqAsPromise(assets.getAllKeys());
   let removed = 0;
   for (const id of ids) {
     if (!live.has(id)) {
-      store.delete(id);
+      assets.delete(id);
       removed++;
     }
   }

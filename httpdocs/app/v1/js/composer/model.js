@@ -54,7 +54,9 @@ export function photoLayer({ assetId, x = 0, y = 0, w = 1, h = 1, fit = 'contain
     assetId,
     x, y, w, h, fit,
     adjustments: {
-      exposure: 1, saturation: 1, shadows: 0, highlights: 0, tone: 0,
+      // exposure/saturation/shadows/highlights are applied when compositing;
+      // toneStrength is a pre-dither pipeline parameter consumed in M3.
+      exposure: 1, saturation: 1, shadows: 0, highlights: 0, toneStrength: 0,
       ...adjustments,
     },
   };

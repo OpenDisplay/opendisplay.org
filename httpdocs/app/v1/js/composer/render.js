@@ -54,12 +54,55 @@ export function makeCanvas(width, height) {
   return { canvas, ctx };
 }
 
+/**
+ * Per-photo tonal adjustments, applied in place to RGBA bytes.
+ * Pure and exported so it is unit-testable without a canvas.
+ *  exposure   multiplicative gain (1 = unchanged)
+ *  saturation 0 = greyscale, 1 = unchanged, >1 = more saturated
+ *  shadows    0..1 lifts dark tones
+ *  highlights 0..1 pulls bright tones down
+ * `toneStrength`/gamut are NOT applied here: they are pre-dither pipeline
+ * parameters handed to the wasm dither in M3.
+ */
+export function applyAdjustments(data, adj) {
+  const exposure = adj?.exposure ?? 1;
+  const saturation = adj?.saturation ?? 1;
+  const shadows = adj?.shadows ?? 0;
+  const highlights = adj?.highlights ?? 0;
+  if (exposure === 1 && saturation === 1 && shadows === 0 && highlights === 0) return data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    let r = data[i] * exposure;
+    let g = data[i + 1] * exposure;
+    let b = data[i + 2] * exposure;
+
+    if (saturation !== 1) {
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      r = y + (r - y) * saturation;
+      g = y + (g - y) * saturation;
+      b = y + (b - y) * saturation;
+    }
+    if (shadows !== 0 || highlights !== 0) {
+      const y = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      // Weight each control by how dark / bright the pixel already is.
+      const lift = shadows * 255 * Math.max(0, 1 - y * 2) * 0.5;
+      const pull = highlights * 255 * Math.max(0, y * 2 - 1) * 0.5;
+      r += lift - pull; g += lift - pull; b += lift - pull;
+    }
+    data[i] = r < 0 ? 0 : r > 255 ? 255 : r;
+    data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+    data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+    data[i + 3] = 255; // photos are composited opaque
+  }
+  return data;
+}
+
 function drawPhoto(ctx, layer, bitmap, W, H) {
   if (!bitmap) return;
-  const bx = layer.x * W;
-  const by = layer.y * H;
-  const bw = layer.w * W;
-  const bh = layer.h * H;
+  const bx = Math.round(layer.x * W);
+  const by = Math.round(layer.y * H);
+  const bw = Math.max(1, Math.round(layer.w * W));
+  const bh = Math.max(1, Math.round(layer.h * H));
   const scale = layer.fit === 'cover'
     ? Math.max(bw / bitmap.width, bh / bitmap.height)
     : Math.min(bw / bitmap.width, bh / bitmap.height);
@@ -67,12 +110,31 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
   const dh = bitmap.height * scale;
   const dx = bx + (bw - dw) / 2;
   const dy = by + (bh - dh) / 2;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(bx, by, bw, bh);
-  ctx.clip();
-  ctx.drawImage(bitmap, dx, dy, dw, dh);
-  ctx.restore();
+
+  const adj = layer.adjustments;
+  const needsAdjust = adj && (
+    (adj.exposure ?? 1) !== 1 || (adj.saturation ?? 1) !== 1 ||
+    (adj.shadows ?? 0) !== 0 || (adj.highlights ?? 0) !== 0
+  );
+
+  if (!needsAdjust) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bx, by, bw, bh);
+    ctx.clip();
+    ctx.drawImage(bitmap, dx, dy, dw, dh);
+    ctx.restore();
+    return;
+  }
+
+  // Adjust off-screen at the layer's box size, then blit: keeps the pixel math
+  // off the shared composite and bounded by the layer, not the whole panel.
+  const { canvas: tmp, ctx: tctx } = makeCanvas(bw, bh);
+  tctx.drawImage(bitmap, dx - bx, dy - by, dw, dh);
+  const img = tctx.getImageData(0, 0, bw, bh);
+  applyAdjustments(img.data, adj);
+  tctx.putImageData(img, 0, 0);
+  ctx.drawImage(tmp, bx, by);
 }
 
 function drawStroke(ctx, layer, scheme, W, H) {
@@ -100,26 +162,57 @@ function drawText(ctx, layer, scheme, W, H) {
   ctx.restore();
 }
 
-function drawQr(ctx, layer, scheme, W, H) {
+/** QR quiet zone required by the spec, in modules, on every side. */
+export const QR_QUIET_MODULES = 4;
+
+/**
+ * Geometry for a QR layer — the SINGLE source of truth shared by rendering and
+ * hit-testing, so the interactive box always matches the drawn block.
+ *
+ * layer.size is the requested block side as a fraction of min(W, H) and
+ * INCLUDES the quiet zone. Module size is snapped to whole pixels for crisp
+ * edges; the resulting block is clamped inside the artboard so the quiet zone
+ * can never be clipped (a clipped quiet zone is the classic unscannable QR).
+ */
+export function qrGeometry(layer, W, H) {
   const { size, modules } = encodeQrMatrix(layer.text, {
     errorCorrectLevel: layer.errorCorrectLevel ?? 'M',
   });
-  const boxPx = layer.size * Math.min(W, H);
-  // Snap the module size to whole pixels so modules stay crisp on e-paper.
-  const modulePx = Math.max(1, Math.floor(boxPx / size));
-  const originX = Math.round(layer.x * W);
-  const originY = Math.round(layer.y * H);
-  const quiet = modulePx * 2;
+  const totalModules = size + QR_QUIET_MODULES * 2;
+  const requestedPx = (layer.size ?? 0.3) * Math.min(W, H);
+  // Never smaller than 1 device pixel per module, and never bigger than the
+  // artboard — a QR that does not fit whole cannot be made to scan.
+  const maxModulePx = Math.floor(Math.min(W, H) / totalModules);
+  let modulePx = Math.max(1, Math.floor(requestedPx / totalModules));
+  if (maxModulePx >= 1) modulePx = Math.min(modulePx, maxModulePx);
+  const blockPx = totalModules * modulePx;
+
+  // Clamp the WHOLE block (quiet zone included) inside the artboard.
+  const x = Math.round(Math.max(0, Math.min(W - blockPx, layer.x * W)));
+  const y = Math.round(Math.max(0, Math.min(H - blockPx, layer.y * H)));
+
+  return {
+    size, modules, modulePx, blockPx,
+    x, y,
+    // Where the dark modules start (inside the quiet zone).
+    codeX: x + QR_QUIET_MODULES * modulePx,
+    codeY: y + QR_QUIET_MODULES * modulePx,
+    fits: blockPx <= W && blockPx <= H,
+  };
+}
+
+function drawQr(ctx, layer, scheme, W, H) {
+  const g = qrGeometry(layer, W, H);
   ctx.save();
-  // QR needs a light quiet zone to scan: paint the background index, not
-  // transparency (opaque-pixels rule).
+  // The quiet zone must be light and OPAQUE (never transparent) or the code
+  // will not scan.
   ctx.fillStyle = paletteColor(scheme, 1);
-  ctx.fillRect(originX - quiet, originY - quiet, size * modulePx + quiet * 2, size * modulePx + quiet * 2);
+  ctx.fillRect(g.x, g.y, g.blockPx, g.blockPx);
   ctx.fillStyle = paletteColor(scheme, layer.color);
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (modules[r * size + c]) {
-        ctx.fillRect(originX + c * modulePx, originY + r * modulePx, modulePx, modulePx);
+  for (let r = 0; r < g.size; r++) {
+    for (let c = 0; c < g.size; c++) {
+      if (g.modules[r * g.size + c]) {
+        ctx.fillRect(g.codeX + c * g.modulePx, g.codeY + r * g.modulePx, g.modulePx, g.modulePx);
       }
     }
   }

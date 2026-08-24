@@ -4,7 +4,28 @@
  * events into layer mutations. Kept DOM-free so it is unit-testable.
  */
 import { addLayer, updateLayer, strokeLayer, textLayer, qrLayer, photoLayer } from './model.js';
-import { hitTest } from './canvas.js';
+import { hitTest, layerBounds } from './canvas.js';
+
+/**
+ * Clamp a layer origin so its RENDERED extent stays on the artboard — moving
+ * by origin alone would let a photo or QR slide almost entirely off-canvas.
+ * A layer larger than the artboard is pinned at 0 rather than pushed negative.
+ */
+function clampOrigin(layer, x, y, size) {
+  const b = layerBounds({ ...layer, x, y }, size);
+  const w = b?.w ?? 0;
+  const h = b?.h ?? 0;
+  // layerBounds already accounts for text alignment / QR quiet zone, so the
+  // offset between the anchor and the drawn box is preserved here.
+  const offX = (b?.x ?? x) - x;
+  const offY = (b?.y ?? y) - y;
+  const maxX = Math.max(0, 1 - w);
+  const maxY = Math.max(0, 1 - h);
+  return {
+    x: Math.max(-offX, Math.min(maxX - offX, x)),
+    y: Math.max(-offY, Math.min(maxY - offY, y)),
+  };
+}
 
 /** Freehand drawing: down starts a stroke, move extends it, up commits. */
 export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
@@ -40,39 +61,49 @@ export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
   };
 }
 
-/** Select/move: down picks a layer, move drags it, up commits. */
+/**
+ * Select/move. `selectedId` PERSISTS after pointer-up (the Delete button acts
+ * on it); `dragId` is the transient gesture target and is cleared on up.
+ */
 export function makeSelectTool({ onSelect } = {}) {
+  let selectedId = null;
   let dragId = null;
   let grab = null;
+  let moved = false;
   return {
     name: 'select',
     onDown(doc, pt, size) {
-      dragId = hitTest(doc, pt, size);
-      onSelect?.(dragId);
+      const hit = hitTest(doc, pt, size);
+      selectedId = hit;
+      dragId = hit;
+      moved = false;
+      onSelect?.(selectedId);
       if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
       grab = { dx: pt.x - (layer.x ?? 0), dy: pt.y - (layer.y ?? 0) };
       return { doc, commit: false };
     },
-    onMove(doc, pt) {
+    onMove(doc, pt, size) {
       if (!dragId || !grab) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
       if (!layer || layer.type === 'stroke') return { doc, commit: false };
-      return {
-        doc: updateLayer(doc, dragId, {
-          x: Math.max(0, Math.min(1, pt.x - grab.dx)),
-          y: Math.max(0, Math.min(1, pt.y - grab.dy)),
-        }),
-        commit: false,
-      };
+      const next = clampOrigin(layer, pt.x - grab.dx, pt.y - grab.dy, size);
+      if (next.x === layer.x && next.y === layer.y) return { doc, commit: false };
+      moved = true;
+      return { doc: updateLayer(doc, dragId, next), commit: false };
     },
     onUp(doc) {
-      const moved = !!dragId;
+      const didMove = moved;
       dragId = null;
       grab = null;
-      return { doc, commit: moved };
+      moved = false;
+      // Commit only if the layer actually moved: a plain click selects
+      // without polluting the undo stack.
+      return { doc, commit: didMove };
     },
-    selectedId() { return dragId; },
+    selectedId() { return selectedId; },
+    setSelection(id) { selectedId = id; onSelect?.(id); },
+    clearSelection() { selectedId = null; onSelect?.(null); },
   };
 }
 

@@ -211,3 +211,18 @@
   background: #fff;
   cursor: crosshair;
 }
+
+.composer__photo {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px dashed rgba(128, 128, 128, 0.4);
+  border-radius: 8px;
+}
+
+.composer__photo label { display: flex; gap: 0.35rem; align-items: center; }
+.composer__photo input[type="range"] { width: 7rem; }

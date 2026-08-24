@@ -1,0 +1,190 @@
+// M2 session tests: the REAL session.js, covering the two invariants that
+// review round 1 found broken — gesture-scoped undo, and session isolation
+// across device switches (autosave capture + async generation guards).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { loadAppModule } from './lib/load-app-module.mjs';
+
+const model = await loadAppModule('composer/model.js');
+const tools = await loadAppModule('composer/tools.js');
+const { createSession, AUTOSAVE_MS } = await loadAppModule('composer/session.js');
+
+const DEVICE_A = { recordId: 'rec-A', width: 800, height: 480, rotationQuarterTurns: 0, colorScheme: 4 };
+const DEVICE_B = { recordId: 'rec-B', width: 122, height: 250, rotationQuarterTurns: 0, colorScheme: 0 };
+
+function makeStore() {
+  const drafts = new Map();
+  const calls = [];
+  return {
+    drafts, calls,
+    putDraft: async (d) => { calls.push(['putDraft', d.id, d.doc.layers.length]); drafts.set(d.id, d); },
+    getDraft: async (id) => drafts.get(id) ?? null,
+  };
+}
+
+function open(device, store, doc = model.createDocument(device), onSaveError) {
+  return createSession({
+    device,
+    draftId: `draft-${device.recordId}`,
+    document: doc,
+    store,
+    onChange: () => {},
+    onSaveError,
+  });
+}
+
+const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- blocker 1: gesture-scoped undo ---
+
+test('a drag gesture creates ONE history entry, and undo restores the PRE-gesture state', () => {
+  const store = makeStore();
+  let doc = model.createDocument(DEVICE_A);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.3, h: 0.3 }));
+  const s = open(DEVICE_A, store, doc);
+  const layerId = doc.layers[0].id;
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+
+  s.beginGesture();
+  let r = t.onDown(s.doc(), { x: 0.15, y: 0.15 }, size);
+  s.updateGesture(r.doc);
+  // Several intermediate moves — none of which may become history entries.
+  for (const x of [0.3, 0.4, 0.5]) {
+    r = t.onMove(s.doc(), { x, y: 0.2 }, size);
+    s.updateGesture(r.doc);
+  }
+  const beforeUp = s.doc().layers[0].x;
+  assert.ok(beforeUp > 0.1, 'layer moved during the gesture');
+  r = t.onUp(s.doc());
+  s.endGesture(r.doc, r.commit);
+
+  assert.equal(s.canUndo(), true);
+  s.undo();
+  assert.equal(s.doc().layers[0].x, 0.1, 'undo restored the pre-gesture position');
+  s.redo();
+  assert.ok(Math.abs(s.doc().layers[0].x - beforeUp) < 1e-9, 'redo restores the final position');
+});
+
+test('a draw gesture is one undo step regardless of how many points it has', () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  const t = tools.makeDrawTool();
+  const size = { W: 800, H: 480 };
+
+  s.beginGesture();
+  let r = t.onDown(s.doc(), { x: 0.1, y: 0.1 }, size);
+  s.updateGesture(r.doc);
+  for (let i = 1; i <= 20; i++) {
+    r = t.onMove(s.doc(), { x: 0.1 + i * 0.04, y: 0.5 }, size);
+    s.updateGesture(r.doc);
+  }
+  r = t.onUp(s.doc());
+  s.endGesture(r.doc, r.commit);
+
+  assert.equal(s.doc().layers.length, 1);
+  s.undo();
+  assert.equal(s.doc().layers.length, 0, 'one undo removes the whole stroke');
+  assert.equal(s.canUndo(), false, 'and nothing else was recorded');
+});
+
+test('an abandoned gesture (stray tap) leaves no history entry and no layer', () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  const t = tools.makeDrawTool();
+  s.beginGesture();
+  const down = t.onDown(s.doc(), { x: 0.2, y: 0.2 }, { W: 800, H: 480 });
+  s.updateGesture(down.doc);
+  const up = t.onUp(s.doc());
+  s.endGesture(up.doc, up.commit);
+  assert.equal(s.doc().layers.length, 0);
+  assert.equal(s.canUndo(), false);
+});
+
+// --- blocker 2: session isolation ---
+
+test('switching devices within the autosave window saves A to A, not to B', async () => {
+  const store = makeStore();
+  const a = open(DEVICE_A, store);
+  a.apply(model.addLayer(a.doc(), model.textLayer({ text: 'A-edit' })));
+
+  // Switch immediately — well inside the debounce window.
+  await a.flush();
+  a.release();
+  const b = open(DEVICE_B, store);
+  b.apply(model.addLayer(b.doc(), model.textLayer({ text: 'B-edit' })));
+  await b.flush();
+
+  const draftA = await store.getDraft('draft-rec-A');
+  const draftB = await store.getDraft('draft-rec-B');
+  assert.equal(draftA.doc.layers[0].text, 'A-edit', "A's edit landed in A's draft");
+  assert.equal(draftB.doc.layers[0].text, 'B-edit');
+  assert.equal(draftA.recordId, 'rec-A');
+  assert.equal(draftB.recordId, 'rec-B');
+});
+
+test('a released session never writes: its pending timer is cancelled', async () => {
+  const store = makeStore();
+  const a = open(DEVICE_A, store);
+  a.apply(model.addLayer(a.doc(), model.textLayer({ text: 'A' })));
+  a.release(); // e.g. the composer was closed straight after an edit
+  await tick(AUTOSAVE_MS + 60);
+  assert.equal(store.calls.length, 0, `no writes after release: ${JSON.stringify(store.calls)}`);
+});
+
+test('generation advances on release, so in-flight async work can be discarded', () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  const gen = s.generation();
+  s.release();
+  assert.notEqual(s.generation(), gen);
+});
+
+test('autosave fires after the debounce and records the captured draft id', async () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'x' })));
+  await tick(AUTOSAVE_MS + 80);
+  assert.deepEqual(store.calls.at(-1), ['putDraft', 'draft-rec-A', 1]);
+});
+
+test('save failures are surfaced, never swallowed', async () => {
+  const store = makeStore();
+  store.putDraft = async () => { throw new Error('QuotaExceededError'); };
+  let seen = null;
+  const s = open(DEVICE_A, store, undefined, (err) => { seen = err; });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'x' })));
+  await s.flush();
+  assert.match(String(seen?.message), /Quota/);
+});
+
+// --- bitmap ownership ---
+
+test('replacing a bitmap closes the old one; release closes them all', () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  const made = [];
+  const fake = (tag) => {
+    const b = { tag, closed: false, close() { this.closed = true; } };
+    made.push(b);
+    return b;
+  };
+  const first = fake('first');
+  s.setBitmap('asset-1', first);
+  const second = fake('second');
+  s.setBitmap('asset-1', second);
+  assert.equal(first.closed, true, 'replaced bitmap closed');
+  assert.equal(second.closed, false);
+  s.setBitmap('asset-2', fake('other'));
+  s.release();
+  assert.ok(made.every((b) => b.closed), 'release closed every owned bitmap');
+});
+
+test('setting the same bitmap object twice does not close it', () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  const b = { closed: false, close() { this.closed = true; } };
+  s.setBitmap('a', b);
+  s.setBitmap('a', b);
+  assert.equal(b.closed, false);
+});

@@ -1,96 +1,161 @@
 /*
  * composer/index.js — composer view controller (M2).
- * Owns DOM wiring and history; document logic lives in model/tools/render.
- * Dithering + send arrive in M3 (the preview is currently the ideal-palette
- * composite, which is already exactly what the encoder will consume).
+ * DOM wiring only: document logic is in model/tools/render, and session
+ * lifecycle (gesture history, autosave isolation, bitmap ownership) is in
+ * session.js.
+ *
+ * NOTE FOR M3: the canvas rendered here is a full-colour composite (text and
+ * photo edges are anti-aliased). It must NOT be sent to a device directly —
+ * M3 dithers it to palette indices and paints those back as exact ideal
+ * palette RGB before handing a canvas to the adapter.
  */
 import * as model from './model.js';
 import * as tools from './tools.js';
 import { renderDocument } from './render.js';
 import { makeSurface, blitPreview } from './canvas.js';
+import { createSession } from './session.js';
 import * as store from '../store.js';
 
 const $ = (id) => document.getElementById(id);
 
-const state = {
-  history: null,
-  device: null,
-  draftId: null,
-  bitmaps: new Map(), // assetId -> ImageBitmap (main-thread resolved)
-  tool: null,
-  selectTool: null,
-  saveTimer: null,
-};
+/** Editing proxy cap: full-resolution originals stay in the asset store and
+ *  are only decoded at send time (M3). */
+const PROXY_MAX_PX = 1600;
+
+let session = null;
+let wired = false;
+let drawTool = null;
+let selectTool = null;
+let activeTool = null;
 
 function doc() {
-  return state.history.present;
+  return session.doc();
 }
 
-function apply(next, { commit = false } = {}) {
-  state.history = commit
-    ? model.commit(state.history, next)
-    : { ...state.history, present: next };
-  scheduleSave();
-  paint();
-}
-
-function paint() {
-  const { canvas, width, height } = renderDocument(doc(), state.bitmaps);
-  blitPreview($('composerCanvas'), canvas, { width, height });
-  $('undoBtn').disabled = !model.canUndo(state.history);
-  $('redoBtn').disabled = !model.canRedo(state.history);
-  const p = doc().panel;
-  $('composerPanelInfo').textContent =
-    `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
-    ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`;
-}
-
-// Drafts autosave (debounced): a composition must survive reload.
-function scheduleSave() {
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(() => {
-    store.putDraft(model.toDraft(doc(), {
-      id: state.draftId,
-      recordId: state.device?.recordId ?? null,
-    })).catch(() => { /* quota/storage errors surface on the next explicit save */ });
-  }, 500);
-}
-
-async function loadBitmaps() {
-  for (const layer of doc().layers) {
-    if (layer.assetId && !state.bitmaps.has(layer.assetId)) {
-      const asset = await store.getAsset(layer.assetId);
-      if (asset?.blob) {
-        state.bitmaps.set(
-          layer.assetId,
-          await createImageBitmap(asset.blob, { imageOrientation: 'from-image' }),
-        );
-      }
-    }
-  }
-}
-
-async function importPhoto(file) {
-  const assetId = await store.putAsset(file);
-  state.bitmaps.set(assetId, await createImageBitmap(file, { imageOrientation: 'from-image' }));
-  apply(tools.placePhoto(doc(), { assetId }), { commit: true });
-}
-
-function currentSize() {
+function size() {
   const { width, height } = model.artboardSize(doc().panel);
   return { W: width, H: height };
 }
 
-function wireTools() {
-  const drawTool = tools.makeDrawTool({ color: 0, width: 0.012 });
-  const selectTool = tools.makeSelectTool({
-    onSelect: (id) => { $('deleteLayerBtn').disabled = !id; },
+function paint() {
+  const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
+  blitPreview($('composerCanvas'), canvas, { width, height });
+  $('undoBtn').disabled = !session.canUndo();
+  $('redoBtn').disabled = !session.canRedo();
+  $('deleteLayerBtn').disabled = !selectTool?.selectedId();
+  const p = doc().panel;
+  $('composerPanelInfo').textContent =
+    `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
+    ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`;
+  updatePhotoControls();
+}
+
+function toast(msg, kind = 'info') {
+  const el = $('composerStatus');
+  el.textContent = msg;
+  el.dataset.kind = kind;
+}
+
+// --- photo handling -------------------------------------------------------
+
+/** Decode a ≤PROXY_MAX_PX editing proxy; originals stay in the asset store. */
+async function decodeProxy(blob) {
+  const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  const scale = Math.min(1, PROXY_MAX_PX / Math.max(full.width, full.height));
+  if (scale === 1) return full;
+  const proxy = await createImageBitmap(full, {
+    resizeWidth: Math.max(1, Math.round(full.width * scale)),
+    resizeHeight: Math.max(1, Math.round(full.height * scale)),
+    resizeQuality: 'high',
   });
-  state.selectTool = selectTool;
-  state.tool = selectTool;
+  full.close?.();
+  return proxy;
+}
+
+async function importPhoto(blob) {
+  const gen = session.generation();
+  const assetId = await store.putAsset(blob);
+  const bitmap = await decodeProxy(blob);
+  // The session may have been replaced while we hashed and decoded.
+  if (gen !== session.generation()) {
+    bitmap.close?.();
+    return;
+  }
+  session.setBitmap(assetId, bitmap);
+  session.apply(tools.placePhoto(doc(), { assetId }));
+  selectPhotoLayer(doc().layers.at(-1).id);
+  toast('Photo added.');
+}
+
+function selectedPhotoLayer() {
+  const id = selectTool?.selectedId();
+  const layer = id && doc().layers.find((l) => l.id === id);
+  return layer && layer.type === 'photo' ? layer : null;
+}
+
+function selectPhotoLayer(id) {
+  selectTool.setSelection?.(id);
+  paint();
+}
+
+function updatePhotoControls() {
+  const layer = selectedPhotoLayer();
+  $('photoControls').hidden = !layer;
+  if (!layer) return;
+  $('photoFit').value = layer.fit;
+  for (const [id, key] of Object.entries(ADJUST_INPUTS)) {
+    $(id).value = String(layer.adjustments[key] ?? (key === 'exposure' || key === 'saturation' ? 1 : 0));
+  }
+}
+
+const ADJUST_INPUTS = {
+  adjExposure: 'exposure',
+  adjSaturation: 'saturation',
+  adjShadows: 'shadows',
+  adjHighlights: 'highlights',
+};
+
+function wirePhotoControls() {
+  $('photoFit').addEventListener('change', (ev) => {
+    const layer = selectedPhotoLayer();
+    if (layer) session.apply(model.updateLayer(doc(), layer.id, { fit: ev.target.value }));
+  });
+  for (const [id, key] of Object.entries(ADJUST_INPUTS)) {
+    // `input` previews live; `change` commits one history entry per drag.
+    $(id).addEventListener('input', () => {
+      const layer = selectedPhotoLayer();
+      if (!layer) return;
+      const next = model.updateLayer(doc(), layer.id, {
+        adjustments: { ...layer.adjustments, [key]: Number($(id).value) },
+      });
+      session.updateGesture(next);
+    });
+    $(id).addEventListener('change', () => {
+      const layer = selectedPhotoLayer();
+      if (!layer) return;
+      session.endGesture(doc(), true);
+    });
+    $(id).addEventListener('pointerdown', () => session.beginGesture());
+  }
+  $('photoSize').addEventListener('input', () => {
+    const layer = selectedPhotoLayer();
+    if (!layer) return;
+    const f = Number($('photoSize').value);
+    session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f }));
+  });
+  $('photoSize').addEventListener('pointerdown', () => session.beginGesture());
+  $('photoSize').addEventListener('change', () => session.endGesture(doc(), true));
+}
+
+// --- wiring ---------------------------------------------------------------
+
+function wire() {
+  drawTool = tools.makeDrawTool({ color: 0, width: 0.012 });
+  selectTool = tools.makeSelectTool({ onSelect: () => paint() });
+  activeTool = selectTool;
 
   const setTool = (tool, btnId) => {
-    state.tool = tool;
+    activeTool = tool;
     for (const b of document.querySelectorAll('.composer__tool')) {
       b.classList.toggle('composer__tool--active', b.id === btnId);
     }
@@ -100,65 +165,86 @@ function wireTools() {
 
   $('toolText').addEventListener('click', () => {
     const text = window.prompt('Text to place:');
-    if (text) {
-      const c = { x: 0.1, y: 0.1 };
-      apply(tools.placeText(doc(), c, { text, color: Number($('inkColor').value) }), { commit: true });
-    }
+    if (!text) return;
+    session.apply(tools.placeText(doc(), { x: 0.1, y: 0.1 }, {
+      text, color: Number($('inkColor').value),
+    }));
   });
   $('toolQr').addEventListener('click', () => {
     const text = window.prompt('QR contents (URL or text):', 'https://opendisplay.org');
-    if (text) {
-      try {
-        apply(tools.placeQr(doc(), { x: 0.1, y: 0.1 }, { text, color: Number($('inkColor').value) }), { commit: true });
-      } catch (err) {
-        window.alert(String(err.message ?? err));
-      }
+    if (!text) return;
+    try {
+      session.apply(tools.placeQr(doc(), { x: 0.1, y: 0.1 }, {
+        text, color: Number($('inkColor').value),
+      }));
+    } catch (err) {
+      toast(String(err.message ?? err), 'error');
     }
   });
   $('inkColor').addEventListener('change', (ev) => drawTool.setColor(Number(ev.target.value)));
 
   makeSurface($('composerCanvas'), {
     onPointerDown: (pt) => {
-      const r = state.tool.onDown(doc(), pt, currentSize());
-      apply(r.doc, { commit: r.commit });
+      session.beginGesture();
+      const r = activeTool.onDown(doc(), pt, size());
+      session.updateGesture(r.doc);
     },
     onPointerMove: (pt) => {
-      const r = state.tool.onMove(doc(), pt, currentSize());
-      apply(r.doc, { commit: r.commit });
+      const r = activeTool.onMove(doc(), pt, size());
+      session.updateGesture(r.doc);
     },
     onPointerUp: (pt) => {
-      const r = state.tool.onUp(doc(), pt, currentSize());
-      apply(r.doc, { commit: r.commit });
+      const r = activeTool.onUp(doc(), pt, size());
+      session.endGesture(r.doc, r.commit);
     },
   });
 
-  $('undoBtn').addEventListener('click', () => {
-    state.history = model.undo(state.history);
-    scheduleSave();
-    paint();
-  });
-  $('redoBtn').addEventListener('click', () => {
-    state.history = model.redo(state.history);
-    scheduleSave();
-    paint();
-  });
+  $('undoBtn').addEventListener('click', () => session.undo());
+  $('redoBtn').addEventListener('click', () => session.redo());
   $('deleteLayerBtn').addEventListener('click', () => {
-    const id = state.selectTool.selectedId();
-    if (id) apply(model.removeLayer(doc(), id), { commit: true });
+    const id = selectTool.selectedId();
+    if (!id) return;
+    selectTool.clearSelection();
+    session.apply(model.removeLayer(doc(), id));
   });
+
   $('photoFile').addEventListener('change', (ev) => {
     const file = ev.target.files?.[0];
     ev.target.value = '';
-    if (file) importPhoto(file).catch((err) => window.alert(String(err.message ?? err)));
+    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
   });
+
+  // Drag-drop and paste, per plan §6.
+  const stage = $('composerStage');
+  stage.addEventListener('dragover', (ev) => { ev.preventDefault(); });
+  stage.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const file = [...(ev.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'));
+    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
+  });
+  window.addEventListener('paste', (ev) => {
+    if ($('viewComposer').hidden) return;
+    const item = [...(ev.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'));
+    const file = item?.getAsFile?.();
+    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
+  });
+
+  wirePhotoControls();
+  wired = true;
 }
 
-/** Open the composer for a device record, restoring its draft if present. */
+// --- entry point ----------------------------------------------------------
+
+/** Open the composer for a device record, restoring its draft if present.
+ *  Any previous session is flushed and released first. */
 export async function openComposer(device) {
-  state.device = device;
-  state.draftId = `draft-${device.recordId}`;
+  if (session) {
+    await session.flush();   // never lose the outgoing device's edits
+    session.release();       // closes bitmaps, invalidates in-flight work
+  }
+  const draftId = `draft-${device.recordId}`;
+  const existing = await store.getDraft(draftId).catch(() => null);
   let document_;
-  const existing = await store.getDraft(state.draftId).catch(() => null);
   if (existing?.doc) {
     document_ = model.fromDraft(existing);
     // Panel facts may have changed since the draft was written.
@@ -166,14 +252,51 @@ export async function openComposer(device) {
   } else {
     document_ = model.createDocument(device);
   }
-  state.history = model.createHistory(document_);
-  state.bitmaps = new Map();
-  await loadBitmaps();
-  if (!composerWired) {
-    wireTools();
-    composerWired = true;
+
+  session = createSession({
+    device,
+    draftId,
+    document: document_,
+    store,
+    onChange: () => paint(),
+    onSaveError: (err) => toast(`Could not save draft: ${err.message ?? err}`, 'error'),
+  });
+
+  if (!wired) wire();
+  selectTool?.clearSelection();
+
+  // Restore editing proxies for referenced assets (generation-guarded).
+  const gen = session.generation();
+  for (const layer of document_.layers) {
+    if (!layer.assetId) continue;
+    const asset = await store.getAsset(layer.assetId).catch(() => null);
+    if (!asset?.blob) continue;
+    const bmp = await decodeProxy(asset.blob);
+    if (gen !== session.generation()) { bmp.close?.(); return; }
+    session.setBitmap(layer.assetId, bmp);
   }
+
+  // Reclaim assets no longer reachable from any draft; protect this session's.
+  store.sweepAssets(model.referencedAssets(document_)).catch(() => {});
   paint();
 }
 
-let composerWired = false;
+/** Flush pending edits without tearing the session down — used when
+ *  navigating away from the composer view (navigating back must still work).
+ *  A different device's openComposer() does the flush AND release. */
+export async function flushComposer() {
+  if (!session) return;
+  await session.flush();
+}
+
+/** Flush and release entirely (e.g. the open device was forgotten). */
+export async function closeComposer() {
+  if (!session) return;
+  await session.flush();
+  session.release();
+  session = null;
+}
+
+export function hasSession() {
+  return !!session;
+}

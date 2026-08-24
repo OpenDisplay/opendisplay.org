@@ -85,11 +85,24 @@
         <button id="deleteLayerBtn" class="odapp__btn" type="button" disabled>Delete</button>
       </div>
       <p id="composerPanelInfo" class="odapp-card__meta"></p>
-      <div class="composer__stage">
+      <div id="photoControls" class="composer__photo" hidden>
+        <label>Fit
+          <select id="photoFit">
+            <option value="contain">Contain</option>
+            <option value="cover">Cover</option>
+          </select>
+        </label>
+        <label>Size <input id="photoSize" type="range" min="0.1" max="1" step="0.05" value="1"></label>
+        <label>Exposure <input id="adjExposure" type="range" min="0.3" max="2" step="0.05" value="1"></label>
+        <label>Saturation <input id="adjSaturation" type="range" min="0" max="2" step="0.05" value="1"></label>
+        <label>Shadows <input id="adjShadows" type="range" min="0" max="1" step="0.05" value="0"></label>
+        <label>Highlights <input id="adjHighlights" type="range" min="0" max="1" step="0.05" value="0"></label>
+      </div>
+      <div id="composerStage" class="composer__stage">
         <canvas id="composerCanvas" class="composer__canvas"></canvas>
       </div>
-      <p class="odapp-card__meta">
-        Preview shows ideal palette colours. Dithering and sending arrive in the next milestone.
+      <p id="composerStatus" class="odapp__status" role="status">
+        Drop or paste an image here. Preview is a full-colour composite; dithering and sending arrive next.
       </p>
     </section>
 

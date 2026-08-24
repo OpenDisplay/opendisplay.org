@@ -11,6 +11,7 @@
  */
 import { ready, webBluetoothBlockReason } from './ble-adapter.js';
 import { initDevices } from './devices.js';
+import { flushComposer } from './composer/index.js';
 
 // Must match the directory this file lives in; compared against the deployed
 // marker to recover from a stale heuristically-cached entry page (the
@@ -111,6 +112,9 @@ async function boot() {
 }
 
 $('navDevices').addEventListener('click', () => {
+  // Flush the composer draft before leaving: edits must never be lost.
+  // The session stays alive so navigating back resumes it.
+  flushComposer().catch(() => {});
   $('viewDevices').hidden = false;
   $('viewComposer').hidden = true;
   $('navDevices').classList.add('odapp__navbtn--active');
