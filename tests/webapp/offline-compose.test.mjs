@@ -134,6 +134,23 @@ test('the composer works with no device connected, and Send explains why it is o
     ok('sendDisabled', send.disabled === true);
     ok('sendExplains', /connect/i.test(send.title));
 
+    // Closing must not schedule work against the session it just released:
+    // clearSelection fires the selection callback, and an accepted render can
+    // still be in flight. Both used to reach paintNow()/onResult and throw
+    // after the session was nulled. Forgetting the open device takes this path.
+    const boom = [];
+    const onerr = (e) => boom.push(String(e.message ?? e.reason ?? e));
+    window.addEventListener('error', onerr);
+    window.addEventListener('unhandledrejection', onerr);
+    await composer.closeComposer({ discard: true });
+    await settle();
+    await settle();
+    window.removeEventListener('error', onerr);
+    window.removeEventListener('unhandledrejection', onerr);
+    ok('closeIsQuiet', boom.length === 0);
+    out.boom = boom;
+    ok('sessionGone', composer.hasSession() === false);
+
     out.ok = Object.values(out.checks).every(Boolean);
     return out;
   })()`, { timeoutMs: 60000 });

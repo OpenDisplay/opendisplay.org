@@ -287,6 +287,7 @@ export function createSession({
         if (session.released || !isDirty()) return;
         await flushSave(snapshotNow());
       }
+      if (session.released || !isDirty()) return; // the last write caught up
       // Exhausting the guard means edits kept arriving faster than storage
       // could settle. Resolving here would tell openComposer the session is
       // safe to release, which is exactly the data loss the loop exists to

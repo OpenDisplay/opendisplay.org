@@ -647,3 +647,44 @@ test('a failed write does not release ownership claimed by a newer one', async (
   assert.deepEqual(writes, [1, 2], 'the two-layer document was written once, not twice');
   assert.equal(db.get('d').rev, 1, 'no phantom revision for another tab to collide with');
 });
+
+test('a gesture that changes nothing still notifies, with the SAME document', () => {
+  // The composer relies on document identity to tell a selection click apart
+  // from an edit, so this contract is load-bearing (round-5 finding 1).
+  const store = makeStore();
+  const docs = [];
+  const s = createSession({ device: DEVICE_A, draftId: 'd',
+    document: model.createDocument(DEVICE_A), store, onChange: (d) => docs.push(d) });
+  const before = s.doc();
+  s.beginGesture();
+  s.updateGesture(before);   // a plain click: the tool returns the doc unchanged
+  s.endGesture(before);
+  assert.ok(docs.length > 0, 'it does notify');
+  assert.ok(docs.every((d) => d === before), 'every notification carries the same object');
+  assert.equal(s.isDirty(), false, 'and nothing was committed');
+});
+
+test('flush does NOT reject when the final catch-up write wins', async () => {
+  const db = new Map();
+  let writes = 0;
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev !== expectedRev) throw new Error('conflict');
+      writes++;
+      // Edits arrive during writes 1..15 but not during the 16th, so the loop
+      // exhausts its guard with everything already on disk.
+      if (writes < 16) s.apply(model.addLayer(s.doc(), model.textLayer({ text: `w${writes}` })));
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'first' })));
+  await s.flush();   // must not throw: the guard ran out, but nothing is unsaved
+  assert.equal(s.isDirty(), false);
+  s.release();
+});

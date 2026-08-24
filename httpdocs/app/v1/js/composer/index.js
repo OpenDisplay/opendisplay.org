@@ -36,6 +36,8 @@ let dither = null;
  *  and the dithered preview. Cleared whenever the document changes so a stale
  *  frame can never be sent. */
 let latestDither = null;
+/** The document the last content repaint was for; see the onChange handler. */
+let lastContentDoc = null;
 let sending = false;
 let drawTool = null;
 let selectTool = null;
@@ -101,6 +103,7 @@ let paintScheduled = false;
 function paint() {
   latestDither = null;
   dither?.invalidate();
+  requestDither();
   schedulePaint();
 }
 
@@ -127,10 +130,11 @@ function schedulePaint() {
 
 /** Force a synchronous repaint (tests and teardown paths). */
 function paintNow() {
-  // NOTE: invalidation belongs to paint(), not here — repaintOnly() lands here
-  // too and must leave a correct in-flight render alone. requestDither() is
-  // debounced and idempotent, so asking again costs nothing.
-  requestDither();
+  // NOTE: neither invalidation nor requestDither() belongs here — repaintOnly()
+  // lands here too, and a redundant request would carry a NEWER id, which is
+  // enough on its own to make an in-flight legitimate result fail the
+  // latest-request check. Both belong to paint().
+  if (!session) return;
 
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
   blitPreview($('composerCanvas'), canvas, { width, height });
@@ -367,6 +371,7 @@ function ensureDitherClient() {
   dither = createDitherClient({
     workerUrl: new URL('./dither-worker.js', import.meta.url),
     onResult: (msg) => {
+      if (!session) return; // the composer closed while this render was in flight
       // Bind the frame to the panel it was rendered for.
       latestDither = { ...msg, signature: panelSignature(doc().panel) };
       if ($('showDithered').checked) {
@@ -718,10 +723,20 @@ export async function openComposer(device) {
     rev: existing?.rev ?? 0,
     store,
     validate: validateDocument,
-    onChange: () => {
+    onChange: (nextDoc) => {
       // Prune on every committed change, not just Delete/Clear: a bitmap kept
       // for Undo becomes garbage once it is evicted from the bounded history.
       pruneCaches();
+      // A gesture that changed nothing still notifies — a plain selection
+      // click runs update/endGesture over the same immutable document. Treat
+      // that as a repaint, not a content change, or clicking around during a
+      // large-panel render would discard render after render. Documents are
+      // immutable, so identity is a sound "unchanged" test.
+      if (nextDoc === lastContentDoc) {
+        repaintOnly();
+        return;
+      }
+      lastContentDoc = nextDoc;
       paint();
     },
     onSaveError: (err) => reportError(err),
@@ -758,6 +773,8 @@ export async function openComposer(device) {
 
   // Reclaim assets no longer reachable from any draft; protect this session's.
   store.sweepAssets(model.referencedAssets(document_)).catch(() => {});
+  // Baseline for the unchanged-document check in onChange.
+  lastContentDoc = session.doc();
   paint();
   if (reconcileNote) toast(reconcileNote, 'error');
 }
@@ -776,9 +793,17 @@ export async function closeComposer({ discard = false } = {}) {
   // `discard` skips the flush: the device (and its draft) are being deleted,
   // so writing the draft back would resurrect it.
   if (!discard) await session.flush();
+  // Clear the selection BEFORE the session goes: clearSelection fires the
+  // selection callback, which schedules a repaint that would dereference it.
+  selectTool?.clearSelection();
+  // Retire the epoch too, or an already-accepted render can still land in
+  // onResult and read doc() off the session we are about to drop. Forgetting
+  // the open device takes exactly this path.
+  dither?.newEpoch();
+  latestDither = null;
+  lastContentDoc = null;
   session.release();
   session = null;
-  selectTool?.clearSelection();
 }
 
 /** The record id whose composer session is currently open, if any. */
