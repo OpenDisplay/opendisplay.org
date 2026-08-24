@@ -322,6 +322,71 @@ window.resultPromise = (async () => {
   } catch { fallbackOk = false; } finally { self.createImageBitmap = origCIB; }
   ok('resizeIgnoredFallback', fallbackOk);
 
+  // The capability probe must use the BLOB overload production uses, and its
+  // verdict must drive the pre-decode limit.
+  sizeMod._resetResizeSupport();
+  ok('probeDetectsWorkingResize', (await sizeMod.supportsBitmapResize()) === true);
+
+  sizeMod._resetResizeSupport();
+  let probeDetectsBroken = false;
+  let strictLimitApplied = false;
+  const wide = new OffscreenCanvas(4200, 3200);           // ~13.4 MP > 12 MP
+  wide.getContext('2d').fillRect(0, 0, 4200, 3200);
+  const bigBlob = await wide.convertToBlob({ type: 'image/png' });
+  try {
+    self.createImageBitmap = (src, opts) => origCIB(src); // resize ignored
+    probeDetectsBroken = (await sizeMod.supportsBitmapResize()) === false;
+    try {
+      const b = await sizeMod.decodeBounded(bigBlob, 800);
+      b.close?.();
+    } catch (e) {
+      strictLimitApplied = e.name === 'ImageTooLargeError';
+    }
+  } finally {
+    self.createImageBitmap = origCIB;
+    sizeMod._resetResizeSupport();
+  }
+  ok('probeDetectsBrokenResize', probeDetectsBroken);
+  ok('strictLimitWhenResizeUnavailable', strictLimitApplied);
+
+  // The SAME image is accepted when resize works: the limit is conditional,
+  // not a blanket refusal.
+  let acceptedWhenBounded = false;
+  try {
+    const b = await sizeMod.decodeBounded(bigBlob, 800);
+    acceptedWhenBounded = Math.max(b.width, b.height) === 800;
+    b.close?.();
+  } catch { acceptedWhenBounded = false; }
+  ok('sameImageAcceptedWhenResizeWorks', acceptedWhenBounded);
+
+  // A document referencing a MISSING asset must never produce a frame (so Send
+  // stays disabled), and removing the broken layer must unblock rendering.
+  const { createDitherClient } = await import('/app/v1/js/composer/dither-client.js');
+  let sawFrameForMissing = false;
+  const blockedClient = createDitherClient({
+    workerUrl: '/app/v1/js/composer/dither-worker.js',
+    onResult: () => { sawFrameForMissing = true; },
+    onError: () => {},
+  });
+  let withPhoto = model.createDocument(DEVICE);
+  withPhoto = model.addLayer(withPhoto, model.photoLayer({ assetId: 'never-loaded' }));
+  blockedClient.request(withPhoto, { mode: 0 });
+  await new Promise((r) => setTimeout(r, 400));
+  ok('missingAssetNeverProducesFrame', sawFrameForMissing === false);
+  blockedClient.terminate();
+
+  const cleaned = model.removeLayer(withPhoto, withPhoto.layers[0].id);
+  const unblocked = await new Promise((resolve) => {
+    const c2 = createDitherClient({
+      workerUrl: '/app/v1/js/composer/dither-worker.js',
+      onResult: () => resolve(true),
+      onError: () => resolve(false),
+    });
+    c2.request(cleaned, { mode: 0 });
+    setTimeout(() => resolve(false), 8000);
+  });
+  ok('removingBrokenLayerUnblocksDither', unblocked);
+
   ok('acceptListMatchesDecoder',
      JSON.stringify(sizeMod.SUPPORTED_IMAGE_TYPES) ===
      JSON.stringify(['image/png', 'image/jpeg', 'image/gif', 'image/webp']));

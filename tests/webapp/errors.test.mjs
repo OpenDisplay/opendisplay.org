@@ -48,7 +48,7 @@ test('upload failures from the shared library get actionable messages', () => {
     describeError(new Error('PIPE_WRITE aborted: MAX_RETX exceeded (PTO)')).title,
     /lost packets/i,
   );
-  assert.match(describeError(new Error('Partial update failed')).hint, /full-screen update/i);
+  assert.match(describeError(new Error('Partial update failed')).hint, /reconnect the device/i);
   assert.match(describeError(new Error('Disconnected')).title, /disconnected during/i);
   assert.match(describeError(new Error('Upload failed')).title, /upload failed/i);
 });
@@ -143,4 +143,32 @@ test('errorMessage joins title and hint into one line', () => {
   assert.match(msg, /out of storage.*Delete a draft/is);
   // No hint: just the title.
   assert.equal(errorMessage(new Error('plain')), 'plain');
+});
+
+// --- durable-storage detection (M4) ---
+
+const { checkPersistence } = await loadAppModule('store.js');
+
+test('durability is confirmed ONLY by an explicit grant', async () => {
+  assert.equal(await checkPersistence(async () => true), true);
+});
+
+test('every unconfirmed outcome reports as not durable', async () => {
+  // Denied.
+  assert.equal(await checkPersistence(async () => false), false);
+  // Rejected.
+  assert.equal(await checkPersistence(async () => { throw new Error('denied'); }), false);
+  // Synchronously throwing.
+  assert.equal(await checkPersistence(() => { throw new Error('boom'); }), false);
+  // Unsupported (no such API).
+  assert.equal(await checkPersistence(undefined), false);
+  // Returns something other than a boolean true.
+  assert.equal(await checkPersistence(async () => undefined), false);
+  // Never answers: must time out rather than hang a write.
+  assert.equal(await checkPersistence(() => new Promise(() => {}), 30), false);
+});
+
+test('a slow-but-granted answer inside the timeout still counts', async () => {
+  const slow = () => new Promise((r) => setTimeout(() => r(true), 10));
+  assert.equal(await checkPersistence(slow, 200), true);
 });

@@ -15,3 +15,7 @@
 # While this file lists no version, deploy-ftp-curl.sh EXCLUDES httpdocs/app/
 # from deployment entirely — unreleased must also mean unpublished, because
 # httpdocs deploys wholesale.
+#
+# CAVEAT: the FTP deploy never deletes remote files, so this gate prevents
+# FIRST publication only. If any /app/ files ever reached production, confirm
+# they are gone from the server before relying on it.

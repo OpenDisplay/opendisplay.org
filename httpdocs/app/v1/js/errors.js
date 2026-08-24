@@ -97,7 +97,7 @@ const MATCHERS = [
     map: () => ({
       kind: 'error',
       title: 'The device rejected a partial screen update.',
-      hint: 'Send again to retry with a full-screen update.',
+      hint: 'Try sending again; if it keeps failing, reconnect the device first.',
     }),
   },
   {

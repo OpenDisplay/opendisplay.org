@@ -70,25 +70,39 @@ export function onPersistenceDenied(fn) {
   persistenceListener = fn;
 }
 
+/**
+ * Is storage durable? Resolves TRUE only on an explicit grant; false covers
+ * denial, rejection, a synchronous throw, an unsupported API and a slow or
+ * absent answer — all of which mean durability was NOT established. Exported
+ * for testing; no write ever awaits it.
+ * @param {(() => Promise<boolean>)|undefined} persistFn
+ */
+export async function checkPersistence(persistFn, timeoutMs = 3000) {
+  if (typeof persistFn !== 'function') return false;
+  try {
+    const UNCONFIRMED = Symbol('unconfirmed');
+    // Timeboxed AND non-blocking: this can hang where no permission backend
+    // exists, and no write may ever wait on it.
+    const granted = await Promise.race([
+      Promise.resolve(persistFn()),
+      new Promise((r) => setTimeout(() => r(UNCONFIRMED), timeoutMs)),
+    ]);
+    return granted === true;
+  } catch {
+    return false;
+  }
+}
+
 function requestPersistence() {
   if (persistRequested) return;
   persistRequested = true;
   try {
-    // Timeboxed AND non-blocking: this can hang where no permission backend
-    // exists, and no write may ever wait on it.
-    const UNCONFIRMED = Symbol('unconfirmed');
-    Promise.race([
-      Promise.resolve(navigator.storage?.persist?.()),
-      new Promise((r) => setTimeout(() => r(UNCONFIRMED), 3000)),
-    ])
-      .then((granted) => {
-        // Anything other than an explicit `true` means durability was NOT
-        // established: denied, unsupported (undefined), or timed out.
-        if (granted !== true) persistenceListener?.();
-      })
+    checkPersistence(navigator.storage?.persist?.bind(navigator.storage))
+      .then((confirmed) => { if (!confirmed) persistenceListener?.(); })
       .catch(() => persistenceListener?.());
   } catch {
-    /* unsupported: proceed */
+    // Even a synchronous throw means durability was not established.
+    persistenceListener?.();
   }
 }
 

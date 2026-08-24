@@ -25,19 +25,32 @@ export const MAX_SOURCE_MEGAPIXELS = 60;
 export const MAX_SOURCE_MEGAPIXELS_UNBOUNDED = 12;
 
 /**
- * Does createImageBitmap actually honour resizeWidth/resizeHeight? WebKit
- * (and therefore Bluefy on iOS) ignores them silently. Probed ONCE with a
- * 2×2 fixture so the answer costs nothing.
+ * A 2×2 red PNG. Used as the capability probe so the check exercises the EXACT
+ * overload production uses — createImageBitmap(Blob, options) — since a
+ * browser may honour resize options for one source type and ignore them for
+ * another.
+ */
+const PROBE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7g'
+  + 'P9i18U1AAAAABJRU5ErkJggg==';
+
+function probeBlob() {
+  const bin = atob(PROBE_PNG_BASE64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: 'image/png' });
+}
+
+/**
+ * Does createImageBitmap actually honour resizeWidth/resizeHeight for a BLOB?
+ * WebKit (and therefore Bluefy on iOS) ignores them silently. Probed ONCE.
  */
 let resizeSupport = null;
 export async function supportsBitmapResize() {
   if (resizeSupport !== null) return resizeSupport;
   try {
-    const probe = new ImageData(new Uint8ClampedArray(2 * 2 * 4).fill(255), 2, 2);
-    const src = await createImageBitmap(probe);
-    const out = await createImageBitmap(src, { resizeWidth: 1, resizeHeight: 1 });
+    const out = await createImageBitmap(probeBlob(), { resizeWidth: 1, resizeHeight: 1 });
     resizeSupport = out.width === 1 && out.height === 1;
-    src.close?.();
     out.close?.();
   } catch {
     resizeSupport = false;
