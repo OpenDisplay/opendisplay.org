@@ -285,3 +285,45 @@ test('a gesture whose result is invalid is discarded wholesale', () => {
   assert.equal(s.doc().layers[0].x, 0.1, 'reverted to the pre-gesture state');
   assert.equal(s.canUndo(), false, 'nothing recorded');
 });
+
+// --- clean sessions must not overwrite stored drafts (review round 5) ---
+
+test('opening and leaving WITHOUT editing writes nothing', async () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  assert.equal(s.isDirty(), false);
+  await s.flush();          // e.g. the user clicked Devices straight away
+  s.release();
+  assert.equal(store.calls.length, 0,
+    `a clean session must not persist: ${JSON.stringify(store.calls)}`);
+});
+
+test('a reconciled draft is not written back until the user edits it', async () => {
+  const store = makeStore();
+  // Simulate a reconciled document differing from what is stored.
+  const stored = model.addLayer(model.createDocument(DEVICE_A), model.textLayer({ text: 'orig' }));
+  store.drafts.set('draft-rec-A', { id: 'draft-rec-A', recordId: 'rec-A', doc: stored });
+  const reconciled = model.createDocument(DEVICE_A); // e.g. layers dropped
+  const s = open(DEVICE_A, store, reconciled);
+
+  await s.flush();
+  assert.equal(store.calls.length, 0, 'reconciliation alone persists nothing');
+  assert.equal((await store.getDraft('draft-rec-A')).doc.layers.length, 1, 'stored draft intact');
+
+  // The first real edit makes it dirty, and then it does save.
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'user edit' })));
+  assert.equal(s.isDirty(), true);
+  await s.flush();
+  assert.equal(store.calls.length, 1);
+});
+
+test('undo counts as an edit (it changes what should be stored)', async () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'a' })));
+  await s.flush();
+  const afterFirst = store.calls.length;
+  s.undo();
+  await s.flush();
+  assert.ok(store.calls.length > afterFirst, 'undo is persisted');
+});

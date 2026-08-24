@@ -282,6 +282,36 @@ window.resultPromise = (async () => {
   const restored = model.fromDraft(saved);
   ok('draftRoundTrip', restored.layers.length === 1 && restored.layers[0].assetId === idA);
 
+  // Reconciliation must not rewrite the stored draft: open a draft authored
+  // for a colour panel on a MONO panel, reconcile, and confirm storage is
+  // byte-identical afterwards.
+  const monoDev = await store.createDevice({
+    bleId: 'ble-m', name: 'OD-M', width: 122, height: 250,
+    colorScheme: 0, resolutionConfirmed: true,
+  });
+  let colourDoc = model.createDocument({ recordId: monoDev.recordId, width: 400, height: 300,
+                                         rotationQuarterTurns: 0, colorScheme: 4 });
+  colourDoc = model.addLayer(colourDoc, model.textLayer({ text: 'blue', color: 4 }));
+  await store.putDraft(model.toDraft(colourDoc, { id: 'dr-mono', recordId: monoDev.recordId }));
+  const savedBefore = JSON.stringify(await store.getDraft('dr-mono'));
+
+  const reopened = model.fromDraft(await store.getDraft('dr-mono'));
+  const priorScheme = reopened.panel.colorScheme;
+  reopened.panel = model.createDocument(monoDev).panel;
+  const { doc: fixedDoc, changes: reconChanges } = render.reconcileDocument(reopened, priorScheme);
+  render.validateDocument(fixedDoc);
+  ok('reconcileRemapped', reconChanges.length > 0 && fixedDoc.layers[0].color < 2);
+  ok('storedDraftUntouchedByReconcile',
+     JSON.stringify(await store.getDraft('dr-mono')) === savedBefore);
+
+  // Grey-scheme background must be WHITE (last index), not index 1.
+  const greyDoc = model.createDocument({ recordId: 'g', width: 100, height: 100,
+                                         rotationQuarterTurns: 0, colorScheme: 5 });
+  ok('greyBackgroundIsWhite', greyDoc.background === 3);
+  const greyRender = render.renderDocument(greyDoc, new Map());
+  const corner = greyRender.ctx.getImageData(0, 0, 1, 1).data;
+  ok('greyBackgroundRendersWhite', corner[0] === 255 && corner[1] === 255 && corner[2] === 255);
+
   // A draft for a FORGOTTEN device must be refused, not resurrected — run
   // last, since forgetting cascades the drafts other checks rely on.
   await store.forgetDevice(REC);

@@ -12,6 +12,8 @@
  * kilobytes, not megabytes.
  */
 
+import { lightestIndex } from './palettes.js';
+
 export const MAX_UNDO = 50;
 
 export function artboardSize(device) {
@@ -40,7 +42,9 @@ export function createDocument(device) {
       colorScheme: device.colorScheme,
       panelIcType: device.panelIcType ?? null,
     },
-    background: 1, // palette index painted before layers (1 = white)
+    // Palette index painted before layers. NOT hardcoded to 1: that is white
+    // on the colour schemes but dark grey on 4-grey and near-black on 16-grey.
+    background: lightestIndex(device.colorScheme),
     // Whole-image pre-dither parameters consumed by M3's wasm pass.
     tone: 'auto',
     gamut: 'auto',

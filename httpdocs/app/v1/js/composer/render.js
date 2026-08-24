@@ -10,56 +10,22 @@
  * black.
  */
 import { artboardSize } from './model.js';
+import {
+  IDEAL_PALETTES, paletteFor, luma, darkestIndex, lightestIndex, nearestIndex,
+  QR_MIN_CONTRAST,
+} from './palettes.js';
 import { encodeQrMatrix } from './qr.js';
 
-/** Ideal wire palettes, index order = dither palette order per scheme.
- *  These are the same canonical values the encoder classifies exactly
- *  (proven byte-identical to py-opendisplay in tests/webapp). */
-export const IDEAL_PALETTES = {
-  0: [[0, 0, 0], [255, 255, 255]],
-  1: [[0, 0, 0], [255, 255, 255], [255, 0, 0]],
-  2: [[0, 0, 0], [255, 255, 255], [255, 255, 0]],
-  3: [[0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0]],
-  4: [[0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0], [0, 0, 255], [0, 255, 0]],
-  5: [[0, 0, 0], [85, 85, 85], [170, 170, 170], [255, 255, 255]],
-  6: Array.from({ length: 16 }, (_, i) => [i * 17, i * 17, i * 17]),
-  8: [[0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0], [0, 0, 255], [0, 255, 0]],
-};
-
-export function paletteFor(colorScheme) {
-  const p = IDEAL_PALETTES[colorScheme];
-  if (!p) throw new Error(`unsupported color scheme ${colorScheme}`);
-  return p;
-}
+// Palette knowledge lives in palettes.js so model.js can use it without
+// importing the renderer; re-exported here for existing call sites.
+export {
+  IDEAL_PALETTES, paletteFor, luma, darkestIndex, lightestIndex, nearestIndex,
+  QR_MIN_CONTRAST,
+} from './palettes.js';
 
 function rgbCss([r, g, b]) {
   return `rgb(${r},${g},${b})`;
 }
-
-/** Relative luminance 0..1 of a palette entry. */
-function luma([r, g, b]) {
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-}
-
-/** Darkest ink in a scheme — index 0 in every supported palette. */
-export function darkestIndex() {
-  return 0;
-}
-
-/**
- * Lightest ink. NOT always index 1: the grey schemes run dark→light, so white
- * is the LAST entry there (index 1 is dark grey, which would make a useless
- * QR quiet zone).
- */
-export function lightestIndex(scheme) {
-  const p = paletteFor(scheme);
-  let best = 0;
-  for (let i = 1; i < p.length; i++) if (luma(p[i]) > luma(p[best])) best = i;
-  return best;
-}
-
-/** Minimum module-vs-quiet-zone luminance gap for a scannable QR. */
-export const QR_MIN_CONTRAST = 0.4;
 
 function paletteColor(scheme, index) {
   const p = paletteFor(scheme);
@@ -333,25 +299,19 @@ export function reconcileDocument(doc, previousScheme) {
   const changes = [];
 
   // Map an ink index from the old palette to the nearest colour available in
-  // the new one (falling back to black when the old palette is unknown).
+  // the new one. A numerically valid index is NOT automatically correct: index
+  // 1 is white on the colour schemes but dark grey on 4-grey and near-black on
+  // 16-grey, so an unchanged number would silently change the colour.
   const remap = (index) => {
-    if (index >= 0 && index < palette.length && (!oldPalette || scheme === previousScheme)) {
-      return index;
-    }
+    if (scheme === previousScheme && index >= 0 && index < palette.length) return index;
     const source = oldPalette?.[index];
-    if (!source) return 0;
-    let best = 0;
-    let bestDist = Infinity;
-    palette.forEach((c, i) => {
-      const d = (c[0] - source[0]) ** 2 + (c[1] - source[1]) ** 2 + (c[2] - source[2]) ** 2;
-      if (d < bestDist) { bestDist = d; best = i; }
-    });
-    return best;
+    if (!source) return index >= 0 && index < palette.length ? index : darkestIndex();
+    return nearestIndex(scheme, source);
   };
 
   const next = { ...doc, panel: { ...doc.panel }, layers: [] };
-  const bg = doc.background ?? 1;
-  next.background = (bg >= 0 && bg < palette.length) ? bg : lightestIndex(scheme);
+  const bg = doc.background ?? lightestIndex(scheme);
+  next.background = remap(bg);
   if (next.background !== bg) changes.push('background colour remapped');
 
   for (const layer of doc.layers) {
@@ -360,7 +320,11 @@ export function reconcileDocument(doc, previousScheme) {
     if (copy.adjustments) copy.adjustments = { ...copy.adjustments };
 
     if (copy.type === 'qr') {
-      copy.color = remap(copy.color);
+      const mappedQr = remap(copy.color);
+      if (mappedQr !== copy.color) {
+        changes.push(`QR colour remapped for this panel`);
+        copy.color = mappedQr;
+      }
       // A QR must both contrast and fit; try darkening before dropping it.
       try {
         assertQrContrast(copy, scheme);

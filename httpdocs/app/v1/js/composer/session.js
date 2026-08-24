@@ -42,6 +42,11 @@ export function createSession({
     saveTimer: null,
     pendingSave: null,
     released: false,
+    // Set by the first real user edit. A session that was only OPENED must
+    // never write: opening a reconciled draft and navigating away would
+    // otherwise persist the reconciliation (dropped QRs, remapped inks) that
+    // the user never asked for.
+    dirty: false,
   };
 
   /** Current document: the gesture's working copy if one is active. */
@@ -73,6 +78,13 @@ export function createSession({
     // A released session must never write — not via a pending timer, and not
     // via an explicit late flush() either.
     if (session.released) return;
+    // Nor may a session that has not been edited (see `dirty`).
+    if (!session.dirty) {
+      // Still await any save already in flight so callers can rely on flush()
+      // meaning "storage is settled".
+      if (session.pendingSave) await session.pendingSave;
+      return;
+    }
     // A snapshot captured before release() must not be written afterwards.
     if (snapshot.generation !== session.generation) return;
     // Serialize: overlapping saves could otherwise land out of order and
@@ -122,6 +134,7 @@ export function createSession({
       if (commit && next !== session.gestureBase) {
         try {
           validate(next);
+          session.dirty = true;
           session.history = model.commit(session.history, next);
           scheduleSave();
         } catch (err) {
@@ -137,10 +150,13 @@ export function createSession({
       notify();
     },
 
+    isDirty: () => session.dirty,
+
     /** Discrete edit outside a gesture (place text/QR/photo, delete layer).
      *  Rejected edits leave history, the draft and the view untouched. */
     apply(next) {
       validate(next); // throws before anything is committed or scheduled
+      session.dirty = true;
       session.history = model.commit(session.history, next);
       session.working = null;
       scheduleSave();
@@ -148,6 +164,7 @@ export function createSession({
     },
 
     undo() {
+      session.dirty = true;
       session.history = model.undo(session.history);
       session.working = null;
       scheduleSave();
@@ -155,6 +172,7 @@ export function createSession({
     },
 
     redo() {
+      session.dirty = true;
       session.history = model.redo(session.history);
       session.working = null;
       scheduleSave();
