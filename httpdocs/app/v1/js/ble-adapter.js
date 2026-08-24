@@ -184,14 +184,16 @@ async function withOp(fn) {
 function wireDisconnectHandler(inst) {
   inst.onDisconnect = async () => {
     if (adapterInitiatedDisconnect) return; // explicit path handles renewal
-    stateLease++; // take ownership: in-flight attempts may no longer mutate state
+    const lease = ++stateLease; // take ownership: in-flight attempts may no longer mutate state
     state = 'idle';
     // Renew and AWAIT readiness before notifying, so any listener-triggered
     // operation lands on a fresh, schema-ready instance.
     try {
       await renew();
     } catch { /* surfaced on the listener's next operation */ }
-    unexpectedDisconnectListener?.();
+    // If something newer (a fresh connect, another teardown) took the lease
+    // while we renewed, its flow owns the narrative — stay silent.
+    if (stateLease === lease) unexpectedDisconnectListener?.();
   };
 }
 
@@ -242,21 +244,34 @@ export async function connectCached(bluetoothDevice) {
   });
 }
 
-/** Explicit disconnect: always renews the instance (per-connection isolation). */
+/** Explicit disconnect: always renews the instance (per-connection isolation).
+ *  Concurrent callers COALESCE onto one teardown — an older, slower disconnect
+ *  must never reset state after a newer attempt has taken the lease. */
+let disconnectPromise = null;
+
 export async function disconnect() {
   if (state === 'idle') return;
-  stateLease++; // take ownership: in-flight attempts may no longer mutate state
+  if (disconnectPromise) return disconnectPromise;
+  const lease = ++stateLease; // take ownership synchronously
   state = 'disconnecting';
   adapterInitiatedDisconnect = true;
-  try {
-    await instance().disconnect();
-  } catch {
-    /* GATT teardown races are fine — the instance is discarded next */
-  } finally {
-    adapterInitiatedDisconnect = false;
-    state = 'idle';
-    await renew().catch(() => {});
-  }
+  disconnectPromise = (async () => {
+    try {
+      await instance().disconnect();
+    } catch {
+      /* GATT teardown races are fine — the instance is discarded next */
+    } finally {
+      adapterInitiatedDisconnect = false;
+      disconnectPromise = null;
+      // Only the leaseholder finishes the transition; if something newer took
+      // over meanwhile, leave its state alone.
+      if (stateLease === lease) {
+        state = 'idle';
+        await renew().catch(() => {});
+      }
+    }
+  })();
+  return disconnectPromise;
 }
 
 async function forceDisconnect() {
@@ -300,6 +315,7 @@ async function authenticateWith(inst, { storedKey, name, assertLive = () => {} }
   const tryKey = async (key) => {
     assertLive(); // a disconnect during the dialog must not reach the radio
     await inst.setEncryptionKey(key);
+    assertLive(); // ...nor may authenticate() fire after a mid-step teardown
     await withDeadline(inst.authenticate(), DEADLINES.auth, 'Authentication');
   };
 
@@ -310,10 +326,14 @@ async function authenticateWith(inst, { storedKey, name, assertLive = () => {} }
     } catch (err) {
       if (err instanceof StaleInstanceError) throw err;
       if (/rate limit/i.test(String(err?.message))) throw err;
+      // The auth may have "failed" because the CONNECTION died — check before
+      // concluding the key was wrong and bothering the user for another.
+      assertLive();
       // Stored key rejected (rotated on the device?) — fall through to one ask.
     }
   }
   if (!keyProvider) throw new AuthRequiredError();
+  assertLive(); // never open the key dialog for a dead session
   const key = await keyProvider({ name, reason: storedKey ? 'stored-key-failed' : 'locked' });
   if (!key) throw new AuthRequiredError('Key entry cancelled');
   await tryKey(key);

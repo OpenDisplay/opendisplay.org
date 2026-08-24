@@ -97,13 +97,18 @@ export function confirmDanger(message) {
   return Promise.resolve(window.confirm(message));
 }
 
-/** Repair-path identity mismatch: present the validated new metadata. */
-export function confirmMismatch({ record, info }) {
+/** Repair confirmation — ALWAYS shown post-validation, emphasizing changes.
+ *  Same-dimension different-tag collisions are the whole point (plan §4). */
+export function confirmRepair({ record, info, changes }) {
+  const identity =
+    `"${info.name}" — ${info.width}×${info.height}, scheme ${info.colorScheme}` +
+    `${info.firmware ? `, fw ${info.firmware}` : ''}` +
+    `${info.authRequired ? ', locked' : ''}`;
+  const changeText = changes.length
+    ? `\n\nDIFFERS from the saved record:\n  ${changes.join('\n  ')}`
+    : '\n\nMatches the saved record.';
   return Promise.resolve(window.confirm(
-    `"${info.name}" reports ${info.width}×${info.height} (scheme ${info.colorScheme}` +
-    `${info.firmware ? `, fw ${info.firmware}` : ''}), but the saved record ` +
-    `"${record.name}" expects ${record.width}×${record.height}.\n\n` +
-    'Rebind anyway? The saved record will take on the validated values.',
+    `Re-pair "${record.name}" to this device?\n\nValidated identity: ${identity}${changeText}`,
   ));
 }
 

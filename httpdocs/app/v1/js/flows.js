@@ -110,14 +110,24 @@ export function makeFlows({ adapter, store, keys, ui }) {
       const info = await adapter.readDeviceInfo({ storedKey });
       const bleId = adapter.connectedBleId();
 
-      if (info.width !== record.width || info.height !== record.height) {
-        const proceed = await ui.confirmMismatch({ record, info });
-        if (!proceed) {
-          throw new Error(
-            `Re-pair cancelled: "${info.name}" is ${info.width}×${info.height}, ` +
-            `saved record expects ${record.width}×${record.height}`,
-          );
+      // ALWAYS present the validated identity before committing (plan §4):
+      // a different tag with the SAME panel dimensions is precisely the
+      // collision the two-phase flow exists to catch, so dimensions alone
+      // must never wave a repair through. Changed fields are emphasized.
+      const changes = [];
+      const diff = (label, oldV, newV) => {
+        if (oldV !== undefined && oldV !== null && String(oldV) !== String(newV)) {
+          changes.push(`${label}: ${oldV} → ${newV}`);
         }
+      };
+      diff('name', record.name, info.name);
+      diff('size', `${record.width}×${record.height}`, `${info.width}×${info.height}`);
+      diff('color scheme', record.colorScheme, info.colorScheme);
+      diff('panel', record.panelIcType, info.panelIcType);
+      diff('rotation', record.rotationQuarterTurns, info.rotationQuarterTurns);
+      const proceed = await ui.confirmRepair({ record, info, changes });
+      if (!proceed) {
+        throw new Error(`Re-pair cancelled — "${record.name}" keeps its previous binding.`);
       }
 
       await store.commitRebind(record.recordId, bleId, infoPatch(info, bleId));

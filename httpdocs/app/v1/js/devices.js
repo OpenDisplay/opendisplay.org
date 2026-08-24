@@ -15,11 +15,11 @@ import * as adapter from './ble-adapter.js';
 import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
-import { askForKey, askRebind, confirmMismatch, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
+import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
 const flows = makeFlows({
   adapter, store, keys,
-  ui: { askForKey, askRebind, confirmMismatch, deliverKeyHex, toast },
+  ui: { askForKey, askRebind, confirmRepair, deliverKeyHex, toast },
 });
 
 let grantedById = new Map(); // bleId -> BluetoothDevice

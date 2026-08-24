@@ -58,7 +58,7 @@ function makeDeps({ info = INFO, records = [], storedKeys = {}, readInfoImpl } =
     ui: {
       askForKey: async () => null,
       askRebind: async () => null,
-      confirmMismatch: async () => false,
+      confirmRepair: async () => true,
       deliverKeyHex: async () => false,
       toast: () => {},
     },
@@ -96,20 +96,48 @@ test('repair rollback: validation failure -> no store write, disconnect', async 
   assert.ok(names.includes('disconnect'));
 });
 
-test('repair mismatch declined -> no commit, disconnect', async () => {
+test('repair confirmation declined -> no commit, binding preserved, disconnect', async () => {
   const deps = makeDeps({ info: { ...INFO, width: 122, height: 250 } });
+  deps.ui.confirmRepair = async () => false;
   const flows = makeFlows(deps);
   await assert.rejects(flows.connectRecordFlow(REC, new Map()), /Re-pair cancelled/);
   const names = deps.calls.map((c) => Array.isArray(c) ? c[0] : c);
-  assert.ok(!names.includes('commit'));
+  assert.ok(!names.includes('commit'), 'binding untouched');
   assert.ok(names.includes('disconnect'));
+});
+
+test('repair confirmation is ALWAYS shown — even for identical dimensions', async () => {
+  let shown = null;
+  const deps = makeDeps(); // info matches REC dimensions exactly
+  deps.ui.confirmRepair = async ({ record, info, changes }) => {
+    shown = { record: record.recordId, info: info.width, changes };
+    return true;
+  };
+  const flows = makeFlows(deps);
+  await flows.connectRecordFlow(REC, new Map());
+  assert.ok(shown, 'confirmation shown despite matching dimensions');
+  assert.ok(deps.calls.some((c) => c[0] === 'commit'));
+});
+
+test('same-dimension DIFFERENT tag: scheme/name changes emphasized; decline preserves binding', async () => {
+  // Same 800x480 panel, but a different tag: other name, scheme, panel IC.
+  const deps = makeDeps({ info: { ...INFO, name: 'OD-OTHER', colorScheme: 0, panelIcType: 39 } });
+  let seenChanges = null;
+  deps.ui.confirmRepair = async ({ changes }) => { seenChanges = changes; return false; };
+  const flows = makeFlows(deps);
+  await assert.rejects(flows.connectRecordFlow(REC, new Map()), /Re-pair cancelled/);
+  assert.ok(seenChanges.some((c) => c.startsWith('name:')), `name diff shown: ${seenChanges}`);
+  assert.ok(seenChanges.some((c) => c.startsWith('color scheme:')), `scheme diff shown: ${seenChanges}`);
+  const names = deps.calls.map((c) => Array.isArray(c) ? c[0] : c);
+  assert.ok(!names.includes('commit'), 'decline preserves the previous binding');
 });
 
 test('repair mismatch accepted -> commit carries validated values', async () => {
   const deps = makeDeps({ info: { ...INFO, width: 122, height: 250 } });
-  deps.ui.confirmMismatch = async ({ record, info }) => {
+  deps.ui.confirmRepair = async ({ record, info, changes }) => {
     assert.equal(record.recordId, 'rec-1');
     assert.equal(info.width, 122); // validated metadata presented
+    assert.ok(changes.some((c) => c.startsWith('size:')));
     return true;
   };
   const flows = makeFlows(deps);

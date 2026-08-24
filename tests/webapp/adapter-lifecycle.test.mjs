@@ -410,3 +410,48 @@ test('mid-op disconnect STOPS the operation: no further BLE calls on the old ins
   assert.ok(!inst.calls.includes('readConfig'),
     `no post-disconnect BLE call on the old instance: ${inst.calls.join(',')}`);
 });
+
+// --- coalesced-disconnect + auth-liveness coverage (M1 review round 4) ---
+
+test('concurrent disconnects coalesce; an older teardown cannot break the next connect', async () => {
+  let releaseDisc;
+  installBridge({
+    disconnect: function () {
+      this.calls.push('disconnect');
+      return new Promise((r) => { releaseDisc = r; });
+    },
+  });
+  await adapter.connectViaChooser('OD');
+  const instA = current();
+  // Two disconnects race (deadline teardown + controller catch): coalesce.
+  const d1 = adapter.disconnect();
+  const d2 = adapter.disconnect();
+  releaseDisc();
+  await Promise.all([d1, d2]);
+  assert.equal(instA.calls.filter((c) => c === 'disconnect').length, 1, 'one teardown, not two');
+  assert.equal(adapter.getState(), 'idle');
+  // The next connect must proceed unmolested by any straggling teardown.
+  globalThis.odAppBle.connect = async function () { this.calls?.push?.('connect'); };
+  await adapter.connectViaChooser('OD');
+  assert.equal(adapter.getState(), 'connected');
+  const info = await adapter.readDeviceInfo();
+  assert.equal(info.width, 800, 'operation on the new connection succeeds');
+});
+
+test('disconnect during stored-key auth: provider NOT asked, no radio calls after teardown', async () => {
+  let failAuth;
+  installBridge({
+    readConfig: async (cb) => cb(null, new Error('Authentication required (0xFE)')),
+    authenticate: () => new Promise((_, rej) => { failAuth = () => rej(new Error('GATT disconnected')); }),
+  });
+  await adapter.connectViaChooser('OD');
+  const inst = current();
+  let asks = 0;
+  adapter.setKeyProvider(async () => { asks++; return new Uint8Array(16); });
+  const opP = adapter.readDeviceInfo({ storedKey: new Uint8Array(16).fill(0x77) });
+  await new Promise((r) => setTimeout(r, 10));
+  await inst.onDisconnect(); // connection dies mid-auth
+  failAuth(); // the stored-key authenticate() rejects because of the drop
+  await assert.rejects(opP, /torn down|while the operation/i);
+  assert.equal(asks, 0, 'key dialog never opened for a dead session');
+});
