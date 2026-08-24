@@ -101,8 +101,29 @@
       <div id="composerStage" class="composer__stage">
         <canvas id="composerCanvas" class="composer__canvas"></canvas>
       </div>
+      <div class="composer__bar">
+        <label>Dither
+          <select id="ditherMode">
+            <option value="1">Burkes</option>
+            <option value="3">Floyd-Steinberg</option>
+            <option value="4">Atkinson</option>
+            <option value="5">Stucki</option>
+            <option value="6">Sierra</option>
+            <option value="7">Sierra Lite</option>
+            <option value="8">Jarvis-Judice-Ninke</option>
+            <option value="2">Ordered</option>
+            <option value="9">Dizzy</option>
+            <option value="0">None</option>
+          </select>
+        </label>
+        <label><input id="useMeasured" type="checkbox" checked> Measured palette</label>
+        <label><input id="showDithered" type="checkbox" checked> Dithered preview</label>
+        <span class="composer__spacer"></span>
+        <button id="sendBtn" class="odapp__btn odapp__btn--primary" type="button" disabled>Send to display</button>
+      </div>
+      <progress id="sendProgress" class="composer__progress" value="0" max="100" hidden></progress>
       <p id="composerStatus" class="odapp__status" role="status">
-        Drop or paste an image here. Preview is a full-colour composite; dithering and sending arrive next.
+        Drop or paste an image here.
       </p>
     </section>
 

@@ -226,3 +226,6 @@
 
 .composer__photo label { display: flex; gap: 0.35rem; align-items: center; }
 .composer__photo input[type="range"] { width: 7rem; }
+
+.composer__progress { width: 100%; height: 0.5rem; margin: 0.25rem 0 0.5rem; }
+.composer__bar label { display: flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; }

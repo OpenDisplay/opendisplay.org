@@ -22,7 +22,16 @@ export const DEADLINES = {
   auth: 12000,
   firmware: 8000,
   config: 15000,
+  // An image upload is long and self-paced (the library has its own per-chunk
+  // ACK timeouts); this only bounds a total stall.
+  send: 180000,
 };
+
+/** Colour schemes this app will send. Scheme 7 is deliberately absent: the
+ *  shared encoder FAILS OPEN on unknown schemes (proven in the M-S(a) spike —
+ *  it silently emits monochrome), so it must be rejected here, before the
+ *  encoder ever sees it. */
+export const SUPPORTED_COLOR_SCHEMES = new Set([0, 1, 2, 3, 4, 5, 6, 8]);
 
 // Fields readDeviceInfo() consumes from the display packet (0x20); readiness
 // means every one of them has a resolvable offset — not merely "some schema
@@ -418,6 +427,74 @@ export async function readDeviceInfo({ storedKey = null } = {}) {
       authKey,
       authKeyFromProvider,
     };
+  });
+}
+
+/**
+ * Send a canvas to the connected panel.
+ *
+ * The canvas MUST already hold exact ideal-palette pixels (the composer's
+ * paint-back); the shared library classifies by nearest colour, which is only
+ * lossless for canonical values.
+ *
+ * Rotation is passed as the WIRE quarter-turn value together with the panel's
+ * native dimensions, exactly as the Display Tool does.
+ *
+ * Resolves when the TRANSFER completes. The panel's refresh finishes seconds
+ * later and is reported separately via `onRefresh` — treating transfer as
+ * "done on screen" would be a lie.
+ */
+export async function sendCanvas(canvas, colorScheme, {
+  rotationQuarterTurns = 0,
+  originalWidth,
+  originalHeight,
+  transmissionModes = null,
+  partialUpdateSupport = 0,
+  panelIcType = null,
+  onProgress = null,
+  onRefresh = null,
+} = {}) {
+  if (state !== 'connected') throw new Error('Not connected');
+  if (!SUPPORTED_COLOR_SCHEMES.has(colorScheme)) {
+    throw new Error(
+      `colour scheme ${colorScheme} is not supported by this app — refusing to send ` +
+      '(the shared encoder would silently emit monochrome)',
+    );
+  }
+  return withOp(async () => {
+    const gen = generation;
+    const inst = instance();
+    const transfer = new Promise((resolve, reject) => {
+      inst.sendCanvasToDisplay(canvas, colorScheme, {
+        rotation: rotationQuarterTurns,
+        originalWidth,
+        originalHeight,
+        transmissionModes,
+        partialUpdateSupport,
+        panelIcType,
+        onProgress: (sent, total) => {
+          if (generation !== gen) return;
+          onProgress?.(sent, total);
+        },
+        onComplete: (ok, err) => {
+          if (ok) resolve();
+          else reject(err ?? new Error('Upload failed'));
+        },
+      }).catch(reject);
+    });
+    await withDeadline(transfer, DEADLINES.send, 'Image upload');
+    if (generation !== gen) throw new StaleInstanceError();
+    // The panel refresh arrives out of band (0x73), seconds to tens of seconds
+    // later. Surface it if the caller cares, but never block on it.
+    if (onRefresh) {
+      const inst2 = instance();
+      const previous = inst2.onCommandAck;
+      inst2.onCommandAck = (cmd, ...rest) => {
+        if (cmd === 0x73 && generation === gen) onRefresh();
+        previous?.(cmd, ...rest);
+      };
+    }
+    return { transferred: true };
   });
 }
 

@@ -14,6 +14,10 @@ import * as tools from './tools.js';
 import { renderDocument, validateDocument, reconcileDocument } from './render.js';
 import { makeSurface, blitPreview } from './canvas.js';
 import { createSession } from './session.js';
+import { createDitherClient } from './dither-client.js';
+import { paintForSend } from './dither.js';
+import { makeCanvas } from './render.js';
+import * as adapter from '../ble-adapter.js';
 import * as store from '../store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +28,13 @@ const PROXY_MAX_PX = 1600;
 
 let session = null;
 let wired = false;
+let dither = null;
+/** Latest dither result for the OPEN document — the source of the send canvas
+ *  and the dithered preview. Cleared whenever the document changes so a stale
+ *  frame can never be sent. */
+let latestDither = null;
+let ditherPending = false;
+let sending = false;
 let drawTool = null;
 let selectTool = null;
 let activeTool = null;
@@ -68,6 +79,11 @@ function rebuildInkOptions() {
 }
 
 function paint() {
+  // The dithered frame belongs to the PREVIOUS document state; drop it so the
+  // send button cannot ship a stale image.
+  latestDither = null;
+  requestDither();
+
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
   blitPreview($('composerCanvas'), canvas, { width, height });
   $('undoBtn').disabled = !session.canUndo();
@@ -78,6 +94,19 @@ function paint() {
     `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
     ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`;
   updatePhotoControls();
+  updateSendControls();
+}
+
+function updateSendControls() {
+  const connected = adapter.getState() === 'connected'
+    && adapter.connectedBleId() != null
+    && session?.session?.device?.bleId === adapter.connectedBleId();
+  // Sending requires a CURRENT dithered frame: the panel must receive exactly
+  // what the preview showed.
+  $('sendBtn').disabled = sending || !connected || !latestDither;
+  $('sendBtn').title = connected
+    ? (latestDither ? '' : 'Preparing the dithered image…')
+    : 'Connect this device on the Devices tab first';
 }
 
 function toast(msg, kind = 'info') {
@@ -195,6 +224,106 @@ function wirePhotoControls() {
   $('photoSize').addEventListener('change', () => session.endGesture(doc(), true));
 }
 
+// --- dithering -------------------------------------------------------------
+
+function ditherOptions() {
+  return {
+    mode: Number($('ditherMode').value),
+    useMeasured: $('useMeasured').checked,
+    serpentine: true,
+  };
+}
+
+function ensureDitherClient() {
+  if (dither) return dither;
+  dither = createDitherClient({
+    workerUrl: new URL('./dither-worker.js', import.meta.url),
+    onResult: (msg) => {
+      latestDither = msg;
+      ditherPending = false;
+      if ($('showDithered').checked) {
+        const { canvas, ctx } = makeCanvas(msg.width, msg.height);
+        ctx.putImageData(new ImageData(msg.preview, msg.width, msg.height), 0, 0);
+        blitPreview($('composerCanvas'), canvas, { width: msg.width, height: msg.height });
+      }
+      const note = msg.measured ? ' (measured palette)' : '';
+      toast(`Preview ready${note}.`);
+      updateSendControls();
+    },
+    onError: (err) => {
+      ditherPending = false;
+      latestDither = null;
+      toast(`Dither failed: ${err.message ?? err}`, 'error');
+      updateSendControls();
+    },
+  });
+  return dither;
+}
+
+function requestDither() {
+  if (!session) return;
+  const client = ensureDitherClient();
+  const current = doc();
+  // The worker keeps its OWN bitmaps (a transfer would take ours), so send
+  // each asset across exactly once.
+  for (const layer of current.layers) {
+    if (!layer.assetId || client.hasAsset(layer.assetId)) continue;
+    store.getAsset(layer.assetId)
+      .then((asset) => asset?.blob && client.addAsset(layer.assetId, asset.blob, decodeProxy))
+      .then(() => { if (session) client.request(doc(), ditherOptions()); })
+      .catch(() => {});
+  }
+  ditherPending = true;
+  client.request(current, ditherOptions());
+}
+
+/** Build the send canvas: dither indices painted back as EXACT ideal-palette
+ *  RGB, which is the only form the shared encoder classifies losslessly. */
+function buildSendCanvas() {
+  if (!latestDither) throw new Error('no dithered frame is ready');
+  const { width, height, indices } = latestDither;
+  const panel = doc().panel;
+  const rgba = paintForSend(indices, panel.colorScheme, panel.panelIcType);
+  const { canvas, ctx } = makeCanvas(width, height);
+  ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
+  return { canvas, width, height };
+}
+
+async function sendToDisplay() {
+  const record = session?.session?.device;
+  if (!record) return;
+  sending = true;
+  updateSendControls();
+  const progress = $('sendProgress');
+  progress.hidden = false;
+  progress.value = 0;
+  try {
+    const { canvas } = buildSendCanvas();
+    toast('Uploading…');
+    await adapter.sendCanvas(canvas, record.colorScheme, {
+      rotationQuarterTurns: record.rotationQuarterTurns ?? 0,
+      originalWidth: record.width,
+      originalHeight: record.height,
+      transmissionModes: record.transmissionModes,
+      partialUpdateSupport: record.partialUpdateSupport,
+      panelIcType: record.panelIcType,
+      onProgress: (sent, total) => {
+        progress.value = total ? Math.round((sent / total) * 100) : 0;
+      },
+      onRefresh: () => toast('Panel refresh finished.'),
+    });
+    // Transfer complete is NOT the same as displayed: the panel refresh takes
+    // seconds to tens of seconds and reports separately.
+    toast('Transfer complete — the panel is refreshing now.');
+  } catch (err) {
+    toast(`Send failed: ${err.message ?? err}`, 'error');
+  } finally {
+    sending = false;
+    progress.hidden = true;
+    updateSendControls();
+  }
+}
+
 // --- wiring ---------------------------------------------------------------
 
 function wire() {
@@ -277,6 +406,16 @@ function wire() {
     if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
   });
 
+  $('ditherMode').addEventListener('change', () => { latestDither = null; requestDither(); updateSendControls(); });
+  $('useMeasured').addEventListener('change', () => { latestDither = null; requestDither(); updateSendControls(); });
+  $('showDithered').addEventListener('change', () => {
+    if ($('showDithered').checked) requestDither();
+    else paint();
+  });
+  $('sendBtn').addEventListener('click', () => {
+    sendToDisplay().catch((err) => toast(String(err.message ?? err), 'error'));
+  });
+
   wirePhotoControls();
   wired = true;
 }
@@ -290,6 +429,8 @@ export async function openComposer(device) {
     await session.flush();   // never lose the outgoing device's edits
     session.release();       // closes bitmaps, invalidates in-flight work
   }
+  latestDither = null;
+  dither?.dropAssets([]);    // the worker's bitmaps belong to the old document
   const draftId = `draft-${device.recordId}`;
   const existing = await store.getDraft(draftId).catch(() => null);
   let document_;
