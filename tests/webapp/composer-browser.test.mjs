@@ -363,29 +363,28 @@ window.resultPromise = (async () => {
   // stays disabled), and removing the broken layer must unblock rendering.
   const { createDitherClient } = await import('/app/v1/js/composer/dither-client.js');
   let sawFrameForMissing = false;
+  let unblockResolve = null;
   const blockedClient = createDitherClient({
     workerUrl: '/app/v1/js/composer/dither-worker.js',
-    onResult: () => { sawFrameForMissing = true; },
-    onError: () => {},
+    onResult: () => { sawFrameForMissing = true; unblockResolve?.(true); },
+    onError: () => { unblockResolve?.(false); },
   });
   let withPhoto = model.createDocument(DEVICE);
   withPhoto = model.addLayer(withPhoto, model.photoLayer({ assetId: 'never-loaded' }));
   blockedClient.request(withPhoto, { mode: 0 });
   await new Promise((r) => setTimeout(r, 400));
   ok('missingAssetNeverProducesFrame', sawFrameForMissing === false);
-  blockedClient.terminate();
 
+  // Recovery must work on the SAME client that was blocked — that is the real
+  // path a user takes after deleting the broken layer.
   const cleaned = model.removeLayer(withPhoto, withPhoto.layers[0].id);
   const unblocked = await new Promise((resolve) => {
-    const c2 = createDitherClient({
-      workerUrl: '/app/v1/js/composer/dither-worker.js',
-      onResult: () => resolve(true),
-      onError: () => resolve(false),
-    });
-    c2.request(cleaned, { mode: 0 });
+    unblockResolve = resolve;
+    blockedClient.request(cleaned, { mode: 0 });
     setTimeout(() => resolve(false), 8000);
   });
-  ok('removingBrokenLayerUnblocksDither', unblocked);
+  ok('removingBrokenLayerUnblocksSameClient', unblocked);
+  blockedClient.terminate();
 
   ok('acceptListMatchesDecoder',
      JSON.stringify(sizeMod.SUPPORTED_IMAGE_TYPES) ===
