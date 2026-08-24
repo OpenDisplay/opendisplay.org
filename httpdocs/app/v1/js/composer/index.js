@@ -15,7 +15,7 @@ import { renderDocument, validateDocument, reconcileDocument } from './render.js
 import { makeSurface, blitPreview } from './canvas.js';
 import { createSession } from './session.js';
 import { createDitherClient } from './dither-client.js';
-import { decodeBounded } from './image-size.js';
+import { decodeBounded, SUPPORTED_IMAGE_TYPES } from './image-size.js';
 import { prepareSend, panelSignature } from './send.js';
 import { paintForSend } from './dither.js';
 import { makeCanvas } from './render.js';
@@ -449,12 +449,12 @@ function wire() {
   stage.addEventListener('dragover', (ev) => { ev.preventDefault(); });
   stage.addEventListener('drop', (ev) => {
     ev.preventDefault();
-    const file = [...(ev.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'));
+    const file = [...(ev.dataTransfer?.files ?? [])].find((f) => SUPPORTED_IMAGE_TYPES.includes(f.type));
     if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
   });
   window.addEventListener('paste', (ev) => {
     if ($('viewComposer').hidden) return;
-    const item = [...(ev.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'));
+    const item = [...(ev.clipboardData?.items ?? [])].find((i) => SUPPORTED_IMAGE_TYPES.includes(i.type));
     const file = item?.getAsFile?.();
     if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
   });

@@ -7,9 +7,10 @@
  * phone. Knowing the dimensions up front lets the caller ask for a bounded
  * decode in ONE step.
  *
- * Only the containers a browser will hand us from a file picker are parsed;
- * anything else returns null and the caller falls back to a safe single-axis
- * cap (which preserves aspect ratio and still bounds the wider dimension).
+ * Formats whose dimensions we cannot read are REFUSED rather than decoded
+ * hopefully: a single-axis `resizeWidth` cap does not bound the longest side
+ * of a tall image and would upscale a narrow one, which is exactly the
+ * unbounded allocation this module exists to prevent.
  */
 
 const HEADER_BYTES = 64 * 1024; // enough for JPEG SOF markers after EXIF
@@ -77,25 +78,37 @@ function webp(b, view) {
   return null;
 }
 
+/** Formats this module can measure, and therefore the formats the app accepts. */
+export const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+export class UnsupportedImageError extends Error {
+  constructor() {
+    super('Unsupported image format — use PNG, JPEG, GIF or WebP');
+    this.name = 'UnsupportedImageError';
+  }
+}
+
 /**
  * Decode `blob` so its longest side is at most `cap`, in ONE decode — never
  * allocating the full-size bitmap first. Aspect ratio is preserved and small
  * images are never upscaled.
+ *
+ * @throws {UnsupportedImageError} when the dimensions cannot be read, because
+ *   there is then no way to bound the decode. Failing closed beats decoding a
+ *   50-megapixel AVIF at full size on a phone.
  */
 export async function decodeBounded(blob, cap, { imageOrientation = 'from-image' } = {}) {
   const size = await readImageSize(blob).catch(() => null);
-  if (size && size.width > 0 && size.height > 0) {
-    const longest = Math.max(size.width, size.height);
-    if (longest <= cap) return createImageBitmap(blob, { imageOrientation });
-    const scale = cap / longest;
-    return createImageBitmap(blob, {
-      imageOrientation,
-      resizeWidth: Math.max(1, Math.round(size.width * scale)),
-      resizeHeight: Math.max(1, Math.round(size.height * scale)),
-      resizeQuality: 'high',
-    });
+  if (!size || !(size.width > 0) || !(size.height > 0)) {
+    throw new UnsupportedImageError();
   }
-  // Unknown container: cap ONE axis. Aspect ratio is preserved, so the other
-  // axis is bounded by the image's aspect rather than unbounded.
-  return createImageBitmap(blob, { imageOrientation, resizeWidth: cap, resizeQuality: 'high' });
+  const longest = Math.max(size.width, size.height);
+  if (longest <= cap) return createImageBitmap(blob, { imageOrientation });
+  const scale = cap / longest;
+  return createImageBitmap(blob, {
+    imageOrientation,
+    resizeWidth: Math.max(1, Math.round(size.width * scale)),
+    resizeHeight: Math.max(1, Math.round(size.height * scale)),
+    resizeQuality: 'high',
+  });
 }

@@ -300,6 +300,15 @@ window.resultPromise = (async () => {
   }
   ok('headerSizeAndBoundedDecode', sizeOk);
 
+  // An unmeasurable format must FAIL CLOSED, not decode hopefully: a
+  // single-axis cap cannot bound a tall image and would upscale a narrow one.
+  let refusedUnknown = false;
+  try {
+    await sizeMod.decodeBounded(new Blob([new Uint8Array([1,2,3,4,5,6,7,8])],
+      { type: 'image/avif' }), 100);
+  } catch (e) { refusedUnknown = e.name === 'UnsupportedImageError'; }
+  ok('unknownFormatRefused', refusedUnknown);
+
   // --- draft persistence round-trip through IndexedDB ---
   const saved = await store.getDraft('dr-1');
   const restored = model.fromDraft(saved);
