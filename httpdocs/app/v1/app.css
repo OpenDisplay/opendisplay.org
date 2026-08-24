@@ -117,3 +117,63 @@
   gap: 1.25rem;
   font-size: 0.9rem;
 }
+
+/* --- M1: device cards, chips, dialogs --- */
+.odapp-card {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.odapp-card__name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.odapp-card__meta {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.odapp-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.odapp-chip {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.odapp-chip--connected { border-color: #2c8a2c; color: #2c8a2c; }
+.odapp-chip--granted { border-color: #4a7ab8; color: #4a7ab8; }
+.odapp-chip--missing { border-color: #b8862c; color: #b8862c; }
+
+.odapp__filebtn { display: inline-block; }
+
+.odapp__status[data-kind="error"] { color: #c33; opacity: 1; }
+
+.odapp-dialog {
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  max-width: 420px;
+}
+
+.odapp-dialog h2 { margin-top: 0; font-size: 1.15rem; }
+.odapp-dialog__input { width: 100%; font-family: monospace; padding: 0.4rem 0.5rem; }
+.odapp-dialog__error { color: #c33; min-height: 1.2em; margin: 0.4rem 0; }
+.odapp-dialog__check { display: block; margin: 0.5rem 0 1rem; }
+.odapp-dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.odapp-dialog__list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }

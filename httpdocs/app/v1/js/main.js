@@ -10,6 +10,7 @@
  * the browser smoke tests.
  */
 import { ready, webBluetoothBlockReason } from './ble-adapter.js';
+import { initDevices } from './devices.js';
 
 // Must match the directory this file lives in; compared against the deployed
 // marker to recover from a stale heuristically-cached entry page (the
@@ -88,6 +89,10 @@ async function boot() {
       return;
     }
 
+    // The saved-device list renders even when Bluetooth is gated (records are
+    // viewable/exportable); only connect-capable controls stay disabled.
+    await initDevices();
+
     const reason = webBluetoothBlockReason();
     if (reason) {
       document.body.dataset.odGate = reason;
@@ -98,9 +103,7 @@ async function boot() {
 
     document.body.dataset.odGate = 'none';
     status.textContent = 'Ready.';
-    $('emptyState').hidden = false;
-    // M1 enables this and wires the add-device flow.
-    $('btnAddDevice').disabled = true;
+    $('btnAddDevice').disabled = false;
   } catch (err) {
     // Belt-and-braces: no code path may strand the page at "Loading…".
     status.textContent = 'Something went wrong while starting the app.';

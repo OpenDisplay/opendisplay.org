@@ -3,26 +3,26 @@
  * instance (DESIGN_WEB_OD_APP_PLAN.md §3). ble-common.js is never modified;
  * this adapter confines every library interaction, timeout, and lifecycle rule.
  *
- * M0 scope: instance access, instance-scoped schema readiness, renewal.
- * Connect/auth/read/send arrive with M1.
+ * Invariants (established M0, extended M1):
+ *  - the instance is resolved per operation, never captured;
+ *  - every fresh instance awaits its own schema readiness before use;
+ *  - one connect/op in flight (serialized state machine);
+ *  - every completed disconnect — explicit or unexpected — renews the
+ *    instance, so no per-connection state (encryptionSession, partialState)
+ *    can leak between devices;
+ *  - every device-facing promise carries a deadline; on expiry the adapter
+ *    disconnects (the library's own teardown clears in-flight state safely).
  */
 
 const SCHEMA_PATH = '/firmware/toolbox/config.yaml';
 const DISPLAY_PACKET_ID = 0x20;
 
-// Never capture the instance — resolve it at each operation's start so a
-// discarded instance can't be used after a bridge renew (plan §3 watch item).
-function instance() {
-  const inst = globalThis.odAppBle;
-  if (!inst) throw new Error('OD App bridge not initialised (boot-bridge.js missing?)');
-  return inst;
-}
-
-// Instance-scoped readiness: schema state (packetSchema/packetSizes) lives on
-// each OpenDisplayBLE instance, so EVERY fresh instance must await its own
-// loadYAMLConfig before attach/connect/read are allowed. The library's own
-// deferred setTimeout load only logs failures and must not be relied on.
-const readiness = new WeakMap();
+export const DEADLINES = {
+  connect: 25000,
+  auth: 12000,
+  firmware: 8000,
+  config: 15000,
+};
 
 // Fields readDeviceInfo() consumes from the display packet (0x20); readiness
 // means every one of them has a resolvable offset — not merely "some schema
@@ -37,16 +37,40 @@ const REQUIRED_DISPLAY_FIELDS = [
   'panel_ic_type',
 ];
 
+export class AuthRequiredError extends Error {
+  constructor(msg = 'Device is locked and no key is available') {
+    super(msg);
+    this.name = 'AuthRequiredError';
+  }
+}
+
+export class TimeoutError extends Error {
+  constructor(label, ms) {
+    super(`${label} timed out after ${ms} ms`);
+    this.name = 'TimeoutError';
+  }
+}
+
+// Never capture the instance — resolve it at each operation's start so a
+// discarded instance can't be used after a bridge renew.
+function instance() {
+  const inst = globalThis.odAppBle;
+  if (!inst) throw new Error('OD App bridge not initialised (boot-bridge.js missing?)');
+  return inst;
+}
+
+// ---------------------------------------------------------------------------
+// Schema readiness (instance-scoped)
+// ---------------------------------------------------------------------------
+
+const readiness = new WeakMap();
+
 async function initInstance(inst) {
-  // loadYAMLConfig swallows errors internally (logs only), so readiness is
-  // judged by validating the resulting state, not by the call resolving.
   await inst.loadYAMLConfig(SCHEMA_PATH);
   const schema = inst.packetSchema;
   const size = inst.packetSizes?.[DISPLAY_PACKET_ID];
   const offsets = inst.packetFieldOffsets?.[DISPLAY_PACKET_ID];
-  const missing = REQUIRED_DISPLAY_FIELDS.filter(
-    (f) => typeof offsets?.[f] !== 'number',
-  );
+  const missing = REQUIRED_DISPLAY_FIELDS.filter((f) => typeof offsets?.[f] !== 'number');
   if (!schema || !schema[DISPLAY_PACKET_ID] || !size || missing.length > 0) {
     throw new Error(
       'Packet schema failed to load or lacks required display fields ' +
@@ -56,14 +80,12 @@ async function initInstance(inst) {
   return inst;
 }
 
-/** Await schema readiness for the CURRENT instance. Safe to call repeatedly. */
 export function ready() {
   const inst = instance();
   let p = readiness.get(inst);
   if (!p) {
     p = initInstance(inst).catch((err) => {
-      // A failed load must not be cached as permanent: allow retry.
-      readiness.delete(inst);
+      readiness.delete(inst); // a failed load must not be cached as permanent
       throw err;
     });
     readiness.set(inst, p);
@@ -71,19 +93,257 @@ export function ready() {
   return p;
 }
 
-/**
- * Discard the current instance and create a fresh, schema-ready one.
- * Called by the adapter after every completed disconnect (per-connection
- * isolation, plan §3). Resolves only when the new instance is ready.
- */
 export async function renew() {
   globalThis.odAppBridge.renew();
   return ready();
 }
 
-/** Browser capability gate — thin pass-through to the shared helper. */
 export function webBluetoothBlockReason() {
   const helper = globalThis.OpenDisplayBrowser;
   if (!helper) return 'unsupported';
   return helper.getWebBluetoothBlockReason();
+}
+
+// ---------------------------------------------------------------------------
+// Connection state machine
+// ---------------------------------------------------------------------------
+
+let state = 'idle'; // idle | connecting | connected | disconnecting
+let opInFlight = false;
+let adapterInitiatedDisconnect = false;
+let keyProvider = null; // async ({name, reason}) => Uint8Array(16) | null
+let unexpectedDisconnectListener = null;
+
+export function getState() {
+  return state;
+}
+
+/** UI supplies the key dialog; the library's prompt() path is never engaged. */
+export function setKeyProvider(fn) {
+  keyProvider = fn;
+}
+
+export function setUnexpectedDisconnectListener(fn) {
+  unexpectedDisconnectListener = fn;
+}
+
+function withDeadline(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(async () => {
+      // Disconnect clears the library's in-flight operation state safely; the
+      // adapter never mutates that state directly.
+      try {
+        await forceDisconnect();
+      } finally {
+        reject(new TimeoutError(label, ms));
+      }
+    }, ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+async function withOp(fn) {
+  if (opInFlight) throw new Error('Another operation is in progress');
+  opInFlight = true;
+  try {
+    return await fn();
+  } finally {
+    opInFlight = false;
+  }
+}
+
+function wireDisconnectHandler(inst) {
+  inst.onDisconnect = () => {
+    if (adapterInitiatedDisconnect) return; // explicit path handles renewal
+    state = 'idle';
+    // Renew BEFORE notifying, so any listener-triggered operation lands on a
+    // fresh, readiness-pending instance rather than the dead one.
+    renew().catch(() => { /* surfaced on next ready() call */ });
+    unexpectedDisconnectListener?.();
+  };
+}
+
+async function connectWith(connectFn) {
+  if (state !== 'idle') throw new Error(`Cannot connect while ${state}`);
+  await ready();
+  state = 'connecting';
+  const inst = instance();
+  wireDisconnectHandler(inst);
+  try {
+    await withDeadline(connectFn(inst), DEADLINES.connect, 'Connect');
+    state = 'connected';
+  } catch (err) {
+    state = 'idle';
+    // A failed connect may leave partial per-connection state: renew.
+    await renew().catch(() => {});
+    throw err;
+  }
+}
+
+/** Connect via the browser chooser (Add device flow). */
+export async function connectViaChooser(namePrefix = 'OD') {
+  await connectWith((inst) => inst.connect(namePrefix, {}));
+}
+
+/**
+ * Connect to a previously granted BluetoothDevice handle (getDevices()).
+ * Attaching while connected is rejected: the library's cached device,
+ * connection flag, and characteristic must never belong to different devices.
+ * NOTE: assigning inst.device is the one documented library-internal touch
+ * point (plan §3); covered by integration tests, degrades to chooser-per-
+ * connect if an upstream change breaks it.
+ */
+export async function connectCached(bluetoothDevice) {
+  if (state !== 'idle') throw new Error(`Cannot attach while ${state}`);
+  await connectWith((inst) => {
+    inst.device = bluetoothDevice;
+    return inst.connect(null, { useCachedDevice: true });
+  });
+}
+
+/** Explicit disconnect: always renews the instance (per-connection isolation). */
+export async function disconnect() {
+  if (state === 'idle') return;
+  state = 'disconnecting';
+  adapterInitiatedDisconnect = true;
+  try {
+    await instance().disconnect();
+  } catch {
+    /* GATT teardown races are fine — the instance is discarded next */
+  } finally {
+    adapterInitiatedDisconnect = false;
+    state = 'idle';
+    await renew().catch(() => {});
+  }
+}
+
+async function forceDisconnect() {
+  await disconnect();
+}
+
+// ---------------------------------------------------------------------------
+// Device operations
+// ---------------------------------------------------------------------------
+
+function readConfigOnce(inst) {
+  return new Promise((resolve, reject) => {
+    inst.readConfig((configBytes, err) => {
+      if (err) reject(err);
+      else resolve(configBytes);
+    }).catch(reject);
+  });
+}
+
+function readFirmwareOnce(inst) {
+  return new Promise((resolve, reject) => {
+    inst.readFirmwareVersion((version, err) => {
+      if (err) reject(err);
+      else resolve(version);
+    }).catch(reject);
+  });
+}
+
+function isAuthRequired(err) {
+  return /authentication required/i.test(String(err?.message ?? err));
+}
+
+/**
+ * App-owned auth: stored key first, then ONE ask via the key provider; the
+ * dialog itself may loop UI-side. Respects the library's rate limit by simply
+ * surfacing its error. Returns the key that authenticated (for save-key UX).
+ */
+async function authenticateWith(inst, { storedKey, name }) {
+  let key = storedKey ?? null;
+  let fromProvider = false;
+  if (!key) {
+    if (!keyProvider) throw new AuthRequiredError();
+    key = await keyProvider({ name, reason: 'locked' });
+    if (!key) throw new AuthRequiredError('Key entry cancelled');
+    fromProvider = true;
+  }
+  await inst.setEncryptionKey(key);
+  await withDeadline(inst.authenticate(), DEADLINES.auth, 'Authentication');
+  return { key, fromProvider };
+}
+
+/**
+ * Read firmware + MSD + config; parse the display packet. On 0xFE the auth
+ * flow runs and the protected read replays ONCE (plan §3 wrap-and-replay).
+ *
+ * Returns {width, height, rotationQuarterTurns, colorScheme,
+ * transmissionModes, partialUpdateSupport, panelIcType, firmware, msdHex,
+ * name, authRequired, authKey?, authKeyFromProvider?}.
+ */
+export async function readDeviceInfo({ storedKey = null } = {}) {
+  if (state !== 'connected') throw new Error('Not connected');
+  return withOp(async () => {
+    const inst = instance();
+    const name = inst.device?.name ?? 'OpenDisplay';
+
+    // 0x43 is never encrypted — safe before auth.
+    const firmware = await withDeadline(readFirmwareOnce(inst), DEADLINES.firmware, 'Firmware read');
+
+    let authRequired = false;
+    let authKey = null;
+    let authKeyFromProvider = false;
+
+    let configBytes;
+    try {
+      configBytes = await withDeadline(readConfigOnce(inst), DEADLINES.config, 'Config read');
+    } catch (err) {
+      if (!isAuthRequired(err)) throw err;
+      authRequired = true;
+      const auth = await authenticateWith(inst, { storedKey, name });
+      authKey = auth.key;
+      authKeyFromProvider = auth.fromProvider;
+      configBytes = await withDeadline(readConfigOnce(inst), DEADLINES.config, 'Config read (after auth)');
+    }
+
+    const parsed = inst.parseConfigBytes(new Uint8Array(configBytes));
+    const display = inst.extractDisplayConfig(parsed);
+    if (!display || !display.pixelWidth || !display.pixelHeight) {
+      throw new Error('Device config has no usable display packet');
+    }
+
+    // readMsd carries its own 8 s timeout in the library.
+    let msdHex = null;
+    try {
+      const msd = await inst.readMsd();
+      msdHex = Array.from(msd, (b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      /* optional telemetry — absence is fine */
+    }
+
+    return {
+      name,
+      width: display.pixelWidth,
+      height: display.pixelHeight,
+      rotationQuarterTurns: display.rotation & 0x03,
+      colorScheme: display.colorScheme,
+      transmissionModes: display.transmissionModes,
+      partialUpdateSupport: display.partialUpdateSupport,
+      panelIcType: display.panelIcType,
+      firmware: firmware
+        ? `${firmware.major}.${firmware.minor}${firmware.patch != null ? `.${firmware.patch}` : ''}`
+        : null,
+      msdHex,
+      authRequired,
+      authKey,
+      authKeyFromProvider,
+    };
+  });
+}
+
+/** Current connected device's BluetoothDevice.id (binding), or null. */
+export function connectedBleId() {
+  if (state !== 'connected') return null;
+  return instance().device?.id ?? null;
+}
+
+export function connectedDeviceName() {
+  if (state !== 'connected') return null;
+  return instance().device?.name ?? null;
 }

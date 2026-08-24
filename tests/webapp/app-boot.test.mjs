@@ -1,22 +1,19 @@
-// M0 boot smoke test: serve httpdocs/ over local HTTP (so the absolute
+// M0/M1 boot smoke test over CDP: serve httpdocs/ (so the absolute
 // /firmware/toolbox/config.yaml schema path resolves) and boot the real
-// app/index.html in real headless Chromium. Asserts the skeleton reaches a
-// deterministic state: either schema-ready ("Ready.") with the empty state
-// visible, or the capability gate showing a real message — never a silent
-// half-boot.
+// app/index.html in real Chromium. Asserts the app reaches a deterministic
+// state: schema ready (through the real fetch + js-yaml + validation path,
+// asserted regardless of Bluetooth availability), then either the full ready
+// state with the device view or an explicit gate — never a half-boot.
+// CDP is required because M1's device list touches IndexedDB, which
+// --dump-dom's virtual time never services.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-// Chrome must run ASYNCHRONOUSLY: the fixture HTTP server lives in this same
-// process, and a sync exec would block the event loop and deadlock the fetch.
-const execFileAsync = promisify(execFile);
 import { createServer } from 'node:http';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { ChromeCdp } from './lib/chrome-cdp.mjs';
 
 const HTTPDOCS = resolve(dirname(fileURLToPath(import.meta.url)), '../../httpdocs');
 
@@ -25,13 +22,8 @@ const CHROME = ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'ch
   .find((p) => existsSync(p));
 
 const MIME = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.yaml': 'text/yaml',
-  '.json': 'application/json',
-  '.ico': 'image/x-icon',
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.yaml': 'text/yaml', '.json': 'application/json', '.ico': 'image/x-icon',
 };
 
 function serveHttpdocs() {
@@ -51,7 +43,7 @@ function serveHttpdocs() {
   });
 }
 
-test('app skeleton boots: schema ready or explicit gate, never a half-boot', async (t) => {
+test('app boots: schema ready, then full-ready or explicit gate — never a half-boot', async (t) => {
   if (!CHROME) {
     if (process.env.OD_REQUIRE_BROWSER_TESTS || process.env.CI) {
       assert.fail('no Chrome/Chromium binary found and browser tests are required');
@@ -61,39 +53,44 @@ test('app skeleton boots: schema ready or explicit gate, never a half-boot', asy
   }
   const { server, port } = await serveHttpdocs();
   t.after(() => server.close());
+  const profile = mkdtempSync(join(tmpdir(), 'od-boot-profile-'));
 
-  const dir = mkdtempSync(join(tmpdir(), 'od-webapp-boot-'));
-  const { stdout: dom } = await execFileAsync(
-    CHROME,
-    [
-      '--headless=new',
-      '--disable-gpu',
-      '--no-first-run',
-      `--user-data-dir=${join(dir, 'profile')}`,
-      '--virtual-time-budget=15000',
-      '--dump-dom',
-      `http://127.0.0.1:${port}/app/index.html`,
-    ],
-    { encoding: 'utf8', timeout: 60000, maxBuffer: 16 * 1024 * 1024 },
+  const chrome = await ChromeCdp.launch(CHROME, { profileDir: profile });
+  t.after(() => chrome.close());
+
+  // Poll (via throw) until boot() reached a terminal state.
+  const state = await chrome.evalOnPage(
+    `http://127.0.0.1:${port}/app/index.html`,
+    `(() => {
+      const schema = document.body.dataset.odSchema;
+      const gate = document.body.dataset.odGate;
+      const status = document.getElementById('statusLine')?.textContent ?? '';
+      const gateEl = document.getElementById('gateBanner');
+      const terminal = (schema === 'ready' && (gate !== undefined)) || schema === 'failed';
+      if (!terminal) throw new Error('boot still in progress: ' + JSON.stringify({schema, gate, status}));
+      return {
+        schema, gate, status,
+        gateHidden: gateEl.hidden,
+        gateText: gateEl.textContent.trim(),
+        emptyHidden: document.getElementById('emptyState').hidden,
+        addDisabled: document.getElementById('btnAddDevice').disabled,
+      };
+    })()`,
   );
 
-  const status = dom.match(/id="statusLine"[^>]*>([^<]*)</)?.[1] ?? '';
-  const gateHidden = /id="gateBanner"[^>]*\bhidden\b/.test(dom);
-  const gateText = dom.match(/id="gateBanner"[^>]*>([^<]*)</)?.[1]?.trim() ?? '';
-  const schemaState = dom.match(/data-od-schema="([^"]*)"/)?.[1] ?? '';
+  // Schema must load through the real path regardless of Bluetooth.
+  assert.equal(state.schema, 'ready', `schema state: ${JSON.stringify(state)}`);
 
-  // Boot is schema-FIRST: the schema must reach "ready" through the real
-  // fetch + js-yaml + validation path regardless of Bluetooth availability.
-  assert.equal(schemaState, 'ready', `schema state "${schemaState}" (status "${status}")`);
-
-  if (gateHidden) {
-    // Full boot path: device view rendered.
-    assert.equal(status, 'Ready.', `expected Ready, got status "${status}"`);
-    assert.ok(!/id="emptyState"[^>]*\bhidden\b/.test(dom), 'empty state should be visible');
+  if (state.gate === 'none') {
+    assert.equal(state.status, 'Ready.');
+    assert.equal(state.gateHidden, true);
+    assert.equal(state.emptyHidden, false, 'empty state visible with no records');
+    assert.equal(state.addDisabled, false, 'Add device enabled');
   } else {
-    // Gated path (e.g. no BT adapter in the CI runner): a real message, and the
-    // status line must reflect the gate — not the initial "Loading…".
-    assert.ok(gateText.length > 10, `gate shown but empty: "${gateText}"`);
-    assert.notEqual(status, 'Loading…', 'status line stuck at initial state');
+    assert.ok(state.gateText.length > 10, `gate shown but empty: ${JSON.stringify(state)}`);
+    assert.equal(state.gateHidden, false);
+    assert.notEqual(state.status, 'Loading…');
+    // Device list still initialised (records viewable while gated).
+    assert.equal(state.emptyHidden, false, 'empty state visible even when gated');
   }
 });
