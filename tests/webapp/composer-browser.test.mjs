@@ -309,6 +309,19 @@ window.resultPromise = (async () => {
   } catch (e) { refusedUnknown = e.name === 'UnsupportedImageError'; }
   ok('unknownFormatRefused', refusedUnknown);
   // The picker's accept list must be exactly what the decoder supports.
+  // The bounded decode must hold even where createImageBitmap ignores resize
+  // options (WebKit/Bluefy): verify-and-fallback, not trust.
+  const origCIB = self.createImageBitmap;
+  let fallbackOk = false;
+  try {
+    self.createImageBitmap = (src, opts) => origCIB(src); // pretend resize is ignored
+    const blob = await big.convertToBlob({ type: 'image/png' });
+    const bmp = await sizeMod.decodeBounded(blob, 100);
+    fallbackOk = Math.max(bmp.width, bmp.height) === 100 && bmp.height === 25;
+    bmp.close?.();
+  } catch { fallbackOk = false; } finally { self.createImageBitmap = origCIB; }
+  ok('resizeIgnoredFallback', fallbackOk);
+
   ok('acceptListMatchesDecoder',
      JSON.stringify(sizeMod.SUPPORTED_IMAGE_TYPES) ===
      JSON.stringify(['image/png', 'image/jpeg', 'image/gif', 'image/webp']));

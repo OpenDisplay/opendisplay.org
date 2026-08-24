@@ -15,6 +15,7 @@ import * as adapter from './ble-adapter.js';
 import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
+import { errorMessage, describeError } from './errors.js';
 import { openComposer, closeComposer, openRecordId } from './composer/index.js';
 import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
@@ -29,6 +30,13 @@ let busy = false;
 let bluetoothGated = false;
 
 const $ = (id) => document.getElementById(id);
+
+/** Surface an error as actionable guidance; a user cancellation is not a
+ *  failure and is reported as plain information. */
+function reportError(err) {
+  const d = describeError(err);
+  toast(errorMessage(err), d.kind === 'cancelled' ? 'info' : 'error');
+}
 
 // ---------------------------------------------------------------------------
 // Permission sweep
@@ -101,7 +109,7 @@ async function renderList() {
   try {
     devices = await store.listDevices();
   } catch (err) {
-    toast(`Storage unavailable: ${err.message ?? err}`, 'error');
+    reportError(err);
   }
   listEl.textContent = '';
   empty.hidden = devices.length > 0;
@@ -144,7 +152,7 @@ function deviceCard(record) {
     b.textContent = label;
     b.disabled = disabled || busy;
     b.addEventListener('click', () =>
-      withBusy(fn).catch((err) => toast(String(err.message ?? err), 'error')),
+      withBusy(fn).catch((err) => reportError(err)),
     );
     actions.appendChild(b);
     return b;
@@ -263,18 +271,15 @@ export async function initDevices({ gated = false } = {}) {
   });
 
   $('btnAddDevice').addEventListener('click', () =>
-    withBusy(addDevice).catch((err) => {
-      if (/cancel|NotFoundError/i.test(String(err))) toast('Add device cancelled.');
-      else toast(String(err.message ?? err), 'error');
-    }),
+    withBusy(addDevice).catch((err) => reportError(err)),
   );
   $('btnExport').addEventListener('click', () =>
-    withBusy(exportDeviceList).catch((err) => toast(String(err.message ?? err), 'error')),
+    withBusy(exportDeviceList).catch((err) => reportError(err)),
   );
   $('importFile').addEventListener('change', (ev) => {
     const file = ev.target.files?.[0];
     ev.target.value = '';
-    if (file) withBusy(() => importDeviceList(file)).catch((err) => toast(String(err.message ?? err), 'error'));
+    if (file) withBusy(() => importDeviceList(file)).catch((err) => reportError(err));
   });
 
   await refresh();

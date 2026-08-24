@@ -75,3 +75,22 @@ cannot be tested, remove it from `SUPPORTED_COLOR_SCHEMES` in
   compensation is in the right direction.
 - **Measured palettes** are borrowed in one case (panel 66 reuses the 7.3"
   Spectra measurement), so its colours may be slightly off.
+
+## Bluefy (iOS) — best-effort tier
+
+Bluefy is a third-party WebKit browser that implements `navigator.bluetooth`,
+so the app's capability gate lets it through and uploads should work. It is
+**not** a supported tier and has not been tested; these are the known
+differences, all handled defensively in code:
+
+| Limitation | Effect | Handling |
+|---|---|---|
+| No `navigator.bluetooth.getDevices()` | Permissions cannot persist, so silent reconnect is impossible | The permission sweep is timeboxed and falls back to chooser-per-connect; a banner says so on first load |
+| `createImageBitmap` ignores `resizeWidth`/`resizeHeight` | A bounded decode would silently return a full-size bitmap | `decodeBounded()` verifies the returned dimensions and falls back to a canvas downscale |
+| Module workers / OffscreenCanvas vary by iOS version | Dithering could fail to start | A worker failure is surfaced as "The image processor stopped unexpectedly" and the worker is rebuilt on the next request |
+
+| Case | Result | Date | Notes |
+|---|---|---|---|
+| Add device, read config | ☐ | | |
+| Send an image | ☐ | | |
+| Locked device | ☐ | | |

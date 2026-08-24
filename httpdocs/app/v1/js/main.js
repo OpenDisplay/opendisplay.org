@@ -103,6 +103,19 @@ async function boot() {
     }
 
     document.body.dataset.odGate = 'none';
+
+    // Bluefy (iOS) passes the capability gate because it does provide
+    // navigator.bluetooth, but it is WebKit: silent reconnect needs
+    // getDevices(), which it does not implement, so every connection goes
+    // through the chooser. Say so once rather than letting it look broken.
+    if (globalThis.OpenDisplayBrowser?.isBluefy?.()) {
+      document.body.dataset.odBluefy = 'true';
+      showGate(
+        'Running in Bluefy. Sending images works, but iOS cannot remember Bluetooth '
+        + 'permissions, so saved devices must be picked from the chooser every time.',
+      );
+    }
+
     status.textContent = 'Ready.';
   } catch (err) {
     // Belt-and-braces: no code path may strand the page at "Loading…".

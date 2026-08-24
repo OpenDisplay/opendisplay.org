@@ -104,11 +104,42 @@ export async function decodeBounded(blob, cap, { imageOrientation = 'from-image'
   }
   const longest = Math.max(size.width, size.height);
   if (longest <= cap) return createImageBitmap(blob, { imageOrientation });
+
   const scale = cap / longest;
-  return createImageBitmap(blob, {
-    imageOrientation,
-    resizeWidth: Math.max(1, Math.round(size.width * scale)),
-    resizeHeight: Math.max(1, Math.round(size.height * scale)),
-    resizeQuality: 'high',
-  });
+  const targetW = Math.max(1, Math.round(size.width * scale));
+  const targetH = Math.max(1, Math.round(size.height * scale));
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(blob, {
+      imageOrientation, resizeWidth: targetW, resizeHeight: targetH, resizeQuality: 'high',
+    });
+  } catch {
+    bitmap = await createImageBitmap(blob, { imageOrientation });
+  }
+  // WebKit (and therefore Bluefy on iOS) ignores the resize options rather
+  // than throwing, so VERIFY the result instead of trusting it: an ignored
+  // resize would hand the worker a full-resolution bitmap.
+  if (bitmap.width === targetW && bitmap.height === targetH) return bitmap;
+  return downscaleViaCanvas(bitmap, targetW, targetH);
+}
+
+/** Portable fallback when createImageBitmap's resize options are unavailable. */
+async function downscaleViaCanvas(bitmap, targetW, targetH) {
+  try {
+    const canvas = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(targetW, targetH)
+      : Object.assign(document.createElement('canvas'), { width: targetW, height: targetH });
+    const ctx = canvas.getContext('2d', { alpha: true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+    const scaled = await createImageBitmap(canvas);
+    bitmap.close?.();
+    return scaled;
+  } catch {
+    // Downscaling failed: the oversized bitmap still renders correctly, it
+    // just costs more memory. Returning it beats failing the import.
+    return bitmap;
+  }
 }

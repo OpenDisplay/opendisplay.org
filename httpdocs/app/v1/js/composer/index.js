@@ -17,6 +17,7 @@ import { createSession } from './session.js';
 import { createDitherClient } from './dither-client.js';
 import { decodeBounded, SUPPORTED_IMAGE_TYPES } from './image-size.js';
 import { prepareSend, panelSignature } from './send.js';
+import { errorMessage, describeError } from '../errors.js';
 import { paintForSend } from './dither.js';
 import { makeCanvas } from './render.js';
 import * as adapter from '../ble-adapter.js';
@@ -115,6 +116,12 @@ function toast(msg, kind = 'info') {
   const el = $('composerStatus');
   el.textContent = msg;
   el.dataset.kind = kind;
+}
+
+/** Surface an error as actionable guidance (plan §9, M4). */
+function reportError(err) {
+  const d = describeError(err);
+  toast(errorMessage(err), d.kind === 'cancelled' ? 'info' : 'error');
 }
 
 // --- photo handling -------------------------------------------------------
@@ -265,7 +272,7 @@ function ensureDitherClient() {
     onError: (err) => {
       ditherPending = false;
       latestDither = null;
-      toast(`Dither failed: ${err.message ?? err}`, 'error');
+      reportError(err);
       updateSendControls();
     },
   });
@@ -296,7 +303,7 @@ function requestDither() {
       })
       .catch((err) => {
         if (isCurrent(owner, ownerGen)) {
-          toast(`Could not load image: ${err.message ?? err}`, 'error');
+          reportError(err);
         }
       });
   }
@@ -369,7 +376,7 @@ async function sendToDisplay() {
       ? 'Already up to date — the panel image is unchanged.'
       : 'Done — the panel has refreshed.');
   } catch (err) {
-    toast(`Send failed: ${err.message ?? err}`, 'error');
+    reportError(err);
   } finally {
     sending = false;
     progress.hidden = true;
@@ -412,7 +419,7 @@ function wire() {
         text, color: Number($('inkColor').value),
       }));
     } catch (err) {
-      toast(String(err.message ?? err), 'error');
+      reportError(err);
     }
   });
   $('inkColor').addEventListener('change', (ev) => drawTool.setColor(Number(ev.target.value)));
@@ -445,7 +452,7 @@ function wire() {
   $('photoFile').addEventListener('change', (ev) => {
     const file = ev.target.files?.[0];
     ev.target.value = '';
-    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
+    if (file) importPhoto(file).catch((err) => reportError(err));
   });
 
   // Drag-drop and paste, per plan §6.
@@ -454,13 +461,13 @@ function wire() {
   stage.addEventListener('drop', (ev) => {
     ev.preventDefault();
     const file = [...(ev.dataTransfer?.files ?? [])].find((f) => SUPPORTED_IMAGE_TYPES.includes(f.type));
-    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
+    if (file) importPhoto(file).catch((err) => reportError(err));
   });
   window.addEventListener('paste', (ev) => {
     if ($('viewComposer').hidden) return;
     const item = [...(ev.clipboardData?.items ?? [])].find((i) => SUPPORTED_IMAGE_TYPES.includes(i.type));
     const file = item?.getAsFile?.();
-    if (file) importPhoto(file).catch((err) => toast(String(err.message ?? err), 'error'));
+    if (file) importPhoto(file).catch((err) => reportError(err));
   });
 
   $('ditherMode').addEventListener('change', () => { latestDither = null; requestDither(); updateSendControls(); });
@@ -470,7 +477,7 @@ function wire() {
     else paint();
   });
   $('sendBtn').addEventListener('click', () => {
-    sendToDisplay().catch((err) => toast(String(err.message ?? err), 'error'));
+    sendToDisplay().catch((err) => reportError(err));
   });
 
   wirePhotoControls();
@@ -527,7 +534,7 @@ export async function openComposer(device) {
     store,
     validate: validateDocument,
     onChange: () => paint(),
-    onSaveError: (err) => toast(`Could not save draft: ${err.message ?? err}`, 'error'),
+    onSaveError: (err) => reportError(err),
   });
 
   if (!wired) wire();

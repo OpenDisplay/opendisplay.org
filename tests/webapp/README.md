@@ -20,6 +20,11 @@ OD_QR_DECODE_TEST=1 node --test tests/webapp/qr-decode.test.mjs
 | `composer-browser.test.mjs` | Real canvas rendering: opaque pixels, crisp QR, three panel geometries, photo fit/adjustments, asset GC, and QR fidelity vs the shipped `/l/qrcode.js`. |
 | `deploy-script.test.mjs` | `deploy-ftp-curl.sh` phase ordering and failure gating, driven with a fake `curl`. |
 | `qr-decode.test.mjs` | **Independent decode round-trip** via OpenCV — proof the extracted QR core emits scannable codes. |
+| `dither.test.mjs` | Measured-palette selection, ideal-palette paint-back (incl. the BWRY 0x1D/0x1E swap), and the dither-client currency contract: coalescing, superseded/stale results, epoch isolation, per-attempt asset tokens, worker teardown and recovery. |
+| `pipeline-browser.test.mjs` | **M3 exit criterion.** Composer → real wasm dither in a worker → paint-back → the REAL encoder, byte-identical to the py-opendisplay reference across 11 panel configurations; plus wasm-vs-Python dither goldens (same Rust core, different binding) covering four measured palettes. |
+| `send.test.mjs` | The send-time races: switching to an IDENTICALLY-SPECCED tag mid-await, a frame replaced by an edit, a released session, wrong binding, forgotten device, panel-spec change. |
+| `vendor-integrity.test.mjs` | Supply chain: the vendored bundle's SHA-256 against its README, required exports, wire scheme numbering, and that the library's palette ORDER matches `IDEAL_PALETTES` (what makes paint-back correct). |
+| `errors.test.mjs` | Every failure mode maps to actionable guidance; unknown errors keep their text; the mapper never throws. |
 
 ## Browser tests
 
@@ -43,6 +48,11 @@ cd ../py-opendisplay && uv run python \
 # QR version/size reference (segno, independent implementation)
 uvx --from segno python tests/webapp/tools/generate_qr_golden.py \
   > tests/webapp/fixtures/qr-golden.json
+
+# dither indices (the PYTHON binding of the same Rust core as the vendored wasm)
+cd ../py-opendisplay && uv run python \
+  ../opendisplay.org/tests/webapp/tools/generate_dither_golden.py \
+  > ../opendisplay.org/tests/webapp/fixtures/dither-golden.json
 ```
 
 ## Notes for future work
