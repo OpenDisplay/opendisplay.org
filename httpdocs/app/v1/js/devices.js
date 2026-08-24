@@ -86,7 +86,14 @@ async function withBusy(fn) {
 function renderControls() {
   $('btnAddDevice').disabled = busy || bluetoothGated;
   $('btnExport').disabled = busy;
-  for (const b of document.querySelectorAll('#deviceList button')) b.disabled = busy;
+  for (const b of document.querySelectorAll('#deviceList button')) {
+    // `data-gated` marks a button disabled for a reason of its own (no
+    // Bluetooth in this browser). Without honouring it here, this loop would
+    // re-ENABLE Connect on a gated browser, since it runs after the cards are
+    // built. Composer is deliberately never gated: composing does not need a
+    // connection.
+    b.disabled = busy || b.dataset.gated === 'true';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +158,7 @@ function deviceCard(record) {
     b.className = `odapp__btn${primary ? ' odapp__btn--primary' : ''}`;
     b.textContent = label;
     b.disabled = disabled || busy;
+    if (disabled) b.dataset.gated = 'true';
     b.addEventListener('click', () =>
       withBusy(fn).catch((err) => reportError(err)),
     );
@@ -169,6 +177,8 @@ function deviceCard(record) {
       disabled: bluetoothGated,
     });
   }
+  // Never gated on a connection: tags sleep most of the time, so composing
+  // offline and connecting only to send is the normal path.
   btn('Composer', async () => {
     await openComposer(record);
     showComposerView(record);
