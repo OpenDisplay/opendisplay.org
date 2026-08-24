@@ -68,7 +68,7 @@ function makeDeps({ info = INFO, records = [], storedKeys = {}, readInfoImpl } =
 
 const REC = {
   recordId: 'rec-1', bleId: 'ble-OLD', name: 'OD-Saved',
-  width: 800, height: 480, colorScheme: 4,
+  width: 800, height: 480, colorScheme: 4, panelIcType: 35, rotationQuarterTurns: 1,
 };
 
 test('repair: card selection allows stored key; validation precedes one commit', async () => {
@@ -128,6 +128,7 @@ test('same-dimension DIFFERENT tag: scheme/name changes emphasized; decline pres
   await assert.rejects(flows.connectRecordFlow(REC, new Map()), /Re-pair cancelled/);
   assert.ok(seenChanges.some((c) => c.startsWith('name:')), `name diff shown: ${seenChanges}`);
   assert.ok(seenChanges.some((c) => c.startsWith('color scheme:')), `scheme diff shown: ${seenChanges}`);
+  assert.ok(seenChanges.some((c) => c.startsWith('panel:')), `panel diff shown: ${seenChanges}`);
   const names = deps.calls.map((c) => Array.isArray(c) ? c[0] : c);
   assert.ok(!names.includes('commit'), 'decline preserves the previous binding');
 });
