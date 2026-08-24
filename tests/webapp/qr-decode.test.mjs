@@ -6,8 +6,10 @@
 // conformant encoders legitimately differ in mask choice, padding and mode
 // selection, but a decoder either reads the payload back or it does not.
 //
-// OpenCV is fetched on demand with uvx, so the test is skipped unless
-// OD_QR_DECODE_TEST=1 (or CI) is set — see tests/webapp/README.md.
+// OpenCV is fetched on demand with `uvx`, which is NOT present by default on
+// CI runners, so this test requires an explicit OD_QR_DECODE_TEST=1 opt-in.
+// The CI workflow installs uv and sets it, so the proof still runs there —
+// keying off bare `CI` would just fail the build on a missing tool.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -48,8 +50,8 @@ json.dump(out, sys.stdout)
 `;
 
 test('QR matrices decode back to their payload (OpenCV, independent decoder)', async (t) => {
-  if (!process.env.OD_QR_DECODE_TEST && !process.env.CI) {
-    t.skip('set OD_QR_DECODE_TEST=1 to run (downloads OpenCV via uvx)');
+  if (!process.env.OD_QR_DECODE_TEST) {
+    t.skip('set OD_QR_DECODE_TEST=1 to run (needs uvx; CI installs it)');
     return;
   }
   const dir = mkdtempSync(join(tmpdir(), 'od-qr-decode-'));

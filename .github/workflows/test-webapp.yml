@@ -41,9 +41,16 @@ jobs:
         with:
           node-version: "22"
 
+      # uvx backs the independent OpenCV QR-decode proof; without it that test
+      # would skip and a green run would not mean what it claims.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       # CI=true makes the real-browser round-trip mandatory (the ubuntu-latest
       # image ships google-chrome; the suite fails rather than skips without it).
-      - name: Run webapp test suite (browser proof required)
+      - name: Run webapp test suite (browser + decode proofs required)
+        env:
+          OD_QR_DECODE_TEST: "1"
         run: node --test tests/webapp/
 
   immutable-versions:
