@@ -188,3 +188,57 @@ test('setting the same bitmap object twice does not close it', () => {
   s.setBitmap('a', b);
   assert.equal(b.closed, false);
 });
+
+// --- session identity (review round 2): captured generation is not enough ---
+
+test('two sessions never share an identity: ids are globally unique', () => {
+  const store = makeStore();
+  const a = open(DEVICE_A, store);
+  const b = open(DEVICE_B, store);
+  assert.notEqual(a.id, b.id, 'a fresh session is distinguishable from a released one');
+  // Both start at generation 0 — which is exactly why the owner OBJECT must be
+  // compared too (composer/index.js isCurrent()).
+  assert.equal(a.generation(), b.generation());
+});
+
+test('an async result captured on A is rejected for B by owner identity', () => {
+  const store = makeStore();
+  let current = open(DEVICE_A, store);
+  const owner = current;
+  const captured = owner.generation();
+  // Mirror composer/index.js isCurrent(): identity AND generation.
+  const isCurrent = (o, g) => current === o && o.generation() === g;
+  assert.equal(isCurrent(owner, captured), true);
+
+  owner.release();
+  current = open(DEVICE_B, store);
+  assert.equal(current.generation(), 0, 'fresh session also starts at 0');
+  assert.equal(isCurrent(owner, captured), false,
+    "A's in-flight result must not be applied to B");
+});
+
+test('a save snapshot captured before release is never written', async () => {
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'pre-release' })));
+  s.release();
+  await s.flush(); // an explicit late flush must also be refused
+  assert.equal(store.calls.length, 0, `no writes: ${JSON.stringify(store.calls)}`);
+});
+
+test('overlapping saves are serialized and land in order', async () => {
+  const store = makeStore();
+  const order = [];
+  store.putDraft = async (d) => {
+    const n = d.doc.layers.length;
+    await tick(n === 1 ? 30 : 1); // make the first save slower than the second
+    order.push(n);
+  };
+  const s = open(DEVICE_A, store);
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'one' })));
+  const first = s.flush();
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'two' })));
+  const second = s.flush();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, [1, 2], 'newer save must not be overtaken by an older one');
+});

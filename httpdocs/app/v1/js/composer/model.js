@@ -41,6 +41,9 @@ export function createDocument(device) {
       panelIcType: device.panelIcType ?? null,
     },
     background: 1, // palette index painted before layers (1 = white)
+    // Whole-image pre-dither parameters consumed by M3's wasm pass.
+    tone: 'auto',
+    gamut: 'auto',
     layers: [],
   };
 }
@@ -54,9 +57,11 @@ export function photoLayer({ assetId, x = 0, y = 0, w = 1, h = 1, fit = 'contain
     assetId,
     x, y, w, h, fit,
     adjustments: {
-      // exposure/saturation/shadows/highlights are applied when compositing;
-      // toneStrength is a pre-dither pipeline parameter consumed in M3.
-      exposure: 1, saturation: 1, shadows: 0, highlights: 0, toneStrength: 0,
+      // Applied per layer when compositing. Tone/gamut are NOT here: they are
+      // whole-image pre-dither parameters (doc.tone / doc.gamut), because M3
+      // runs one wasm pass over the finished composite and could not honour
+      // conflicting per-layer tone settings.
+      exposure: 1, saturation: 1, shadows: 0, highlights: 0,
       ...adjustments,
     },
   };

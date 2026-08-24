@@ -229,9 +229,14 @@ export async function getAsset(assetId) {
  * draft (layer assetIds + thumbnails). Content-addressed assets are SHARED, so
  * per-draft deletion would corrupt other drafts; this is the only safe form.
  * Also reclaims crash-orphans (an asset stored whose draft write never landed).
+ * Assets younger than ASSET_GRACE_MS are never swept: an import stores the
+ * asset before the draft that references it, and another tab's sweep must not
+ * classify that window as garbage.
  * @param {Set<string>} extraLive ids referenced by unsaved in-memory documents
  */
-export async function sweepAssets(extraLive = new Set()) {
+export const ASSET_GRACE_MS = 5 * 60 * 1000;
+
+export async function sweepAssets(extraLive = new Set(), { graceMs = ASSET_GRACE_MS } = {}) {
   const db = await openDb();
   // ONE transaction spanning both stores: reading drafts and deleting assets
   // separately would let a draft acquire a reference in between and lose its
@@ -244,13 +249,14 @@ export async function sweepAssets(extraLive = new Set()) {
     for (const l of d.doc?.layers ?? []) if (l.assetId) live.add(l.assetId);
   }
   const assets = t.objectStore('assets');
-  const ids = await reqAsPromise(assets.getAllKeys());
+  const all = await reqAsPromise(assets.getAll());
+  const cutoff = Date.now() - graceMs;
   let removed = 0;
-  for (const id of ids) {
-    if (!live.has(id)) {
-      assets.delete(id);
-      removed++;
-    }
+  for (const asset of all) {
+    if (live.has(asset.assetId)) continue;
+    if ((asset.createdAt ?? 0) > cutoff) continue; // in-flight import window
+    assets.delete(asset.assetId);
+    removed++;
   }
   await txDone(t);
   return removed;

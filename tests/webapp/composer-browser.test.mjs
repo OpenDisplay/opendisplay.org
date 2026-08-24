@@ -66,6 +66,8 @@ window.resultPromise = (async () => {
 
   // QR modules are snapped to whole pixels, so the QR block must be exactly
   // two palette colours with NO anti-aliased edges (scannability).
+  // A 25-module code + 8 quiet modules needs 33px; the 37px-tall test panel
+  // fits it exactly at one pixel per module.
   const qrOnly = model.addLayer(model.createDocument(DEVICE),
     model.qrLayer({ text: 'https://opendisplay.org', x: 0, y: 0, size: 1 }));
   const qrRender = render.renderDocument(qrOnly, new Map());
@@ -104,22 +106,28 @@ window.resultPromise = (async () => {
   await store.putDraft(model.toDraft(d1, { id: 'dr-1', recordId: 'rec-c' }));
   await store.putDraft(model.toDraft(d2, { id: 'dr-2', recordId: 'rec-c' }));
 
-  ok('sweepKeepsLive', (await store.sweepAssets()) === 0
+  ok('sweepKeepsLive', (await store.sweepAssets(new Set(), { graceMs: 0 })) === 0
      && !!(await store.getAsset(idA)) && !!(await store.getAsset(idB)));
 
   // Delete the only draft referencing B: A must SURVIVE (shared), B swept.
   await store.deleteDraft('dr-2');
-  const removed = await store.sweepAssets();
+  const removed = await store.sweepAssets(new Set(), { graceMs: 0 });
   ok('sharedAssetSurvives', !!(await store.getAsset(idA)));
   ok('unreachableAssetSwept', removed === 1 && !(await store.getAsset(idB)));
 
   // Crash-orphan (asset stored, draft write never landed) is reclaimed...
   const orphan = await store.putAsset(new Blob([new Uint8Array([7,7])], { type: 'image/png' }));
-  ok('orphanSwept', (await store.sweepAssets()) === 1 && !(await store.getAsset(orphan)));
+  ok('orphanSwept', (await store.sweepAssets(new Set(), { graceMs: 0 })) === 1 && !(await store.getAsset(orphan)));
+
+  // A just-imported asset is protected by the grace window even before its
+  // draft reference lands (another tab's sweep must not race an import).
+  const fresh = await store.putAsset(new Blob([new Uint8Array([3,3,3])], { type: 'image/png' }));
+  ok('graceWindowProtectsImport', (await store.sweepAssets()) === 0 && !!(await store.getAsset(fresh)));
+  await store.sweepAssets(new Set(), { graceMs: 0 }); // clean it up for later checks
 
   // ...unless an unsaved in-memory document still references it.
   const live = await store.putAsset(new Blob([new Uint8Array([5,5])], { type: 'image/png' }));
-  ok('extraLiveProtected', (await store.sweepAssets(new Set([live]))) === 0
+  ok('extraLiveProtected', (await store.sweepAssets(new Set([live]), { graceMs: 0 })) === 0
      && !!(await store.getAsset(live)));
 
   // --- fidelity: extracted QR core vs the shipped MIT library ---
@@ -192,6 +200,43 @@ window.resultPromise = (async () => {
   const mid = (c) => c.ctx.getImageData(Math.floor(c.width/2), Math.floor(c.height/2), 1, 1).data;
   ok('adjustmentsApplied', mid(ar)[0] < mid(cr)[0]);
   photoBitmap.close();
+
+  // A QR that cannot fit (with its quiet zone) must FAIL, not clip.
+  let qrTooBig = false;
+  try {
+    render.renderDocument(model.addLayer(
+      model.createDocument({ ...DEVICE, width: 40, height: 30 }),
+      model.qrLayer({ text: 'x'.repeat(400), x: 0, y: 0, size: 1 })), new Map());
+  } catch { qrTooBig = true; }
+  ok('oversizeQrRejected', qrTooBig);
+
+  // Invalid ink for the scheme must throw, not silently draw another colour.
+  let badInk = false;
+  try {
+    render.renderDocument(model.addLayer(
+      model.createDocument({ ...DEVICE, colorScheme: 0 }),
+      model.textLayer({ text: 'blue?', color: 4 })), new Map());
+  } catch { badInk = true; }
+  ok('invalidInkRejected', badInk);
+
+  // Adjusted TRANSPARENT photo must still reveal the layer beneath it.
+  const tCanvas = new OffscreenCanvas(20, 20);
+  const tctx2 = tCanvas.getContext('2d');
+  tctx2.clearRect(0, 0, 20, 20);
+  tctx2.fillStyle = 'rgb(0,0,255)';
+  tctx2.fillRect(0, 0, 20, 10);       // top half blue, bottom half transparent
+  const transparentBitmap = await createImageBitmap(tCanvas);
+  let tdoc = model.createDocument({ ...DEVICE, colorScheme: 4 });
+  tdoc = model.addLayer(tdoc, model.strokeLayer({
+    points: [{ x: 0, y: 0.9 }, { x: 1, y: 0.9 }], color: 3, width: 0.4 })); // red band
+  tdoc = model.addLayer(tdoc, model.photoLayer({
+    assetId: 't1', x: 0, y: 0, w: 1, h: 1, fit: 'cover',
+    adjustments: { exposure: 1.4, saturation: 1, shadows: 0, highlights: 0 },
+  }));
+  const tr = render.renderDocument(tdoc, new Map([['t1', transparentBitmap]]));
+  const bottom = tr.ctx.getImageData(Math.floor(tr.width / 2), tr.height - 2, 1, 1).data;
+  ok('transparentPhotoDoesNotBlackOut', !(bottom[0] < 40 && bottom[1] < 40 && bottom[2] < 40));
+  transparentBitmap.close();
 
   // --- draft persistence round-trip through IndexedDB ---
   const saved = await store.getDraft('dr-1');

@@ -17,8 +17,15 @@ import * as model from './model.js';
 
 export const AUTOSAVE_MS = 500;
 
+// Globally unique per session: a per-session counter starting at 0 would let a
+// captured generation from session A compare equal to fresh session B's, so an
+// async result from A could be applied to B. Callers must ALSO compare the
+// owner object itself (see isCurrent() in composer/index.js).
+let nextSessionId = 1;
+
 export function createSession({ device, draftId, document: doc, store, onChange, onSaveError }) {
   const session = {
+    id: nextSessionId++,
     generation: 0,
     device,
     draftId,
@@ -28,6 +35,7 @@ export function createSession({ device, draftId, document: doc, store, onChange,
     bitmaps: new Map(),  // assetId -> ImageBitmap (owned; closed on release)
     saveTimer: null,
     pendingSave: null,
+    released: false,
   };
 
   /** Current document: the gesture's working copy if one is active. */
@@ -56,7 +64,16 @@ export function createSession({ device, draftId, document: doc, store, onChange,
   }
 
   async function flushSave(snapshot) {
-    session.pendingSave = (async () => {
+    // A released session must never write — not via a pending timer, and not
+    // via an explicit late flush() either.
+    if (session.released) return;
+    // A snapshot captured before release() must not be written afterwards.
+    if (snapshot.generation !== session.generation) return;
+    // Serialize: overlapping saves could otherwise land out of order and
+    // persist an older document over a newer one.
+    const prior = session.pendingSave ?? Promise.resolve();
+    session.pendingSave = prior.then(async () => {
+      if (session.released || snapshot.generation !== session.generation) return;
       try {
         await store.putDraft(model.toDraft(snapshot.doc, {
           id: snapshot.id,
@@ -66,13 +83,13 @@ export function createSession({ device, draftId, document: doc, store, onChange,
         // Never silent: quota and storage failures must reach the user.
         onSaveError?.(err);
       }
-    })();
+    });
     await session.pendingSave;
-    session.pendingSave = null;
   }
 
   return {
     session,
+    id: session.id,
     doc: doc_,
     generation: () => session.generation,
     canUndo: () => model.canUndo(session.history),
@@ -149,6 +166,7 @@ export function createSession({ device, draftId, document: doc, store, onChange,
 
     /** Release owned resources; the session must not be used afterwards. */
     release() {
+      session.released = true;
       clearTimeout(session.saveTimer);
       session.saveTimer = null;
       session.generation++; // invalidate in-flight async work

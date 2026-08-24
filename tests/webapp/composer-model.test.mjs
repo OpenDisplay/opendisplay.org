@@ -342,11 +342,16 @@ test('applyAdjustments: identity settings leave pixels untouched', () => {
   assert.deepEqual(Array.from(px), before);
 });
 
-test('applyAdjustments: exposure scales, saturation desaturates, alpha forced opaque', () => {
+test('applyAdjustments: exposure scales, saturation desaturates, alpha PRESERVED', () => {
   const px = new Uint8ClampedArray([100, 50, 25, 0]);
   render.applyAdjustments(px, { exposure: 1.5, saturation: 1, shadows: 0, highlights: 0 });
   assert.equal(px[0], 150);
-  assert.equal(px[3], 255, 'composited opaque regardless of source alpha');
+  // Transparency must survive: a transparent PNG still reveals the layers
+  // beneath it after an adjustment (it must not composite over black).
+  assert.equal(px[3], 0, 'source alpha preserved');
+  const opaque = new Uint8ClampedArray([100, 50, 25, 255]);
+  render.applyAdjustments(opaque, { exposure: 1.5 });
+  assert.equal(opaque[3], 255);
 
   const grey = new Uint8ClampedArray([200, 100, 50, 255]);
   render.applyAdjustments(grey, { exposure: 1, saturation: 0, shadows: 0, highlights: 0 });

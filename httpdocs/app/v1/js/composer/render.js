@@ -38,18 +38,24 @@ function rgbCss([r, g, b]) {
 
 function paletteColor(scheme, index) {
   const p = paletteFor(scheme);
-  return rgbCss(p[Math.max(0, Math.min(p.length - 1, index | 0))]);
+  const i = index | 0;
+  if (i < 0 || i >= p.length) {
+    // Clamping would silently draw the wrong ink (e.g. "Blue" on a mono
+    // panel); the UI only offers legal indices, so this is a real bug.
+    throw new Error(`palette index ${index} is not valid for colour scheme ${scheme}`);
+  }
+  return rgbCss(p[i]);
 }
 
 /** Create an opaque sRGB 2D context (OffscreenCanvas when available). */
-export function makeCanvas(width, height) {
+export function makeCanvas(width, height, { alpha = false } = {}) {
   const canvas = typeof OffscreenCanvas !== 'undefined'
     ? new OffscreenCanvas(width, height)
     : Object.assign(document.createElement('canvas'), { width, height });
   const ctx = canvas.getContext('2d', {
     colorSpace: 'srgb',
     willReadFrequently: true,
-    alpha: false,
+    alpha,
   });
   return { canvas, ctx };
 }
@@ -61,8 +67,9 @@ export function makeCanvas(width, height) {
  *  saturation 0 = greyscale, 1 = unchanged, >1 = more saturated
  *  shadows    0..1 lifts dark tones
  *  highlights 0..1 pulls bright tones down
- * `toneStrength`/gamut are NOT applied here: they are pre-dither pipeline
- * parameters handed to the wasm dither in M3.
+ * Source ALPHA IS PRESERVED: a transparent PNG must keep revealing the layers
+ * beneath it after an adjustment. (Document-level tone/gamut are pre-dither
+ * pipeline parameters handed to the wasm dither in M3.)
  */
 export function applyAdjustments(data, adj) {
   const exposure = adj?.exposure ?? 1;
@@ -92,7 +99,7 @@ export function applyAdjustments(data, adj) {
     data[i] = r < 0 ? 0 : r > 255 ? 255 : r;
     data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
     data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
-    data[i + 3] = 255; // photos are composited opaque
+    // alpha untouched: adjusting must not turn transparency into black
   }
   return data;
 }
@@ -127,14 +134,16 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
     return;
   }
 
-  // Adjust off-screen at the layer's box size, then blit: keeps the pixel math
-  // off the shared composite and bounded by the layer, not the whole panel.
-  const { canvas: tmp, ctx: tctx } = makeCanvas(bw, bh);
+  // Adjust off-screen at the layer's box size, then composite: keeps the pixel
+  // math bounded by the layer rather than the whole panel. The scratch canvas
+  // MUST keep its alpha channel, or transparent regions of the source would
+  // composite over black and hide the layers underneath.
+  const { canvas: tmp, ctx: tctx } = makeCanvas(bw, bh, { alpha: true });
   tctx.drawImage(bitmap, dx - bx, dy - by, dw, dh);
   const img = tctx.getImageData(0, 0, bw, bh);
   applyAdjustments(img.data, adj);
   tctx.putImageData(img, 0, 0);
-  ctx.drawImage(tmp, bx, by);
+  ctx.drawImage(tmp, bx, by); // alpha-blended onto the opaque composite
 }
 
 function drawStroke(ctx, layer, scheme, W, H) {
@@ -183,8 +192,17 @@ export function qrGeometry(layer, W, H) {
   // Never smaller than 1 device pixel per module, and never bigger than the
   // artboard — a QR that does not fit whole cannot be made to scan.
   const maxModulePx = Math.floor(Math.min(W, H) / totalModules);
-  let modulePx = Math.max(1, Math.floor(requestedPx / totalModules));
-  if (maxModulePx >= 1) modulePx = Math.min(modulePx, maxModulePx);
+  if (maxModulePx < 1) {
+    // Even at one pixel per module the code plus its quiet zone exceeds the
+    // panel. Rendering it anyway would clip the quiet zone and produce an
+    // unscannable block, so fail loudly instead.
+    throw new Error(
+      `QR needs ${totalModules}px minimum (incl. quiet zone) but the panel is ` +
+      `${Math.min(W, H)}px on its short side — shorten the text or raise the ` +
+      'error-correction level',
+    );
+  }
+  const modulePx = Math.min(Math.max(1, Math.floor(requestedPx / totalModules)), maxModulePx);
   const blockPx = totalModules * modulePx;
 
   // Clamp the WHOLE block (quiet zone included) inside the artboard.
@@ -197,7 +215,6 @@ export function qrGeometry(layer, W, H) {
     // Where the dark modules start (inside the quiet zone).
     codeX: x + QR_QUIET_MODULES * modulePx,
     codeY: y + QR_QUIET_MODULES * modulePx,
-    fits: blockPx <= W && blockPx <= H,
   };
 }
 

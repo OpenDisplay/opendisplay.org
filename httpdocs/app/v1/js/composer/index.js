@@ -37,6 +37,36 @@ function size() {
   return { W: width, H: height };
 }
 
+/** Ink choices legal for the CURRENT panel scheme — offering Blue on a mono
+ *  panel would silently render as another colour. */
+const SCHEME_INK_LABELS = {
+  0: ['Black', 'White'],
+  1: ['Black', 'White', 'Red'],
+  2: ['Black', 'White', 'Yellow'],
+  3: ['Black', 'White', 'Yellow', 'Red'],
+  4: ['Black', 'White', 'Yellow', 'Red', 'Blue', 'Green'],
+  5: ['Black', 'Dark grey', 'Light grey', 'White'],
+  6: Array.from({ length: 16 }, (_, i) => `Grey ${i}/15`),
+  8: ['Black', 'White', 'Yellow', 'Red', 'Blue', 'Green'],
+};
+
+function rebuildInkOptions() {
+  const scheme = doc().panel.colorScheme;
+  const labels = SCHEME_INK_LABELS[scheme] ?? SCHEME_INK_LABELS[0];
+  const select = $('inkColor');
+  const previous = Number(select.value);
+  select.textContent = '';
+  labels.forEach((label, index) => {
+    const opt = document.createElement('option');
+    opt.value = String(index);
+    opt.textContent = label;
+    select.appendChild(opt);
+  });
+  // Keep the choice if it is still legal, else fall back to black.
+  select.value = String(previous < labels.length ? previous : 0);
+  drawTool?.setColor(Number(select.value));
+}
+
 function paint() {
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
   blitPreview($('composerCanvas'), canvas, { width, height });
@@ -72,18 +102,29 @@ async function decodeProxy(blob) {
   return proxy;
 }
 
+/**
+ * True only if `owner` is STILL the live session and has not been released.
+ * Comparing generations alone is not enough: a fresh session also starts at
+ * generation 0, so an async result from a released session could be applied
+ * to its replacement. Identity of the owner object is the real check.
+ */
+function isCurrent(owner, capturedGeneration) {
+  return session === owner && owner.generation() === capturedGeneration;
+}
+
 async function importPhoto(blob) {
-  const gen = session.generation();
+  const owner = session;
+  const gen = owner.generation();
   const assetId = await store.putAsset(blob);
   const bitmap = await decodeProxy(blob);
   // The session may have been replaced while we hashed and decoded.
-  if (gen !== session.generation()) {
+  if (!isCurrent(owner, gen)) {
     bitmap.close?.();
     return;
   }
-  session.setBitmap(assetId, bitmap);
-  session.apply(tools.placePhoto(doc(), { assetId }));
-  selectPhotoLayer(doc().layers.at(-1).id);
+  owner.setBitmap(assetId, bitmap);
+  owner.apply(tools.placePhoto(owner.doc(), { assetId }));
+  selectPhotoLayer(owner.doc().layers.at(-1).id);
   toast('Photo added.');
 }
 
@@ -264,16 +305,18 @@ export async function openComposer(device) {
 
   if (!wired) wire();
   selectTool?.clearSelection();
+  rebuildInkOptions();
 
-  // Restore editing proxies for referenced assets (generation-guarded).
-  const gen = session.generation();
+  // Restore editing proxies for referenced assets (owner-guarded).
+  const owner = session;
+  const gen = owner.generation();
   for (const layer of document_.layers) {
     if (!layer.assetId) continue;
     const asset = await store.getAsset(layer.assetId).catch(() => null);
     if (!asset?.blob) continue;
     const bmp = await decodeProxy(asset.blob);
-    if (gen !== session.generation()) { bmp.close?.(); return; }
-    session.setBitmap(layer.assetId, bmp);
+    if (!isCurrent(owner, gen)) { bmp.close?.(); return; }
+    owner.setBitmap(layer.assetId, bmp);
   }
 
   // Reclaim assets no longer reachable from any draft; protect this session's.
@@ -290,11 +333,19 @@ export async function flushComposer() {
 }
 
 /** Flush and release entirely (e.g. the open device was forgotten). */
-export async function closeComposer() {
+export async function closeComposer({ discard = false } = {}) {
   if (!session) return;
-  await session.flush();
+  // `discard` skips the flush: the device (and its draft) are being deleted,
+  // so writing the draft back would resurrect it.
+  if (!discard) await session.flush();
   session.release();
   session = null;
+  selectTool?.clearSelection();
+}
+
+/** The record id whose composer session is currently open, if any. */
+export function openRecordId() {
+  return session?.session?.device?.recordId ?? null;
 }
 
 export function hasSession() {

@@ -15,7 +15,7 @@ import * as adapter from './ble-adapter.js';
 import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
-import { openComposer } from './composer/index.js';
+import { openComposer, closeComposer, openRecordId } from './composer/index.js';
 import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
 const flows = makeFlows({
@@ -209,10 +209,22 @@ async function forgetFlow(record) {
     await adapter.disconnect().catch(() => {});
     connectedRecordId = null;
   }
+  // Close the composer FIRST and discard its pending draft write: a live
+  // session would otherwise autosave the draft back after deletion.
+  if (openRecordId() === record.recordId) {
+    await closeComposer({ discard: true });
+    $('navComposer').disabled = true;
+    $('viewComposer').hidden = true;
+    $('viewDevices').hidden = false;
+    $('navDevices').classList.add('odapp__navbtn--active');
+    $('navComposer').classList.remove('odapp__navbtn--active');
+  }
   await store.forgetDevice(record.recordId);
   try {
     await grantedById.get(record.bleId)?.forget?.();
   } catch { /* permission revocation is best effort */ }
+  // Reclaim the forgotten device's photos now, not whenever a composer next opens.
+  await store.sweepAssets().catch(() => {});
 }
 
 async function exportKeyFlow(record) {
