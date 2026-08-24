@@ -21,6 +21,10 @@ import { flushComposer } from './composer/index.js';
 // Last-Modified heuristic).
 const APP_VERSION = 'v1';
 
+// Tell the watchdog the module graph evaluated: without this it reports a
+// load failure after its grace period.
+document.body.dataset.odBoot = 'started';
+
 const $ = (id) => document.getElementById(id);
 
 function showGate(message, { retry = false } = {}) {

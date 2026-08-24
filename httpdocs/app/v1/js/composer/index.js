@@ -81,7 +81,26 @@ function rebuildInkOptions() {
   drawTool?.setColor(Number(select.value));
 }
 
+/**
+ * Repaint at most ONCE per animation frame.
+ *
+ * paint() composites the whole panel synchronously (measured at ~44 ms on an
+ * 1872x1404 artboard), and pointermove fires far faster than that, so calling
+ * it per event pegs the main thread and the app appears to freeze. Coalescing
+ * to a frame keeps dragging responsive on the largest supported panels.
+ */
+let paintScheduled = false;
 function paint() {
+  if (paintScheduled) return;
+  paintScheduled = true;
+  requestAnimationFrame(() => {
+    paintScheduled = false;
+    paintNow();
+  });
+}
+
+/** Force a synchronous repaint (tests and teardown paths). */
+function paintNow() {
   // The dithered frame belongs to the PREVIOUS document state; drop it so the
   // send button cannot ship a stale image.
   latestDither = null;
@@ -121,8 +140,12 @@ function updateSendControls() {
 function paintOverlay() {
   const overlay = $('composerOverlay');
   const { W, H } = size();
-  overlay.width = W;
-  overlay.height = H;
+  // Assigning width/height reallocates the backing store and clears it, which
+  // is wasted work when the artboard has not changed.
+  if (overlay.width !== W || overlay.height !== H) {
+    overlay.width = W;
+    overlay.height = H;
+  }
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, W, H);
 
@@ -333,7 +356,22 @@ function ensureDitherClient() {
   return dither;
 }
 
+let ditherTimer = null;
+
+/**
+ * Ask for a dithered frame once the document has SETTLED.
+ *
+ * Dithering a full panel is expensive and its result is only needed for the
+ * preview and for sending, so firing one per pointermove burns the worker (and
+ * the structured-clone cost of the document) for frames nobody sees. A short
+ * debounce collapses a whole drag into a single dither.
+ */
 function requestDither() {
+  clearTimeout(ditherTimer);
+  ditherTimer = setTimeout(() => { void requestDitherNow(); }, 180);
+}
+
+function requestDitherNow() {
   if (!session) return;
   const client = ensureDitherClient();
   const owner = session;

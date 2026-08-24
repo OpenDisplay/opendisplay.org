@@ -147,6 +147,9 @@
   <script src="../js/ble-common.js"></script>
   <!-- App bridge: constructs the per-connection OpenDisplayBLE instance. -->
   <script src="v1/boot-bridge.js"></script>
+  <!-- Classic script: explains a module-graph failure the modules cannot
+       report themselves (a stale cache leaves the page silently at "Loading…"). -->
+  <script src="v1/boot-watchdog.js"></script>
   <script type="module" src="v1/js/main.js"></script>
 </body>
 </html>
