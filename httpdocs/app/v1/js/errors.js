@@ -16,13 +16,19 @@
 
 const text = (err) => String(err?.message ?? err ?? '');
 
-/** True for the user closing the browser's device chooser — not a failure. */
+/**
+ * True for the user dismissing a chooser or dialog — not a failure.
+ *
+ * Deliberately NARROW: `AbortError` and `NotFoundError` are also produced by
+ * real faults, so a bare name is not enough. Web Bluetooth's chooser rejects
+ * with NotFoundError whose message names the chooser/device selection, and the
+ * app's own dialogs say "cancelled" explicitly.
+ */
 export function isUserCancellation(err) {
-  const name = err?.name;
   const t = text(err);
-  return name === 'NotFoundError'
-    || name === 'AbortError'
-    || /user cancelled|cancelled|Key entry cancelled/i.test(t);
+  if (/cancelled|canceled|dismissed/i.test(t)) return true;
+  return (err?.name === 'NotFoundError' || err?.name === 'AbortError')
+    && /chooser|user|device selection|no devices|requestDevice/i.test(t);
 }
 
 const MATCHERS = [
@@ -55,6 +61,59 @@ const MATCHERS = [
       kind: 'error',
       title: 'That key was rejected by the device.',
       hint: 'Check the key, or re-read it from the Toolbox if it was changed.',
+    }),
+  },
+
+  // --- upload failures reported by the shared library ---
+  // These arrive as plain Errors with fixed strings (ble-common.js), so they
+  // are matched on text; each names what the user can do next.
+  {
+    test: (err) => /ack timeout/i.test(text(err)),
+    map: (err) => ({
+      kind: 'error',
+      title: 'The device stopped acknowledging the upload.',
+      hint: 'Nothing was displayed. Move closer to the tag and send again. '
+        + `(${text(err)})`,
+    }),
+  },
+  {
+    test: (err) => /display refresh timed out/i.test(text(err)),
+    map: () => ({
+      kind: 'error',
+      title: 'The image transferred, but the panel did not report finishing its refresh.',
+      hint: 'The picture may still appear — e-paper refreshes slowly. Check the panel before resending.',
+    }),
+  },
+  {
+    test: (err) => /MAX_RETX|retransmission/i.test(text(err)),
+    map: () => ({
+      kind: 'error',
+      title: 'Too many lost packets — the upload was abandoned.',
+      hint: 'The Bluetooth link is too weak. Move closer to the tag and try again.',
+    }),
+  },
+  {
+    test: (err) => /partial update failed/i.test(text(err)),
+    map: () => ({
+      kind: 'error',
+      title: 'The device rejected a partial screen update.',
+      hint: 'Send again — the app will fall back to a full-screen update.',
+    }),
+  },
+  {
+    test: (err) => /^Disconnected$/i.test(text(err).trim()),
+    map: () => ({
+      kind: 'error',
+      title: 'The device disconnected during that operation.',
+      hint: 'Nothing was applied. Wake the tag and reconnect.',
+    }),
+  },
+  {
+    test: (err) => /upload failed/i.test(text(err)),
+    map: () => ({
+      kind: 'error',
+      title: 'The upload failed.',
+      hint: 'Nothing was displayed. Reconnect and try again.',
     }),
   },
 
@@ -135,6 +194,14 @@ const MATCHERS = [
   },
 
   // --- composing and sending ---
+  {
+    test: (err) => err?.name === 'ImageTooLargeError',
+    map: (err) => ({
+      kind: 'error',
+      title: text(err),
+      hint: 'Resize or crop the photo before importing it.',
+    }),
+  },
   {
     test: (err) => err?.name === 'UnsupportedImageError',
     map: (err) => ({

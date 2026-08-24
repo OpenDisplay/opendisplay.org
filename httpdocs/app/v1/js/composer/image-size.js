@@ -15,6 +15,11 @@
 
 const HEADER_BYTES = 64 * 1024; // enough for JPEG SOF markers after EXIF
 
+/** Sources beyond this are refused outright: a browser that ignores the
+ *  resize options would allocate the whole thing before any fallback runs.
+ *  (A 108 MP phone photo is ~108; 60 admits every mainstream camera.) */
+export const MAX_SOURCE_MEGAPIXELS = 60;
+
 export async function readImageSize(blob) {
   const head = new Uint8Array(await blob.slice(0, HEADER_BYTES).arrayBuffer());
   const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
@@ -102,6 +107,12 @@ export async function decodeBounded(blob, cap, { imageOrientation = 'from-image'
   if (!size || !(size.width > 0) || !(size.height > 0)) {
     throw new UnsupportedImageError();
   }
+  // Refuse absurd sources BEFORE decoding: on browsers that ignore the resize
+  // options the full bitmap is allocated first, and 100+ megapixels would take
+  // the tab down before any fallback could run.
+  const megapixels = (size.width * size.height) / 1e6;
+  if (megapixels > MAX_SOURCE_MEGAPIXELS) throw new ImageTooLargeError(Math.round(megapixels));
+
   const longest = Math.max(size.width, size.height);
   if (longest <= cap) return createImageBitmap(blob, { imageOrientation });
 
@@ -124,7 +135,20 @@ export async function decodeBounded(blob, cap, { imageOrientation = 'from-image'
   return downscaleViaCanvas(bitmap, targetW, targetH);
 }
 
-/** Portable fallback when createImageBitmap's resize options are unavailable. */
+export class ImageTooLargeError extends Error {
+  constructor(px) {
+    super(`Image is too large for this browser to resize safely (${px} megapixels)`);
+    this.name = 'ImageTooLargeError';
+  }
+}
+
+/**
+ * Portable fallback when createImageBitmap's resize options are unavailable.
+ * FAILS CLOSED: if the downscale cannot be done, the oversized bitmap is
+ * closed and rejected rather than handed to the proxy or the worker cache —
+ * returning it would reinstate exactly the unbounded allocation this module
+ * exists to prevent.
+ */
 async function downscaleViaCanvas(bitmap, targetW, targetH) {
   try {
     const canvas = typeof OffscreenCanvas !== 'undefined'
@@ -137,9 +161,9 @@ async function downscaleViaCanvas(bitmap, targetW, targetH) {
     const scaled = await createImageBitmap(canvas);
     bitmap.close?.();
     return scaled;
-  } catch {
-    // Downscaling failed: the oversized bitmap still renders correctly, it
-    // just costs more memory. Returning it beats failing the import.
-    return bitmap;
+  } catch (err) {
+    const px = Math.round((bitmap.width * bitmap.height) / 1e6);
+    bitmap.close?.();
+    throw new ImageTooLargeError(px);
   }
 }

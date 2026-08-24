@@ -61,11 +61,28 @@ function openDb() {
 // Best-effort durability: a request the browser may deny — and one that can
 // hang indefinitely where no permission backend exists (headless). Therefore
 // STRICTLY fire-and-forget: callers never await it, writes never gate on it.
+let persistenceListener = null;
+
+/** Called ONCE if the browser refuses durable storage, so the UI can warn that
+ *  devices, drafts and keys may be evicted (plan §9, M4). */
+export function onPersistenceDenied(fn) {
+  persistenceListener = fn;
+}
+
 function requestPersistence() {
   if (persistRequested) return;
   persistRequested = true;
   try {
-    Promise.resolve(navigator.storage?.persist?.()).catch(() => {});
+    // Timeboxed AND non-blocking: this can hang where no permission backend
+    // exists, and no write may ever wait on it.
+    Promise.race([
+      Promise.resolve(navigator.storage?.persist?.()),
+      new Promise((r) => setTimeout(() => r(undefined), 3000)),
+    ])
+      .then((granted) => {
+        if (granted === false) persistenceListener?.();
+      })
+      .catch(() => {});
   } catch {
     /* unsupported: proceed */
   }

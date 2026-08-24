@@ -16,11 +16,47 @@ function named(name, message) {
 
 test('a cancelled chooser is information, not an error', () => {
   for (const err of [named('NotFoundError', 'User cancelled the requestDevice() chooser.'),
-                     named('AbortError'),
+                     named('AbortError', 'The user dismissed the chooser'),
                      new Error('Key entry cancelled')]) {
     assert.equal(isUserCancellation(err), true, err.name);
     assert.equal(describeError(err).kind, 'cancelled');
   }
+});
+
+test('cancellation is classified NARROWLY: a bare AbortError is a real failure', () => {
+  // AbortError/NotFoundError are also produced by genuine faults, so the name
+  // alone must not excuse them — that would hide real errors as "Cancelled."
+  for (const err of [named('AbortError'),
+                     named('AbortError', 'GATT operation aborted'),
+                     named('NotFoundError', 'Service 0x2446 not found')]) {
+    assert.equal(isUserCancellation(err), false, err.message);
+    assert.equal(describeError(err).kind, 'error');
+  }
+});
+
+test('upload failures from the shared library get actionable messages', () => {
+  const ack = describeError(new Error('Direct write ack timeout (chunk 12)'));
+  assert.match(ack.title, /stopped acknowledging/i);
+  assert.match(ack.hint, /Nothing was displayed/i);
+  assert.match(ack.hint, /chunk 12/, 'the specific detail is preserved');
+
+  const refresh = describeError(new Error('Display refresh timed out'));
+  assert.match(refresh.title, /did not report finishing/i);
+  assert.match(refresh.hint, /may still appear/i, 'e-paper may have refreshed anyway');
+
+  assert.match(
+    describeError(new Error('PIPE_WRITE aborted: MAX_RETX exceeded (PTO)')).title,
+    /lost packets/i,
+  );
+  assert.match(describeError(new Error('Partial update failed')).hint, /full-screen update/i);
+  assert.match(describeError(new Error('Disconnected')).title, /disconnected during/i);
+  assert.match(describeError(new Error('Upload failed')).title, /upload failed/i);
+});
+
+test('an image too large to resize safely is refused with its size', () => {
+  const d = describeError(named('ImageTooLargeError',
+    'Image is too large for this browser to resize safely (96 megapixels)'));
+  assert.match(d.title, /96 megapixels/);
 });
 
 test('auth failures explain what to do about them', () => {

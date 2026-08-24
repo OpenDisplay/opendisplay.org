@@ -119,6 +119,7 @@ const FILES = {
   'index.html': '<html>root</html>',
   'app/index.html': '<html>app</html>',
   'app/current-version.txt': 'v1\n',
+  'app/RELEASED_VERSIONS': 'v1\n',
   'app/v1/app.css': 'css',
   'app/v1/js/main.js': 'js',
   'js/ble-common.js': 'lib',
@@ -191,4 +192,54 @@ test('identical manifests: no uploads at all', () => {
   const { code, uploads } = runDeploy(fx, { remoteManifest: manifestFor(fx.docs, FILES) });
   assert.equal(code, 0);
   assert.deepEqual(uploads, []);
+});
+
+// --- Web OD App release preflight ---
+
+const APP_FILES = {
+  'index.html': '<html>root</html>',
+  'app/index.html': '<html>app</html>',
+  'app/current-version.txt': 'v1\n',
+  'app/RELEASED_VERSIONS': '# comment\nv1\n',
+  'app/v1/app.css': 'css',
+};
+
+test('deploy proceeds when the current app version is declared immutable', () => {
+  const fx = setup(APP_FILES);
+  const { code } = runDeploy(fx);
+  assert.equal(code, 0);
+});
+
+test('deploy REFUSES to publish an app version missing from RELEASED_VERSIONS', () => {
+  const fx = setup({ ...APP_FILES, 'app/RELEASED_VERSIONS': '# nothing released yet\n' });
+  const { code, uploads, output } = runDeploy(fx);
+  assert.notEqual(code, 0, 'a mutable version must not be released');
+  assert.deepEqual(uploads, [], 'nothing was uploaded');
+  assert.match(output, /NOT listed in app\/RELEASED_VERSIONS/);
+});
+
+test('deploy REFUSES when the pointer names a directory that does not exist', () => {
+  const fx = setup({ ...APP_FILES, 'app/current-version.txt': 'v9\n' });
+  const { code, output } = runDeploy(fx);
+  assert.notEqual(code, 0);
+  assert.match(output, /does not exist/);
+});
+
+test('a site without the app deploys unaffected by the preflight', () => {
+  const fx = setup({ 'index.html': '<html>root</html>', 'js/x.js': 'x' });
+  assert.equal(runDeploy(fx).code, 0);
+});
+
+test('an UNRELEASED app (no version pointer) does not block the rest of the site', () => {
+  // This is the repository's current state: the app ships but is not released,
+  // so no current-version.txt exists and unrelated site deploys must proceed.
+  const fx = setup({
+    'index.html': '<html>root</html>',
+    'app/index.html': '<html>app</html>',
+    'app/RELEASED_VERSIONS': '# nothing released yet\n',
+    'app/v1/app.css': 'css',
+  });
+  const { code, uploads } = runDeploy(fx);
+  assert.equal(code, 0);
+  assert.ok(uploads.length > 0, 'the site still deploys');
 });

@@ -11,6 +11,7 @@
  */
 import { ready, webBluetoothBlockReason } from './ble-adapter.js';
 import { initDevices } from './devices.js';
+import { onPersistenceDenied } from './store.js';
 import { flushComposer } from './composer/index.js';
 
 // Must match the directory this file lives in; compared against the deployed
@@ -89,6 +90,16 @@ async function boot() {
       showGate(String(err instanceof Error ? err.message : err), { retry: true });
       return;
     }
+
+    // If the browser refuses durable storage, say so once: saved devices,
+    // drafts and keys can be evicted under storage pressure.
+    onPersistenceDenied(() => {
+      showGate(
+        'This browser would not grant durable storage, so saved devices, drafts and '
+        + 'encryption keys may be evicted if disk space runs low. Export anything you '
+        + 'cannot lose.',
+      );
+    });
 
     // The saved-device list renders even when Bluetooth is gated (records are
     // viewable/exportable); connect-capable controls stay disabled then.

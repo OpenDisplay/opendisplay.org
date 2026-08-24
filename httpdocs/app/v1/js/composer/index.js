@@ -296,14 +296,24 @@ function requestDither() {
     const assetId = layer.assetId;
     store.getAsset(assetId)
       .then(async (asset) => {
-        if (!asset?.blob) return;
         // A device switch during the load invalidates this asset entirely.
         if (!isCurrent(owner, ownerGen) || client.epoch() !== clientEpoch) return;
+        if (!asset?.blob) {
+          // The photo is gone from storage. Drop the layer rather than leaving
+          // the render waiting on an asset that will never arrive.
+          throw new Error('A photo in this composition is missing from storage.');
+        }
         await client.addAsset(assetId, asset.blob, (b) => decodeForPanel(b, current.panel));
       })
       .catch((err) => {
-        if (isCurrent(owner, ownerGen)) {
-          reportError(err);
+        if (!isCurrent(owner, ownerGen)) return;
+        reportError(err);
+        // Remove the unusable layer so the preview can complete.
+        const layerToDrop = doc().layers.find((l) => l.assetId === assetId);
+        if (layerToDrop) {
+          try {
+            session.apply(model.removeLayer(doc(), layerToDrop.id));
+          } catch { /* validation will have reported already */ }
         }
       });
   }
@@ -498,7 +508,15 @@ export async function openComposer(device) {
   // so a result for the old device can never be shown or sent for the new one.
   dither?.newEpoch();
   const draftId = `draft-${device.recordId}`;
-  const existing = await store.getDraft(draftId).catch(() => null);
+  // A read FAILURE is not the same as "no draft": treating it as empty would
+  // install a blank document whose first edit overwrites saved work once
+  // storage recovers. Fail the open instead.
+  let existing;
+  try {
+    existing = await store.getDraft(draftId);
+  } catch (err) {
+    throw new Error(`Could not open the saved draft for this device: ${err.message ?? err}`);
+  }
   let document_;
   let reconcileNote = '';
   if (existing?.doc) {
@@ -546,7 +564,13 @@ export async function openComposer(device) {
   const gen = owner.generation();
   for (const layer of document_.layers) {
     if (!layer.assetId) continue;
-    const asset = await store.getAsset(layer.assetId).catch(() => null);
+    let asset;
+    try {
+      asset = await store.getAsset(layer.assetId);
+    } catch (err) {
+      reportError(err);
+      continue;
+    }
     if (!asset?.blob) continue;
     const bmp = await decodeProxy(asset.blob);
     if (!isCurrent(owner, gen)) { bmp.close?.(); return; }
