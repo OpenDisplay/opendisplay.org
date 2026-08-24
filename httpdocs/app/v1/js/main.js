@@ -12,7 +12,7 @@
 import { ready, webBluetoothBlockReason } from './ble-adapter.js';
 import { initDevices } from './devices.js';
 import { onPersistenceDenied } from './store.js';
-import { flushComposer } from './composer/index.js';
+import { flushComposer, refreshConnectionState } from './composer/index.js';
 
 // Must match the directory this file lives in; compared against the deployed
 // marker to recover from a stale heuristically-cached entry page (the
@@ -151,10 +151,23 @@ $('navDevices').addEventListener('click', () => {
 
 $('navComposer').addEventListener('click', () => {
   if ($('navComposer').disabled) return;
+  // The user may have connected while on the Devices tab — that is the normal
+  // compose-offline-then-connect path, so re-evaluate Send on the way back.
+  refreshConnectionState();
   $('viewDevices').hidden = true;
   $('viewComposer').hidden = false;
   $('navComposer').classList.add('odapp__navbtn--active');
   $('navDevices').classList.remove('odapp__navbtn--active');
+});
+
+// Autosave is debounced, and the brand link, footer links, tab closure and
+// reloads are all ordinary navigations that would drop a pending timer. Flush
+// on the last reliable signal browsers give us. `pagehide` is the recommended
+// one (`unload` never fires on mobile Safari and blocks bfcache); the
+// visibility hook covers a tab being backgrounded and then discarded.
+window.addEventListener('pagehide', () => { flushComposer().catch(() => {}); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushComposer().catch(() => {});
 });
 
 checkEntryFreshness();

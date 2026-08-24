@@ -367,6 +367,51 @@ export async function exportDevices() {
   };
 }
 
+/** Panel facts an imported record may carry, with the checks that make them
+ *  safe to render from. Anything else is dropped. */
+const IMPORT_INT_FIELDS = {
+  width: [1, 8192],
+  height: [1, 8192],
+  rotationQuarterTurns: [0, 3],
+  colorScheme: [0, 9],
+  transmissionModes: [0, 255],
+  partialUpdateSupport: [0, 255],
+};
+
+function sanitiseImported(d) {
+  if (typeof d?.recordId !== 'string' || !d.recordId) return null;
+  const clean = {
+    recordId: d.recordId,
+    name: typeof d.name === 'string' && d.name ? d.name.slice(0, 120) : 'OpenDisplay',
+    panelIcType: Number.isInteger(d.panelIcType) ? d.panelIcType : null,
+    firmwareVersion: typeof d.firmwareVersion === 'string' ? d.firmwareVersion : null,
+    msdSnapshotHex: typeof d.msdSnapshotHex === 'string' ? d.msdSnapshotHex : null,
+    authRequired: d.authRequired === true,
+    createdAt: Number.isFinite(d.createdAt) ? d.createdAt : Date.now(),
+    lastSeen: Number.isFinite(d.lastSeen) ? d.lastSeen : null,
+  };
+  for (const [field, [min, max]] of Object.entries(IMPORT_INT_FIELDS)) {
+    const v = d[field];
+    if (!Number.isInteger(v) || v < min || v > max) return null;
+    clean[field] = v;
+  }
+  return clean;
+}
+
+/**
+ * Import device records from another browser.
+ *
+ * TWO RULES, both about not letting a file decide what gets sent to hardware:
+ *
+ *  1. An imported record is NEVER `resolutionConfirmed`. Its panel facts came
+ *     from a file, not from a config read, and the composer renders from those
+ *     facts — so sending is blocked until the device is connected once and the
+ *     real values are read back.
+ *  2. An EXISTING record is never overwritten. Otherwise importing a stale
+ *     export could replace the freshly-read geometry of a device that is bound
+ *     (even connected) right now, and every later check would validate happily
+ *     against the stale values.
+ */
 export async function importDevices(payload) {
   if (payload?.format !== 'od-app-devices' || !Array.isArray(payload.devices)) {
     throw new Error('Not an OD App device export');
@@ -375,13 +420,18 @@ export async function importDevices(payload) {
   const t = tx(db, ['devices'], 'readwrite');
   const store = t.objectStore('devices');
   let imported = 0;
-  for (const d of payload.devices) {
-    if (!d.recordId || !d.width || !d.height) continue;
-    const existing = await reqAsPromise(store.get(d.recordId));
-    // Imported rows never carry a binding; never clobber a live local one.
-    store.put({ ...d, bleId: existing?.bleId ?? null });
+  let skipped = 0;
+  for (const raw of payload.devices) {
+    const clean = sanitiseImported(raw);
+    if (!clean) { skipped++; continue; }
+    if (await reqAsPromise(store.get(clean.recordId))) { skipped++; continue; }
+    store.put({
+      ...clean,
+      bleId: null,                 // permissions are per-browser
+      resolutionConfirmed: false,  // must be re-read from the device
+    });
     imported++;
   }
   await txDone(t);
-  return imported;
+  return { imported, skipped };
 }

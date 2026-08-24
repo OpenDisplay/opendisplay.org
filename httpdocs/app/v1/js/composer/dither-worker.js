@@ -7,7 +7,10 @@
  *  - bitmap OWNERSHIP: a transfer relinquishes the sender's copy, so each
  *    asset is transferred here exactly ONCE and cached by assetId. The main
  *    thread keeps its own separate proxy bitmaps for the live editing
- *    preview; the two caches never share objects. `drop`/`reset` release ours.
+ *    preview; the two caches never share objects. Switching devices replaces
+ *    this whole worker rather than pruning it, so `reset` is the only release
+ *    path (a stale ack from a surviving worker could otherwise mark a
+ *    same-hash asset ready that it no longer holds).
  *  - every render carries a generation id, echoed back so stale results can be
  *    discarded;
  *  - outputs are TRANSFERRED, not cloned.
@@ -28,12 +31,9 @@ function setAsset(assetId, bitmap) {
   assets.set(assetId, bitmap);
 }
 
-function clearAssets(keep = null) {
-  for (const [id, bmp] of assets) {
-    if (keep && keep.has(id)) continue;
-    bmp.close?.();
-    assets.delete(id);
-  }
+function clearAssets() {
+  for (const bmp of assets.values()) bmp.close?.();
+  assets.clear();
 }
 
 self.onmessage = (ev) => {
@@ -44,9 +44,6 @@ self.onmessage = (ev) => {
       // Echo the attempt token: the client uses it to ignore an ack that
       // belongs to a superseded load of the same content hash.
       self.postMessage({ type: 'asset-ack', assetId: msg.assetId, attempt: msg.attempt });
-      return;
-    case 'drop':
-      clearAssets(new Set(msg.keep ?? []));
       return;
     case 'reset':
       clearAssets();

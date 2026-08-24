@@ -16,7 +16,7 @@ import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
 import { errorMessage, describeError } from './errors.js';
-import { openComposer, closeComposer, openRecordId } from './composer/index.js';
+import { openComposer, closeComposer, openRecordId, refreshConnectionState } from './composer/index.js';
 import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
 const flows = makeFlows({
@@ -198,9 +198,12 @@ function deviceCard(record) {
 async function refresh() {
   await sweepPermissions();
   await renderList();
+  // An open composer's Send button depends on connection state owned here.
+  refreshConnectionState();
 }
 
 function showComposerView(record) {
+  refreshConnectionState();
   $('viewDevices').hidden = true;
   $('viewComposer').hidden = false;
   $('navComposer').disabled = false;
@@ -265,8 +268,12 @@ async function exportDeviceList() {
 
 async function importDeviceList(file) {
   const payload = JSON.parse(await file.text());
-  const n = await store.importDevices(payload);
-  toast(`Imported ${n} device record(s). Reconnect each to re-establish permissions.`);
+  const { imported, skipped } = await store.importDevices(payload);
+  toast(
+    `Imported ${imported} device record(s)`
+    + (skipped ? `, skipped ${skipped} (already present or invalid)` : '')
+    + '. Connect each once to confirm its panel before sending.',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +284,7 @@ export async function initDevices({ gated = false } = {}) {
   adapter.setUnexpectedDisconnectListener(() => {
     connectedRecordId = null;
     toast('Device disconnected.');
+    refreshConnectionState();   // Send must go dead immediately, not on repaint
     refresh();
   });
 

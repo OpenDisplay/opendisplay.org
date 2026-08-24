@@ -148,14 +148,37 @@ test('autosave fires after the debounce and records the captured draft id', asyn
   assert.deepEqual(store.calls.at(-1), ['putDraft', 'draft-rec-A', 1]);
 });
 
-test('save failures are surfaced, never swallowed', async () => {
+test('save failures are surfaced AND fail the flush', async () => {
   const store = makeStore();
   store.putDraft = async () => { throw new Error('QuotaExceededError'); };
   let seen = null;
   const s = open(DEVICE_A, store, undefined, (err) => { seen = err; });
   s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'x' })));
-  await s.flush();
-  assert.match(String(seen?.message), /Quota/);
+
+  // flush() must REJECT: a caller that flushes-then-releases would otherwise
+  // discard the only copy of these edits believing they were saved.
+  await assert.rejects(s.flush(), /Quota/);
+  assert.match(String(seen?.message), /Quota/, 'and the user is told');
+  assert.equal(s.hasUnsavedFailure(), true);
+});
+
+test('a session recovers once storage works again', async () => {
+  const store = makeStore();
+  let fail = true;
+  const realPut = store.putDraft;
+  store.putDraft = async (d) => {
+    if (fail) throw new Error('QuotaExceededError');
+    return realPut(d);
+  };
+  const s = open(DEVICE_A, store);
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'x' })));
+  await assert.rejects(s.flush(), /Quota/);
+
+  fail = false;
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'y' })));
+  await s.flush();                      // must not be poisoned by the failure
+  assert.equal(s.hasUnsavedFailure(), false);
+  assert.equal((await store.getDraft('draft-rec-A')).doc.layers.length, 2);
 });
 
 // --- bitmap ownership ---

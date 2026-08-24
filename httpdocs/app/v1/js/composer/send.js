@@ -59,6 +59,14 @@ export async function prepareSend({
     throw new SendAbortedError('the composition changed while preparing to send — nothing was sent');
   }
   if (!fresh) throw new SendAbortedError('this device is no longer saved');
+  // Panel facts that came from an import file — not from a config read — must
+  // not decide what gets encoded and sent. Connecting once re-reads them.
+  if (fresh.resolutionConfirmed !== true) {
+    throw new SendAbortedError(
+      'this device\'s panel details have not been read from the hardware yet — '
+      + 'connect once to confirm them before sending',
+    );
+  }
   if (fresh.bleId !== connectedBleId()) {
     throw new SendAbortedError('the connected device is not the one this composition is for');
   }

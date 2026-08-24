@@ -36,7 +36,6 @@ let dither = null;
  *  and the dithered preview. Cleared whenever the document changes so a stale
  *  frame can never be sent. */
 let latestDither = null;
-let ditherPending = false;
 let sending = false;
 let drawTool = null;
 let selectTool = null;
@@ -335,7 +334,6 @@ function ensureDitherClient() {
     onResult: (msg) => {
       // Bind the frame to the panel it was rendered for.
       latestDither = { ...msg, signature: panelSignature(doc().panel) };
-      ditherPending = false;
       if ($('showDithered').checked) {
         const { canvas, ctx } = makeCanvas(msg.width, msg.height);
         ctx.putImageData(new ImageData(msg.preview, msg.width, msg.height), 0, 0);
@@ -347,7 +345,6 @@ function ensureDitherClient() {
       updateSendControls();
     },
     onError: (err) => {
-      ditherPending = false;
       latestDither = null;
       reportError(err);
       updateSendControls();
@@ -408,7 +405,6 @@ function requestDitherNow() {
         reportError(err);
       });
   }
-  ditherPending = true;
   client.request(current, ditherOptions());
 }
 
@@ -590,18 +586,26 @@ function wire() {
 /** Open the composer for a device record, restoring its draft if present.
  *  Any previous session is flushed and released first. */
 export async function openComposer(device) {
-  if (session) {
-    await session.flush();   // never lose the outgoing device's edits
-    session.release();       // closes bitmaps, invalidates in-flight work
-  }
-  latestDither = null;
-  // New epoch: invalidates in-flight renders and releases the worker's bitmaps
-  // so a result for the old device can never be shown or sent for the new one.
-  dither?.newEpoch();
+  // STAGED HANDOFF. Everything that can fail — flushing the outgoing session,
+  // reading and reconciling the incoming draft — happens BEFORE the old
+  // session is released or the global is reassigned. Releasing first meant a
+  // failed read left a released "zombie" session installed: still editable,
+  // but permanently unable to save.
   const draftId = `draft-${device.recordId}`;
-  // A read FAILURE is not the same as "no draft": treating it as empty would
-  // install a blank document whose first edit overwrites saved work once
-  // storage recovers. Fail the open instead.
+
+  // 1. Persist the outgoing session. A write failure ABORTS the switch rather
+  //    than throwing away the only copy of those edits.
+  if (session) {
+    try {
+      await session.flush();
+    } catch (err) {
+      throw new Error(
+        `Could not save the current composition, so it was not closed: ${err.message ?? err}`,
+      );
+    }
+  }
+
+  // 2. Build the incoming document. Still no mutation of live state.
   let existing;
   try {
     existing = await store.getDraft(draftId);
@@ -635,6 +639,13 @@ export async function openComposer(device) {
   } else {
     document_ = model.createDocument(device);
   }
+
+  // 3. Only now commit: release the old session and install the new one.
+  if (session) session.release();
+  latestDither = null;
+  // New epoch: invalidates in-flight renders and releases the worker's bitmaps
+  // so a result for the old device can never be shown or sent for the new one.
+  dither?.newEpoch();
 
   session = createSession({
     device,
@@ -700,4 +711,18 @@ export function openRecordId() {
 
 export function hasSession() {
   return !!session;
+}
+
+/**
+ * Re-evaluate Send.
+ *
+ * The composer's Send state depends on the CONNECTION, which is owned by the
+ * device list — a different module. Compose-offline-then-connect is the normal
+ * workflow (tags sleep), so without this the intended path leaves Send stuck
+ * disabled after connecting, and a disconnect leaves it stuck enabled until
+ * something else happens to repaint.
+ */
+export function refreshConnectionState() {
+  if (!session) return;
+  updateSendControls();
 }

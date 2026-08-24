@@ -41,6 +41,7 @@ export function createSession({
     bitmaps: new Map(),  // assetId -> ImageBitmap (owned; closed on release)
     saveTimer: null,
     pendingSave: null,
+    saveFailure: null,
     released: false,
     // Set by the first real user edit. A session that was only OPENED must
     // never write: opening a reconciled draft and navigating away would
@@ -89,7 +90,8 @@ export function createSession({
     if (snapshot.generation !== session.generation) return;
     // Serialize: overlapping saves could otherwise land out of order and
     // persist an older document over a newer one.
-    const prior = session.pendingSave ?? Promise.resolve();
+    // A prior failure must not poison the chain for later saves.
+    const prior = (session.pendingSave ?? Promise.resolve()).catch(() => {});
     session.pendingSave = prior.then(async () => {
       if (session.released || snapshot.generation !== session.generation) return;
       try {
@@ -97,9 +99,14 @@ export function createSession({
           id: snapshot.id,
           recordId: snapshot.recordId,
         }));
+        session.saveFailure = null;
       } catch (err) {
-        // Never silent: quota and storage failures must reach the user.
+        // Never silent: quota and storage failures must reach the user AND
+        // must fail flush(), or a caller that flushes-then-releases would
+        // discard the only good copy of the edits.
+        session.saveFailure = err;
         onSaveError?.(err);
+        throw err;
       }
     });
     await session.pendingSave;
@@ -187,7 +194,11 @@ export function createSession({
 
     bitmaps: () => session.bitmaps,
 
-    /** Flush any pending autosave and await it (call before switching away). */
+    /** True when the last write failed and the edits are only in memory. */
+    hasUnsavedFailure: () => !!session.saveFailure,
+
+    /** Flush any pending autosave and await it (call before switching away).
+     *  REJECTS if the write failed — the caller must not discard the session. */
     async flush() {
       clearTimeout(session.saveTimer);
       session.saveTimer = null;

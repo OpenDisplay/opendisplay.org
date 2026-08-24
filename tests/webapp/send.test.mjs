@@ -10,8 +10,10 @@ const { prepareSend, panelSignature, SendAbortedError } = await loadAppModule('c
 // TWO IDENTICAL TAGS: same panel, same scheme, same rotation — so their frames
 // share a signature and only object identity can tell the compositions apart.
 const PANEL = { width: 800, height: 480, rotationQuarterTurns: 0, colorScheme: 4, panelIcType: 35 };
-const RECORD_A = { recordId: 'rec-A', bleId: 'ble-A', ...PANEL };
-const RECORD_B = { recordId: 'rec-B', bleId: 'ble-B', ...PANEL };
+// resolutionConfirmed: these panel facts came from a real config read. A record
+// without it (e.g. imported from a file) must never be sent to.
+const RECORD_A = { recordId: 'rec-A', bleId: 'ble-A', resolutionConfirmed: true, ...PANEL };
+const RECORD_B = { recordId: 'rec-B', bleId: 'ble-B', resolutionConfirmed: true, ...PANEL };
 
 function fakeSession(gen = 0) {
   return { generation: () => gen };
@@ -130,7 +132,7 @@ test('a frame rendered for a different panel spec is refused', async () => {
       owner, ownerGen: 0, frame, record: RECORD_A,
       currentSession: () => owner,
       currentFrame: () => frame,
-      getDevice: async () => rebound,
+      getDevice: async () => ({ ...rebound, resolutionConfirmed: true }),
       connectedBleId: () => 'ble-A',
     }),
     /panel changed since this preview/,
@@ -145,4 +147,22 @@ test('panelSignature distinguishes every field that changes the wire format', ()
   assert.notEqual(base, panelSignature({ ...PANEL, colorScheme: 0 }));
   assert.notEqual(base, panelSignature({ ...PANEL, panelIcType: 0x1d }),
     'panel IC matters: it drives the BWRY paint swap and the gray LUT');
+});
+
+test('a record whose panel was never read from hardware cannot be sent to', async () => {
+  // The shape an IMPORTED record has: plausible panel facts from a file, but
+  // nothing has confirmed them against the device.
+  const imported = { ...RECORD_A, resolutionConfirmed: false };
+  const owner = fakeSession();
+  const frame = frameFor();
+  await assert.rejects(
+    prepareSend({
+      owner, ownerGen: 0, frame, record: imported,
+      currentSession: () => owner,
+      currentFrame: () => frame,
+      getDevice: async () => imported,
+      connectedBleId: () => 'ble-A',
+    }),
+    /not been read from the hardware/,
+  );
 });

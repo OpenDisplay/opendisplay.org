@@ -95,11 +95,42 @@ window.resultPromise = (async () => {
     const key = devices.length ? await keys.getKey(devices[0].recordId) : null;
     ok('persistedKey', !!key && key.length === 16 && key[5] === 0xab);
 
+    // An import must NEVER rewrite an existing record: a stale export could
+    // otherwise replace freshly-read panel facts on a bound (even connected)
+    // device, and every later send check would validate against the stale ones.
     const payload = { format: 'od-app-devices', version: 1,
-      devices: [{ ...devices[0], bleId: 'SHOULD-NOT-APPLY' }] };
-    await store.importDevices(payload);
+      devices: [{ ...devices[0], bleId: 'SHOULD-NOT-APPLY', width: 99, colorScheme: 0,
+                  name: 'STALE' }] };
+    const res1 = await store.importDevices(payload);
     const after = await store.getDevice(devices[0].recordId);
     ok('importKeepsBinding', after.bleId === 'ble-A2');
+    ok('importNeverOverwrites',
+       after.width === devices[0].width && after.name === devices[0].name
+       && res1.imported === 0 && res1.skipped === 1);
+
+    // A NEW record imports, but is never treated as hardware-confirmed.
+    const res2 = await store.importDevices({ format: 'od-app-devices', version: 1, devices: [{
+      recordId: 'imported-1', name: 'From file', width: 400, height: 300,
+      rotationQuarterTurns: 0, colorScheme: 4, transmissionModes: 0,
+      partialUpdateSupport: 0, panelIcType: 35, resolutionConfirmed: true,
+    }] });
+    const imported = await store.getDevice('imported-1');
+    ok('importAddsNew', res2.imported === 1 && !!imported);
+    ok('importIsUnconfirmed', imported.resolutionConfirmed === false);
+    ok('importDropsBinding', imported.bleId === null);
+
+    // Malformed or out-of-range records are refused outright.
+    const res3 = await store.importDevices({ format: 'od-app-devices', version: 1, devices: [
+      { recordId: 'bad-1', width: 0, height: 300, colorScheme: 4 },
+      { recordId: 'bad-2', width: 400, height: 300, colorScheme: 999,
+        rotationQuarterTurns: 0, transmissionModes: 0, partialUpdateSupport: 0 },
+      { recordId: 'bad-3', width: 400, height: 300, colorScheme: 4,
+        rotationQuarterTurns: 7, transmissionModes: 0, partialUpdateSupport: 0 },
+      { width: 400, height: 300 },
+    ] });
+    ok('importRejectsGarbage',
+       res3.imported === 0 && res3.skipped === 4
+       && !(await store.getDevice('bad-1')) && !(await store.getDevice('bad-2')));
   }
   out.ok = Object.values(out.checks).every(Boolean);
   return out;
