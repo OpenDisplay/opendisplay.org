@@ -90,6 +90,12 @@ function rebuildInkOptions() {
  */
 let paintScheduled = false;
 function paint() {
+  // Invalidate SYNCHRONOUSLY, before the frame this call was triggered by.
+  // Everything else here may wait for an animation frame; frame currency may
+  // not — a render completing in the meantime would otherwise be published as
+  // if it depicted the new document.
+  latestDither = null;
+  dither?.invalidate();
   if (paintScheduled) return;
   paintScheduled = true;
   requestAnimationFrame(() => {
@@ -100,9 +106,11 @@ function paint() {
 
 /** Force a synchronous repaint (tests and teardown paths). */
 function paintNow() {
-  // The dithered frame belongs to the PREVIOUS document state; drop it so the
-  // send button cannot ship a stale image.
+  // The dithered frame belonged to the PREVIOUS document state. paint()
+  // already dropped it and invalidated the worker's outstanding renders; this
+  // repeats it for the direct paintNow() callers (teardown, tests).
   latestDither = null;
+  dither?.invalidate();
   requestDither();
 
   const { canvas, width, height } = renderDocument(doc(), session.bitmaps());
@@ -584,8 +592,14 @@ function wire() {
     if (file) importPhoto(file).catch((err) => reportError(err));
   });
 
-  $('ditherMode').addEventListener('change', () => { latestDither = null; requestDither(); updateSendControls(); });
-  $('useMeasured').addEventListener('change', () => { latestDither = null; requestDither(); updateSendControls(); });
+  const ditherOptionChanged = () => {
+    latestDither = null;
+    dither?.invalidate(); // the in-flight render used the OLD options
+    requestDither();
+    updateSendControls();
+  };
+  $('ditherMode').addEventListener('change', ditherOptionChanged);
+  $('useMeasured').addEventListener('change', ditherOptionChanged);
   $('showDithered').addEventListener('change', () => {
     if ($('showDithered').checked) requestDither();
     else paint();
@@ -767,6 +781,9 @@ export function hasSession() {
  */
 export async function refreshConnectionState() {
   if (!session) return;
+  // Reflect the adapter's state at once: a disconnect must disable Send now,
+  // not after an IndexedDB read that could be slow or blocked.
+  updateSendControls();
   const recordId = session.session.device?.recordId;
   if (recordId) {
     // Re-read the record: a repair/rebind may have installed the real binding

@@ -397,7 +397,7 @@ test('a stale tab cannot overwrite a newer draft from another tab', async () => 
   const store = {
     putDraft: async (d, expectedRev) => {
       const storedRev = db.get(d.id)?.rev ?? 0;
-      if (expectedRev !== undefined && storedRev > expectedRev) {
+      if (expectedRev !== undefined && storedRev !== expectedRev) {
         const e = new Error('conflict'); e.name = 'DraftConflictError'; throw e;
       }
       const rev = storedRev + 1;
@@ -427,7 +427,7 @@ test('a session keeps saving after its own writes (revision advances)', async ()
   const store = {
     putDraft: async (d, expectedRev) => {
       const storedRev = db.get(d.id)?.rev ?? 0;
-      if (expectedRev !== undefined && storedRev > expectedRev) throw new Error('conflict');
+      if (expectedRev !== undefined && storedRev !== expectedRev) throw new Error('conflict');
       const rev = storedRev + 1;
       db.set(d.id, { ...d, rev });
       return rev;
@@ -511,4 +511,81 @@ test('the stale device record is replaced, so a repaired binding can enable Send
   // A record for a DIFFERENT device must never be adopted.
   s.setDevice({ ...DEVICE_B, bleId: 'other' });
   assert.equal(s.session.device.bleId, 'ble-real', 'foreign record ignored');
+});
+
+// --- flush must catch up edits made while it was writing (round 3, finding 2) ---
+
+test('an edit made DURING the flush write is still saved', async () => {
+  const db = new Map();
+  let inWrite = null;
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev !== expectedRev) throw new Error('conflict');
+      await inWrite?.();               // the user edits while storage is busy
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'one' })));
+  inWrite = () => {
+    inWrite = null;                    // only race the first write
+    s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'two' })));
+  };
+  await s.flush();
+  // The real caller releases immediately after flush() resolves, cancelling the
+  // timer the second edit scheduled — so flush() itself must have written it.
+  s.release();
+  assert.equal(db.get('d').doc.layers.length, 2, 'the edit made mid-write survived');
+  assert.equal(s.isDirty(), false);
+});
+
+test('switching away twice does not write twice', async () => {
+  const db = new Map();
+  let writes = 0;
+  const store = {
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev !== expectedRev) throw new Error('conflict');
+      writes++;
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'one' })));
+  await s.flush();
+  await s.flush();   // nothing changed in between
+  assert.equal(writes, 1, 'isDirty means "changed since the last save", not "ever edited"');
+  assert.equal(db.get('d').rev, 1, 'no phantom revision to collide with another tab');
+});
+
+test('a failed save leaves the session dirty so a retry re-writes', async () => {
+  const db = new Map();
+  let fail = true;
+  const store = {
+    putDraft: async (d) => {
+      if (fail) throw new Error('quota exceeded');
+      db.set(d.id, { ...d, rev: 1 });
+      return 1;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+  const errors = [];
+  const s = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {}, onSaveError: (e) => errors.push(e.message) });
+  s.apply(model.addLayer(s.doc(), model.textLayer({ text: 'one' })));
+  await assert.rejects(s.flush(), /quota exceeded/);
+  assert.equal(s.isDirty(), true, 'the edit is still unsaved');
+  fail = false;
+  await s.flush();
+  assert.equal(db.get('d').doc.layers.length, 1, 'the retry wrote it');
+  assert.equal(s.isDirty(), false);
 });

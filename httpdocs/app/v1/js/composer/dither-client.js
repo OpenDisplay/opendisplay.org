@@ -24,6 +24,12 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
   let inFlight = null;       // id currently rendering
   let queued = null;         // at most one pending request
   let latestRequested = 0;   // newest id handed out
+  // Ids issued before the last invalidate(). "Newest request wins" is NOT
+  // enough on its own: an edit invalidates the frame immediately, but the
+  // replacement request is debounced, so for ~180 ms the newest id is still
+  // the PRE-edit one. A result arriving in that window would look current and
+  // be republished as sendable. Invalidation is synchronous with the edit.
+  let staleBefore = 0;
   /** assetId -> {state: 'pending'|'ready', attempt: number} */
   const assetState = new Map();
   let nextAttempt = 1;
@@ -45,7 +51,7 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       }
       if (msg.type !== 'render') return;
       if (msg.id === inFlight) inFlight = null;
-      if (msg.id === latestRequested && msg.epoch === epoch) {
+      if (msg.id === latestRequested && msg.epoch === epoch && msg.id >= staleBefore) {
         if (msg.ok) onResult?.(msg);
         else onError?.(new Error(msg.error));
       }
@@ -121,6 +127,16 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       return assetState.get(assetId)?.state === 'ready';
     },
 
+    /**
+     * Mark every outstanding render stale, synchronously. Call on EVERY change
+     * that alters what the frame should contain — before the debounced
+     * request that will replace it.
+     */
+    invalidate() {
+      staleBefore = nextId;
+      queued = null;
+    },
+
     /** Queue a render. Only the newest pending request survives. */
     request(doc, options) {
       const id = nextId++;
@@ -137,14 +153,17 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
      * @param {Set<string>} keep asset ids still reachable
      */
     pruneAssets(keep) {
-      if (!worker) return;
+      // Deliberately NOT gated on the worker existing: addAsset records its
+      // claim before decoding and creates the worker only once the decode
+      // lands, so an early return here would leave a pending claim for an
+      // unreachable asset — which then installs itself into a fresh worker.
       let dropped = 0;
       for (const id of [...assetState.keys()]) {
         if (keep.has(id)) continue;
         assetState.delete(id);
         dropped++;
       }
-      if (dropped) worker.postMessage({ type: 'prune', keep: [...keep] });
+      if (dropped && worker) worker.postMessage({ type: 'prune', keep: [...keep] });
     },
 
     /** Current epoch — a result carrying a different one is stale. */
@@ -170,6 +189,6 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
     },
 
     // Test seams.
-    _state: () => ({ inFlight, queued: queued?.id ?? null, latestRequested, epoch }),
+    _state: () => ({ inFlight, queued: queued?.id ?? null, latestRequested, epoch, staleBefore }),
   };
 }

@@ -335,3 +335,88 @@ test('a decode FAILING after a session switch does not delete the new claim', as
       "the new session's asset must survive the old session's failure");
   } finally { restore(); }
 });
+
+// --- frame currency across the debounce gap (validation round 3, finding 1) ---
+
+test('a render that lands after an edit but before the replacement request is dropped', () => {
+  const { client, results, restore } = clientWithFakeWorker();
+  try {
+    const stale = client.request({ layers: [] }, {});
+    // The user edits. The composer invalidates SYNCHRONOUSLY, but the
+    // replacement render is debounced ~180 ms — so during that window `stale`
+    // is still the newest id ever issued.
+    client.invalidate();
+    assert.equal(client._state().latestRequested, stale, 'no newer request exists yet');
+    FakeWorker.last.reply(stale);
+    assert.deepEqual(results, [], 'the pre-edit frame must not be published');
+
+    // The debounced request then arrives and its result IS accepted.
+    const fresh = client.request({ layers: [] }, {});
+    FakeWorker.last.reply(fresh);
+    assert.deepEqual(results, [fresh]);
+  } finally {
+    restore();
+  }
+});
+
+test('invalidate also drops a queued-but-unsent render', () => {
+  const { client, results, restore } = clientWithFakeWorker();
+  try {
+    const first = client.request({ layers: [] }, {});
+    const queuedId = client.request({ layers: [] }, {}); // waits behind `first`
+    assert.equal(client._state().queued, queuedId);
+    client.invalidate();
+    assert.equal(client._state().queued, null, 'nothing stale is left to send');
+    FakeWorker.last.reply(first);
+    assert.deepEqual(results, []);
+  } finally {
+    restore();
+  }
+});
+
+// --- pruning before the worker exists (validation round 3, finding 3) ---
+
+test('an asset that becomes unreachable DURING its first decode is not installed', async () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    let release;
+    const decode = () => new Promise((r) => { release = r; });
+    const load = client.addAsset('gone', {}, decode);
+    assert.equal(client.hasAsset('gone'), true, 'the claim is recorded before decoding');
+    assert.equal(FakeWorker.last, null, 'the worker is still lazy');
+
+    // The user deletes the photo while the decode is outstanding.
+    client.pruneAssets(new Set());
+    assert.equal(client.hasAsset('gone'), false, 'the claim goes even with no worker');
+
+    const bitmap = { closed: false, close() { this.closed = true; } };
+    release(bitmap);
+    await load;
+    await flush();
+    assert.equal(client.hasAsset('gone'), false, 'the finished decode does not revive it');
+    const installed = FakeWorker.last?.posted.some((m) => m.type === 'asset') ?? false;
+    assert.equal(installed, false, 'the obsolete bitmap never reaches a worker');
+  } finally {
+    restore();
+  }
+});
+
+test('pruneAssets keeps reachable assets and tells the worker exactly once', async () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    await client.addAsset('keep', {}, async () => ({}));
+    await client.addAsset('drop', {}, async () => ({}));
+    await flush();
+    client.pruneAssets(new Set(['keep']));
+    assert.equal(client.hasAsset('keep'), true);
+    assert.equal(client.hasAsset('drop'), false);
+    const prunes = FakeWorker.last.posted.filter((m) => m.type === 'prune');
+    assert.equal(prunes.length, 1);
+    assert.deepEqual(prunes[0].keep, ['keep']);
+
+    client.pruneAssets(new Set(['keep'])); // nothing left to drop
+    assert.equal(FakeWorker.last.posted.filter((m) => m.type === 'prune').length, 1);
+  } finally {
+    restore();
+  }
+});

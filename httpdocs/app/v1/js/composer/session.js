@@ -48,11 +48,19 @@ export function createSession({
     pendingSave: null,
     saveFailure: null,
     released: false,
-    // Set by the first real user edit. A session that was only OPENED must
-    // never write: opening a reconciled draft and navigating away would
-    // otherwise persist the reconciliation (dropped QRs, remapped inks) that
-    // the user never asked for.
-    dirty: false,
+    // Counts committed user edits. A session that was only OPENED must never
+    // write: opening a reconciled draft and navigating away would otherwise
+    // persist the reconciliation (dropped QRs, remapped inks) that the user
+    // never asked for. Comparing against `savedEdits` also makes "dirty" mean
+    // *changed since the last successful save* rather than *ever edited*, so
+    // flush() can tell an edit that landed DURING a write from one that did
+    // not, and so switching away twice does not write twice.
+    edits: 0,
+    savedEdits: 0,
+    // Edits covered by the write currently queued or in flight. Without it,
+    // flush()'s catch-up loop would re-queue a write for edits an overlapping
+    // flush() had already taken responsibility for.
+    savingEdits: 0,
   };
 
   /** Current document: the gesture's working copy if one is active. */
@@ -67,16 +75,25 @@ export function createSession({
     });
   }
 
-  function scheduleSave() {
-    clearTimeout(session.saveTimer);
-    // Capture NOW, not when the timer fires: the session may have been
-    // replaced by then.
-    const snapshot = {
+  function isDirty() {
+    return session.edits !== session.savedEdits;
+  }
+
+  function snapshotNow() {
+    return {
       id: session.draftId,
       recordId: session.device?.recordId ?? null,
       doc: doc_(),
       generation: session.generation,
+      edits: session.edits,
     };
+  }
+
+  function scheduleSave() {
+    clearTimeout(session.saveTimer);
+    // Capture NOW, not when the timer fires: the session may have been
+    // replaced by then.
+    const snapshot = snapshotNow();
     // The autosave path has no caller to reject to: flushSave already reported
     // through onSaveError, so swallow here rather than emit an
     // unhandledrejection.
@@ -87,8 +104,8 @@ export function createSession({
     // A released session must never write — not via a pending timer, and not
     // via an explicit late flush() either.
     if (session.released) return;
-    // Nor may a session that has not been edited (see `dirty`).
-    if (!session.dirty) {
+    // Nor may a session with nothing new to write (see `edits`).
+    if (!isDirty()) {
       // Still await any save already in flight so callers can rely on flush()
       // meaning "storage is settled".
       if (session.pendingSave) await session.pendingSave;
@@ -96,6 +113,13 @@ export function createSession({
     }
     // A snapshot captured before release() must not be written afterwards.
     if (snapshot.generation !== session.generation) return;
+    // Someone is already writing everything this snapshot holds: wait for that
+    // write instead of duplicating it.
+    if (session.savingEdits >= snapshot.edits) {
+      if (session.pendingSave) await session.pendingSave;
+      return;
+    }
+    session.savingEdits = snapshot.edits;
     // Serialize: overlapping saves could otherwise land out of order and
     // persist an older document over a newer one.
     // A prior failure must not poison the chain for later saves.
@@ -107,12 +131,17 @@ export function createSession({
           id: snapshot.id,
           recordId: snapshot.recordId,
         }), session.rev);
+        // Only the edits this snapshot captured are now on disk; anything
+        // committed while the write was in flight keeps the session dirty.
+        session.savedEdits = snapshot.edits;
         session.saveFailure = null;
       } catch (err) {
         // Never silent: quota and storage failures must reach the user AND
         // must fail flush(), or a caller that flushes-then-releases would
         // discard the only good copy of the edits.
         session.saveFailure = err;
+        // Let a retry re-queue: nothing is in flight for these edits any more.
+        session.savingEdits = session.savedEdits;
         onSaveError?.(err);
         throw err;
       }
@@ -149,7 +178,7 @@ export function createSession({
       if (commit && next !== session.gestureBase) {
         try {
           validate(next);
-          session.dirty = true;
+          session.edits += 1;
           session.history = model.commit(session.history, next);
           this.pruneBitmaps();
           scheduleSave();
@@ -166,13 +195,13 @@ export function createSession({
       notify();
     },
 
-    isDirty: () => session.dirty,
+    isDirty,
 
     /** Discrete edit outside a gesture (place text/QR/photo, delete layer).
      *  Rejected edits leave history, the draft and the view untouched. */
     apply(next) {
       validate(next); // throws before anything is committed or scheduled
-      session.dirty = true;
+      session.edits += 1;
       session.history = model.commit(session.history, next);
       session.working = null;
       // Commit can evict the oldest history entry, which may have been the
@@ -183,7 +212,7 @@ export function createSession({
     },
 
     undo() {
-      session.dirty = true;
+      session.edits += 1;
       session.history = model.undo(session.history);
       session.working = null;
       scheduleSave();
@@ -191,7 +220,7 @@ export function createSession({
     },
 
     redo() {
-      session.dirty = true;
+      session.edits += 1;
       session.history = model.redo(session.history);
       session.working = null;
       scheduleSave();
@@ -246,12 +275,15 @@ export function createSession({
     async flush() {
       clearTimeout(session.saveTimer);
       session.saveTimer = null;
-      await flushSave({
-        id: session.draftId,
-        recordId: session.device?.recordId ?? null,
-        doc: doc_(),
-        generation: session.generation,
-      });
+      // Loop until storage has caught up. The session stays editable while a
+      // write is awaiting IndexedDB, and a caller that flushes-then-releases
+      // cancels the timer the new edit scheduled — so a single write would
+      // silently drop anything typed during it. Bounded, because the only way
+      // to spin is a user editing faster than storage settles, forever.
+      for (let guard = 0; guard < 16; guard++) {
+        if (session.released || !isDirty()) return;
+        await flushSave(snapshotNow());
+      }
     },
 
     /** Release owned resources; the session must not be used afterwards. */
