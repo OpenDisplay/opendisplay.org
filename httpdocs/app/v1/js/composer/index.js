@@ -188,6 +188,13 @@ function paintOverlay() {
   ctx.restore();
 }
 
+/** The session prunes its own bitmaps on commit; the worker's cache is the
+ *  controller's to release, since only it talks to the client. */
+function pruneCaches() {
+  if (!session) return;
+  dither?.pruneAssets(session.liveAssetIds());
+}
+
 function toast(msg, kind = 'info') {
   const el = $('composerStatus');
   el.textContent = msg;
@@ -545,7 +552,6 @@ function wire() {
     if (!id) return;
     selectTool.clearSelection();
     session.apply(model.removeLayer(doc(), id));
-    session.pruneBitmaps();
   });
 
   $('clearBtn').addEventListener('click', () => {
@@ -554,7 +560,6 @@ function wire() {
     // One history entry, so a mis-click is a single Undo away. No confirm
     // dialog for that reason.
     session.apply(model.clearLayers(doc()));
-    session.pruneBitmaps();
     toast('Canvas cleared — Undo restores it.');
   });
 
@@ -652,7 +657,20 @@ export async function openComposer(device) {
     document_ = model.createDocument(device);
   }
 
-  // 3. Only now commit: release the old session and install the new one.
+  // 3. An edit may have landed while step 2 was reading storage — the outgoing
+  //    session is still live and editable until now. Flush again so that edit
+  //    is not cancelled by release().
+  if (session?.isDirty()) {
+    try {
+      await session.flush();
+    } catch (err) {
+      throw new Error(
+        `Could not save the current composition, so it was not closed: ${err.message ?? err}`,
+      );
+    }
+  }
+
+  // 4. Only now commit: release the old session and install the new one.
   if (session) session.release();
   latestDither = null;
   // New epoch: invalidates in-flight renders and releases the worker's bitmaps
@@ -663,10 +681,15 @@ export async function openComposer(device) {
     device,
     draftId,
     document: document_,
-    rev: existing?.rev,
+    rev: existing?.rev ?? 0,
     store,
     validate: validateDocument,
-    onChange: () => paint(),
+    onChange: () => {
+      // Prune on every committed change, not just Delete/Clear: a bitmap kept
+      // for Undo becomes garbage once it is evicted from the bounded history.
+      pruneCaches();
+      paint();
+    },
     onSaveError: (err) => reportError(err),
   });
 
@@ -687,9 +710,16 @@ export async function openComposer(device) {
       continue;
     }
     if (!asset?.blob) continue;
-    const bmp = await decodeProxy(asset.blob);
-    if (!isCurrent(owner, gen)) { bmp.close?.(); return; }
-    owner.setBitmap(layer.assetId, bmp);
+    // A corrupt or newly-undecodable stored image must not reject
+    // openComposer: the session is already installed by this point, and
+    // throwing would leave it hidden with the old one gone.
+    try {
+      const bmp = await decodeProxy(asset.blob);
+      if (!isCurrent(owner, gen)) { bmp.close?.(); return; }
+      owner.setBitmap(layer.assetId, bmp);
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   // Reclaim assets no longer reachable from any draft; protect this session's.
@@ -735,7 +765,19 @@ export function hasSession() {
  * disabled after connecting, and a disconnect leaves it stuck enabled until
  * something else happens to repaint.
  */
-export function refreshConnectionState() {
+export async function refreshConnectionState() {
   if (!session) return;
+  const recordId = session.session.device?.recordId;
+  if (recordId) {
+    // Re-read the record: a repair/rebind may have installed the real binding
+    // (imported records start with bleId null), and comparing the connection
+    // against the copy captured when the composer opened would keep Send
+    // disabled forever.
+    try {
+      const fresh = await store.getDevice(recordId);
+      if (fresh) session.setDevice(fresh);
+    } catch { /* fall through to the cached copy */ }
+  }
+  if (!session) return;   // a switch may have happened while we read
   updateSendControls();
 }

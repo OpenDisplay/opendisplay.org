@@ -31,9 +31,12 @@ function setAsset(assetId, bitmap) {
   assets.set(assetId, bitmap);
 }
 
-function clearAssets() {
-  for (const bmp of assets.values()) bmp.close?.();
-  assets.clear();
+function clearAssets(keep = null) {
+  for (const [id, bmp] of assets) {
+    if (keep && keep.has(id)) continue;
+    bmp.close?.();
+    assets.delete(id);
+  }
 }
 
 self.onmessage = (ev) => {
@@ -44,6 +47,12 @@ self.onmessage = (ev) => {
       // Echo the attempt token: the client uses it to ignore an ack that
       // belongs to a superseded load of the same content hash.
       self.postMessage({ type: 'asset-ack', assetId: msg.assetId, attempt: msg.attempt });
+      return;
+    case 'prune':
+      // Release decodes the composer can no longer reach (deleted layers that
+      // have also aged out of undo). The client drops the same ids, so a later
+      // undo simply re-sends the asset.
+      clearAssets(new Set(msg.keep ?? []));
       return;
     case 'reset':
       clearAssets();

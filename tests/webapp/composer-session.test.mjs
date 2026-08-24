@@ -353,6 +353,44 @@ test('undo counts as an edit (it changes what should be stored)', async () => {
 
 // --- multi-tab draft safety, Clear, and bitmap pruning ---
 
+/** A store whose putDraft implements the same CAS as the real one. */
+function revStore() {
+  const db = new Map();
+  return {
+    db,
+    putDraft: async (d, expectedRev) => {
+      const storedRev = db.get(d.id)?.rev ?? 0;
+      if (expectedRev !== undefined && storedRev !== expectedRev) {
+        const e = new Error('conflict'); e.name = 'DraftConflictError'; throw e;
+      }
+      const rev = storedRev + 1;
+      db.set(d.id, { ...d, rev });
+      return rev;
+    },
+    getDraft: async (id) => db.get(id) ?? null,
+  };
+}
+
+test('TWO TABS WITH NO EXISTING DRAFT: the second save is refused, not silent', async () => {
+  // The case openComposer actually produces — both sessions load nothing, so
+  // both default to revision 0. Previously this path passed `undefined`, which
+  // meant "write unconditionally", and A silently replaced B.
+  const store = revStore();
+  const a = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });   // no rev argument: must default to 0
+  const b = createSession({ device: DEVICE_A, draftId: 'd', document: model.createDocument(DEVICE_A),
+    store, onChange: () => {} });
+
+  b.apply(model.addLayer(b.doc(), model.textLayer({ text: 'from B' })));
+  await b.flush();
+  assert.equal(store.db.get('d').doc.layers[0].text, 'from B');
+
+  a.apply(model.addLayer(a.doc(), model.textLayer({ text: 'from A' })));
+  await assert.rejects(a.flush(), (err) => err.name === 'DraftConflictError');
+  assert.equal(store.db.get('d').doc.layers[0].text, 'from B', "B's work survived");
+  assert.equal(store.db.get('d').rev, 1, 'no phantom second revision');
+});
+
 test('a stale tab cannot overwrite a newer draft from another tab', async () => {
   // One shared "database" with revisions, as store.putDraft now implements.
   const db = new Map();
@@ -435,4 +473,42 @@ test('pruneBitmaps closes decodes for layers no longer reachable', () => {
   s.apply(model.removeLayer(s.doc(), doc.layers[0].id));
   assert.equal(s.pruneBitmaps(), 0, 'still reachable through undo history');
   assert.equal(made.keep.closed, false);
+});
+
+test('a bitmap evicted from the bounded history is released', () => {
+  const store = makeStore();
+  let doc = model.createDocument(DEVICE_A);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'photo' }));
+  const s = open(DEVICE_A, store, doc);
+  const bmp = { closed: false, close() { this.closed = true; } };
+  s.setBitmap('photo', bmp);
+
+  // Delete it: still reachable through undo, so it must be kept.
+  s.apply(model.removeLayer(s.doc(), doc.layers[0].id));
+  assert.equal(s.pruneBitmaps(), 0);
+  assert.equal(bmp.closed, false, 'kept while Undo could restore it');
+
+  // Push it out of the bounded history with ordinary edits.
+  for (let i = 0; i < model.MAX_UNDO + 2; i++) {
+    s.apply(model.addLayer(s.doc(), model.textLayer({ text: `t${i}` })));
+  }
+  assert.equal(s.liveAssetIds().has('photo'), false, 'no longer reachable anywhere');
+  assert.equal(bmp.closed, true, 'released once it aged out (pruned on commit)');
+});
+
+test('the stale device record is replaced, so a repaired binding can enable Send', () => {
+  const store = makeStore();
+  // An imported record starts with no binding.
+  const imported = { ...DEVICE_A, bleId: null, resolutionConfirmed: false };
+  const s = open(imported, store);
+  assert.equal(s.session.device.bleId, null);
+
+  // Connecting/repairing installs the real binding and confirms the panel.
+  s.setDevice({ ...imported, bleId: 'ble-real', resolutionConfirmed: true });
+  assert.equal(s.session.device.bleId, 'ble-real');
+  assert.equal(s.session.device.resolutionConfirmed, true);
+
+  // A record for a DIFFERENT device must never be adopted.
+  s.setDevice({ ...DEVICE_B, bleId: 'other' });
+  assert.equal(s.session.device.bleId, 'ble-real', 'foreign record ignored');
 });

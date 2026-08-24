@@ -130,6 +130,23 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
       return id;
     },
 
+    /**
+     * Drop assets the composer can no longer reach, in BOTH caches. The client
+     * forgets them too, so a later undo re-sends the asset rather than
+     * rendering against a bitmap the worker has released.
+     * @param {Set<string>} keep asset ids still reachable
+     */
+    pruneAssets(keep) {
+      if (!worker) return;
+      let dropped = 0;
+      for (const id of [...assetState.keys()]) {
+        if (keep.has(id)) continue;
+        assetState.delete(id);
+        dropped++;
+      }
+      if (dropped) worker.postMessage({ type: 'prune', keep: [...keep] });
+    },
+
     /** Current epoch — a result carrying a different one is stale. */
     epoch: () => epoch,
 

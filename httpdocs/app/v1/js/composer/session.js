@@ -25,9 +25,10 @@ let nextSessionId = 1;
 
 export function createSession({
   device, draftId, document: doc, store, onChange, onSaveError,
-  // Revision of the draft this session loaded; writes are refused if another
-  // tab has since saved a newer one.
-  rev = undefined,
+  // Revision of the draft this session loaded. 0 means "there was no draft",
+  // which is a real expectation to check against — NOT "don't check", or a
+  // first save would silently overwrite a draft another tab just created.
+  rev = 0,
   // Throws for a document that cannot be rendered (e.g. a QR that does not
   // fit). Commits are pre-flighted with it so an invalid layer can never
   // enter the history or be autosaved.
@@ -76,7 +77,10 @@ export function createSession({
       doc: doc_(),
       generation: session.generation,
     };
-    session.saveTimer = setTimeout(() => { void flushSave(snapshot); }, AUTOSAVE_MS);
+    // The autosave path has no caller to reject to: flushSave already reported
+    // through onSaveError, so swallow here rather than emit an
+    // unhandledrejection.
+    session.saveTimer = setTimeout(() => { flushSave(snapshot).catch(() => {}); }, AUTOSAVE_MS);
   }
 
   async function flushSave(snapshot) {
@@ -147,6 +151,7 @@ export function createSession({
           validate(next);
           session.dirty = true;
           session.history = model.commit(session.history, next);
+          this.pruneBitmaps();
           scheduleSave();
         } catch (err) {
           // Invalid result: drop the whole gesture, keep the committed state.
@@ -170,6 +175,9 @@ export function createSession({
       session.dirty = true;
       session.history = model.commit(session.history, next);
       session.working = null;
+      // Commit can evict the oldest history entry, which may have been the
+      // last thing keeping a deleted photo's decode alive.
+      this.pruneBitmaps();
       scheduleSave();
       notify();
     },
@@ -196,11 +204,16 @@ export function createSession({
      * until the session ended, so importing and deleting a few phone photos
      * kept every proxy alive.
      */
-    pruneBitmaps() {
+    liveAssetIds() {
       const live = new Set();
       const docs = [session.history.present, ...session.history.past, ...session.history.future];
       if (session.working) docs.push(session.working);
       for (const d of docs) for (const id of model.referencedAssets(d)) live.add(id);
+      return live;
+    },
+
+    pruneBitmaps() {
+      const live = this.liveAssetIds();
       let closed = 0;
       for (const [id, bmp] of session.bitmaps) {
         if (live.has(id)) continue;
@@ -221,6 +234,12 @@ export function createSession({
 
     /** True when the last write failed and the edits are only in memory. */
     hasUnsavedFailure: () => !!session.saveFailure,
+
+    /** Replace the cached device record (e.g. after a rebind installed a real
+     *  binding), so Send state is judged against current facts. */
+    setDevice(record) {
+      if (record && record.recordId === session.device?.recordId) session.device = record;
+    },
 
     /** Flush any pending autosave and await it (call before switching away).
      *  REJECTS if the write failed — the caller must not discard the session. */

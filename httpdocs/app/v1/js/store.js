@@ -219,8 +219,9 @@ export class DraftConflictError extends Error {
  *     silently overwrite newer work from the other tab.
  *
  * @param {object} draft
- * @param {number|undefined} expectedRev the revision this session last saw;
- *   omit to force the write (first save of a session that loaded no draft).
+ * @param {number|undefined} expectedRev the revision this session last saw —
+ *   0 when it loaded no draft. Sessions ALWAYS pass a number; `undefined` is
+ *   an unconditional write reserved for utility callers with no session.
  */
 export async function putDraft(draft, expectedRev) {
   requestPersistence();
@@ -236,7 +237,12 @@ export async function putDraft(draft, expectedRev) {
   const drafts = t.objectStore('drafts');
   const existing = await reqAsPromise(drafts.get(draft.id));
   const storedRev = existing?.rev ?? 0;
-  if (expectedRev !== undefined && storedRev > expectedRev) {
+  // Compare-and-swap on EQUALITY, not "stored is newer". A session that loaded
+  // no draft expects revision 0; if another tab has since created revision 1,
+  // `stored > expected` would be true — but so would an unconditional write if
+  // expectedRev were left undefined, which is exactly how a first save used to
+  // clobber the other tab silently.
+  if (expectedRev !== undefined && storedRev !== expectedRev) {
     t.abort();
     throw new DraftConflictError(draft.id);
   }
@@ -397,11 +403,16 @@ export async function exportDevices() {
 
 /** Panel facts an imported record may carry, with the checks that make them
  *  safe to render from. Anything else is dropped. */
+/** Schemes this app renders and packs (palettes.js / SUPPORTED_COLOR_SCHEMES). */
+const IMPORTABLE_COLOR_SCHEMES = new Set([0, 1, 2, 3, 4, 5, 6, 8]);
+
 const IMPORT_INT_FIELDS = {
   width: [1, 8192],
   height: [1, 8192],
   rotationQuarterTurns: [0, 3],
-  colorScheme: [0, 9],
+  // Restricted to the schemes the composer can render and the encoder packs;
+  // 7 and 9 exist in the library but not in this app.
+  colorScheme: null, // handled separately
   transmissionModes: [0, 255],
   partialUpdateSupport: [0, 255],
 };
@@ -418,11 +429,15 @@ function sanitiseImported(d) {
     createdAt: Number.isFinite(d.createdAt) ? d.createdAt : Date.now(),
     lastSeen: Number.isFinite(d.lastSeen) ? d.lastSeen : null,
   };
-  for (const [field, [min, max]] of Object.entries(IMPORT_INT_FIELDS)) {
+  for (const [field, range] of Object.entries(IMPORT_INT_FIELDS)) {
+    if (!range) continue;
+    const [min, max] = range;
     const v = d[field];
     if (!Number.isInteger(v) || v < min || v > max) return null;
     clean[field] = v;
   }
+  if (!IMPORTABLE_COLOR_SCHEMES.has(d.colorScheme)) return null;
+  clean.colorScheme = d.colorScheme;
   return clean;
 }
 
