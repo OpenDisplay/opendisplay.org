@@ -298,12 +298,16 @@ function updateConnectControl(connected = connectedToThisDevice()) {
   const gated = connectionActions?.gated?.() ?? true;
   btn.textContent = connected ? 'Disconnect' : 'Connect';
   btn.disabled = !session || sending || connectionBusy || (!connected && gated);
+  const note = connectionActions?.persistenceNote?.();
   btn.title = connected
     ? 'Disconnect from this device. The composition is kept.'
     : gated
       ? 'This browser cannot use Bluetooth, so connecting is not possible here.'
       : 'Connect to this device so the composition can be sent. The tag must be '
-        + 'awake and advertising.';
+        + 'awake and advertising.'
+        // Say up front that a chooser is coming, and why — otherwise an
+        // unexpected picker looks like the button is broken.
+        + (note ? `\n\n${note}` : '');
 }
 
 /** Called by the device list at startup; see connectionActions. */

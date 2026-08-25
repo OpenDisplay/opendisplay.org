@@ -33,6 +33,8 @@ let bluetoothGated = false;
 /** Did getDevices() actually answer? If not, `grantedById` being empty says
  *  nothing about any device, and the UI must not pretend otherwise. */
 let sweepUsable = false;
+/** Why it did not: 'unsupported' | 'timeout' | 'error' | null when it did. */
+let sweepFailure = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -50,23 +52,54 @@ function reportError(err) {
 async function sweepPermissions() {
   grantedById = new Map();
   sweepUsable = false;
+  sweepFailure = null;
   try {
     // Timeboxed: getDevices() can hang where no Bluetooth backend exists
     // (headless, some platforms). A missed sweep only degrades rows to
     // chooser-per-connect — it must never stall the whole app.
     const sweep = navigator.bluetooth?.getDevices?.();
-    if (!sweep) return;
+    if (!sweep) { sweepFailure = 'unsupported'; return; }
     let timedOut = false;
     const devices = await Promise.race([
       sweep,
       new Promise((r) => setTimeout(() => { timedOut = true; r([]); }, 3000)),
     ]);
-    if (timedOut) return;
+    if (timedOut) { sweepFailure = 'timeout'; return; }
     for (const d of devices) grantedById.set(d.id, d);
     sweepUsable = true;
   } catch {
     /* getDevices unavailable: every row degrades to chooser-per-connect */
+    sweepFailure = 'error';
   }
+}
+
+/**
+ * Why the browser is about to show its device chooser — the question users
+ * actually ask when Connect opens a picker they did not expect.
+ *
+ * Web Bluetooth has NO way to connect by name or address without the user
+ * picking the device at least once: requestDevice() always shows the chooser
+ * (filters only shorten the list), and a MAC address is never exposed —
+ * device.id is an opaque, origin-scoped handle. The one prompt-free path is
+ * getDevices() + connect on a handle the user granted earlier. So when the
+ * chooser keeps appearing, it is because that grant is not being remembered,
+ * and the app should say which reason applies rather than leave it a mystery.
+ *
+ * @returns {string|null} guidance, or null when permissions work normally
+ */
+export function permissionPersistenceNote() {
+  if (bluetoothGated) return null; // a bigger banner already explains this
+  if (sweepUsable) return null;
+  if (sweepFailure === 'timeout') {
+    return 'This browser did not answer in time when asked which Bluetooth devices '
+      + 'it remembers, so Connect may show the device chooser. Reloading usually fixes it.';
+  }
+  return 'This browser cannot list previously-allowed Bluetooth devices, so Connect '
+    + 'will ask you to pick the tag every time. In Chrome this is usually the '
+    + '"Use the new permissions backend for Web Bluetooth" flag at '
+    + 'chrome://flags/#enable-web-bluetooth-new-permissions-backend — turn it on and '
+    + 'restart the browser, then pick each tag once. There is no way for a web app '
+    + 'to skip the chooser by name or address; the browser does not allow it.';
 }
 
 /**
@@ -251,6 +284,12 @@ function deviceCard(record) {
 async function refresh() {
   await sweepPermissions();
   await renderList();
+  const note = permissionPersistenceNote();
+  const banner = $('permissionNote');
+  if (banner) {
+    banner.hidden = !note;
+    banner.textContent = note ?? '';
+  }
   // An open composer's Send button depends on connection state owned here.
   refreshConnectionState();
 }
@@ -339,6 +378,7 @@ export async function initDevices({ gated = false } = {}) {
   // connectedRecordId all stay here, with one owner.
   setConnectionActions({
     gated: () => bluetoothGated,
+    persistenceNote: () => permissionPersistenceNote(),
     connect: async (recordId) => {
       const record = await store.getDevice(recordId);
       if (!record) throw new Error('This device is no longer saved.');

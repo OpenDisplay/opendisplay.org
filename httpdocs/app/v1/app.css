@@ -66,6 +66,16 @@
   background: rgba(208, 144, 0, 0.08);
 }
 
+.odapp__note {
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
 .odapp__toolbar {
   display: flex;
   align-items: center;
