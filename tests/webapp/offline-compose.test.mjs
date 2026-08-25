@@ -146,6 +146,18 @@ test('the composer works with no device connected, and Send explains why it is o
     const send = document.getElementById('sendBtn');
     ok('sendDisabled', send.disabled === true);
     ok('sendExplains', /connect/i.test(send.title));
+    // ...and the connection can be made from HERE. Composing offline and
+    // connecting only to send is the normal path, so the moment a connection
+    // is wanted is the moment the composition is finished — which is this
+    // screen, not the device list.
+    const connect = document.getElementById('connectBtn');
+    ok('connectPresent', !!connect);
+    ok('connectOffersToConnect', connect.textContent.trim() === 'Connect');
+    ok('sendNoLongerPointsElsewhere', !/devices tab/i.test(send.title));
+    // This browser has no Bluetooth backend, so it is disabled — and says so
+    // rather than looking merely broken.
+    ok('connectExplainsWhenUnavailable',
+       connect.disabled === false || /bluetooth|awake/i.test(connect.title));
 
     // Closing must not schedule work against the session it just released:
     // clearSelection fires the selection callback, and an accepted render can

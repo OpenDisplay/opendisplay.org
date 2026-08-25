@@ -40,6 +40,19 @@ let latestDither = null;
 /** The document the last content repaint was for; see the onChange handler. */
 let lastContentDoc = null;
 let sending = false;
+/**
+ * Connect/disconnect, injected by the device list.
+ *
+ * The connection, the permission sweep and the busy gate are all owned there,
+ * and there must be exactly one owner — so the composer borrows the actions
+ * rather than reimplementing them. Injection rather than an import because
+ * devices.js already imports this module; importing back would make a cycle.
+ * @type {{connect: (recordId: string) => Promise<void>,
+ *         disconnect: () => Promise<void>,
+ *         gated: () => boolean} | null}
+ */
+let connectionActions = null;
+let connectionBusy = false;
 let drawTool = null;
 let selectTool = null;
 let textTool = null;
@@ -254,16 +267,72 @@ function updatePanelInfo() {
   $('viewRotateRight').disabled = !session;
 }
 
-function updateSendControls() {
-  const connected = adapter.getState() === 'connected'
+/** True when the radio is connected to the device this composer is for. */
+function connectedToThisDevice() {
+  return adapter.getState() === 'connected'
     && adapter.connectedBleId() != null
     && session?.session?.device?.bleId === adapter.connectedBleId();
+}
+
+function updateSendControls() {
+  const connected = connectedToThisDevice();
   // Sending requires a CURRENT dithered frame: the panel must receive exactly
   // what the preview showed.
   $('sendBtn').disabled = sending || !connected || !latestDither;
   $('sendBtn').title = connected
     ? (latestDither ? '' : 'Preparing the dithered image…')
-    : 'Connect this device on the Devices tab first';
+    : 'Connect this device first — the button next to this one will do it';
+  updateConnectControl(connected);
+}
+
+/**
+ * The composer's own connect/disconnect toggle.
+ *
+ * Composing offline and connecting only to send is the normal path — tags
+ * sleep — so the moment a connection is wanted is the moment the composition
+ * is finished, and that is here, not two screens away.
+ */
+function updateConnectControl(connected = connectedToThisDevice()) {
+  const btn = $('connectBtn');
+  if (!btn) return;
+  const gated = connectionActions?.gated?.() ?? true;
+  btn.textContent = connected ? 'Disconnect' : 'Connect';
+  btn.disabled = !session || sending || connectionBusy || (!connected && gated);
+  btn.title = connected
+    ? 'Disconnect from this device. The composition is kept.'
+    : gated
+      ? 'This browser cannot use Bluetooth, so connecting is not possible here.'
+      : 'Connect to this device so the composition can be sent. The tag must be '
+        + 'awake and advertising.';
+}
+
+/** Called by the device list at startup; see connectionActions. */
+export function setConnectionActions(actions) {
+  connectionActions = actions;
+  updateConnectControl();
+}
+
+async function toggleConnection() {
+  if (!session || !connectionActions || connectionBusy) return;
+  const recordId = session.session.device?.recordId;
+  if (!recordId) return;
+  const wasConnected = connectedToThisDevice();
+  connectionBusy = true;
+  updateConnectControl(wasConnected);
+  try {
+    // Deliberately no awaits before this call: connecting a device with no
+    // remembered permission ends up in requestDevice(), which needs the
+    // transient user activation from the click that got us here.
+    if (wasConnected) await connectionActions.disconnect();
+    else await connectionActions.connect(recordId);
+  } catch (err) {
+    reportError(err);
+  } finally {
+    connectionBusy = false;
+    // The device list refreshes the record and the connection state for us,
+    // but do it here too: this must be right even if that changes.
+    await refreshConnectionState();
+  }
 }
 
 /**
@@ -596,6 +665,7 @@ function wirePhotoControls() {
     const y = Math.max(minY, Math.min(maxY, layer.y));
     session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
   });
+  $('connectBtn').addEventListener('click', () => { toggleConnection(); });
   $('viewRotateLeft').addEventListener('click', () => { rotateView(-1); });
   $('viewRotateRight').addEventListener('click', () => { rotateView(1); });
   $('photoRotateLeft').addEventListener('click', () => rotateSelectedPhoto(-1));

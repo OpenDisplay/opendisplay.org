@@ -16,7 +16,9 @@ import * as store from './store.js';
 import * as keys from './keys.js';
 import { makeFlows } from './flows.js';
 import { errorMessage, describeError } from './errors.js';
-import { openComposer, closeComposer, openRecordId, refreshConnectionState } from './composer/index.js';
+import {
+  openComposer, closeComposer, openRecordId, refreshConnectionState, setConnectionActions,
+} from './composer/index.js';
 import { askForKey, askRebind, confirmRepair, deliverKeyHex, confirmDanger, toast } from './ui/dialogs.js';
 
 const flows = makeFlows({
@@ -331,6 +333,24 @@ async function importDeviceList(file) {
 
 export async function initDevices({ gated = false } = {}) {
   bluetoothGated = gated;
+
+  // Let the composer connect and disconnect without owning any of the state
+  // that makes that safe — the busy gate, the permission sweep and
+  // connectedRecordId all stay here, with one owner.
+  setConnectionActions({
+    gated: () => bluetoothGated,
+    connect: async (recordId) => {
+      const record = await store.getDevice(recordId);
+      if (!record) throw new Error('This device is no longer saved.');
+      await withBusy(() => connectRecord(record));
+    },
+    disconnect: async () => {
+      await withBusy(async () => {
+        await adapter.disconnect();
+        connectedRecordId = null;
+      });
+    },
+  });
 
   adapter.setUnexpectedDisconnectListener(() => {
     connectedRecordId = null;
