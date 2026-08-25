@@ -265,6 +265,97 @@ window.resultPromise = (async () => {
   ok('noneCropsWhenOversize', allPhoto);
   bigBitmap.close();
 
+  // --- photo rotation: the axis bookkeeping ------------------------------
+  // A NON-SQUARE, asymmetric fixture: a square one would hide a double-swap
+  // and a symmetric one would make 180 indistinguishable from 0.
+  const rotSrc = new OffscreenCanvas(40, 20);
+  const rctx = rotSrc.getContext('2d');
+  rctx.fillStyle = 'rgb(0,0,255)'; rctx.fillRect(0, 0, 40, 20);
+  rctx.fillStyle = 'rgb(255,255,0)'; rctx.fillRect(0, 0, 10, 5);   // marker: top-left
+  const rotBitmap = await createImageBitmap(rotSrc);
+
+  const photoRotDoc = (patch) => model.addLayer(model.createDocument(DEVICE),
+    model.photoLayer({ assetId: 'p1', x: 0, y: 0, w: 1, h: 1, ...patch }));
+  const renderRot = (patch) => render.renderDocument(photoRotDoc(patch), new Map([['p1', rotBitmap]]));
+  // Where the yellow marker ended up, as a fraction of the artboard.
+  const markerAt = (r) => {
+    const d = r.ctx.getImageData(0, 0, r.width, r.height).data;
+    let sx = 0, sy = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 180 && d[i + 1] > 180 && d[i + 2] < 100) {
+        const px = (i / 4) % r.width;
+        sx += px; sy += Math.floor((i / 4) / r.width); n++;
+      }
+    }
+    return n ? { x: sx / n / r.width, y: sy / n / r.height, n } : null;
+  };
+
+  // Quarter turns move the marker the way a CLOCKWISE rotation should:
+  // top-left -> top-right -> bottom-right -> bottom-left.
+  const m = [0, 1, 2, 3].map((r) => markerAt(renderRot({ fit: 'contain', rotationQuarterTurns: r })));
+  ok('rotationFound', m.every((p) => p && p.n > 0));
+  ok('rot0TopLeft', m[0].x < 0.5 && m[0].y < 0.5);
+  ok('rot1TopRight', m[1].x > 0.5 && m[1].y < 0.5);
+  ok('rot2BottomRight', m[2].x > 0.5 && m[2].y > 0.5);
+  ok('rot3BottomLeft', m[3].x < 0.5 && m[3].y > 0.5);
+
+  // cover/contain scale from the ORIENTED footprint. On this 60x37 artboard a
+  // 40x20 source at rot 0 contains to full width; turned 90 deg it is 20 wide
+  // by 40 tall, so it must contain to full HEIGHT instead. Scaling from the
+  // source's own axes would overflow the box.
+  const drawnBox = (r) => {
+    const d = r.ctx.getImageData(0, 0, r.width, r.height).data;
+    let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let i = 0; i < d.length; i += 4) {
+      // The fixture's own two colours ONLY — the artboard background is white,
+      // whose blue channel would otherwise count the whole panel as photo.
+      const isPhoto = (d[i + 2] > 150 && d[i] < 120 && d[i + 1] < 120)
+        || (d[i] > 180 && d[i + 1] > 180 && d[i + 2] < 120);
+      if (!isPhoto) continue;
+      const px = (i / 4) % r.width, py = Math.floor((i / 4) / r.width);
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (py < y0) y0 = py; if (py > y1) y1 = py;
+    }
+    return { w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  };
+  const c0 = drawnBox(renderRot({ fit: 'contain', rotationQuarterTurns: 0 }));
+  const c1 = drawnBox(renderRot({ fit: 'contain', rotationQuarterTurns: 1 }));
+  const art = renderRot({ fit: 'contain', rotationQuarterTurns: 0 });
+  ok('containRot0FillsWidth', Math.abs(c0.w - art.width) <= 1 && c0.h < art.height);
+  ok('containRot1FillsHeight', Math.abs(c1.h - art.height) <= 1 && c1.w < art.width);
+  ok('containRot1FitsInside', c1.w <= art.width && c1.h <= art.height);
+  ok('rotatedContainSwapsAspect', Math.abs(c1.w / c1.h - c0.h / c0.w) < 0.15);
+
+  // "none" at 90 deg occupies an srcH x srcW footprint, and its crop geometry
+  // is resolution-independent: a 2x bitmap of the same source must produce the
+  // same drawn extents. (Extents, not pixels — two decodes at different
+  // resolutions resample differently and need not match byte for byte.)
+  const rotBig = new OffscreenCanvas(80, 40);
+  const rbctx = rotBig.getContext('2d');
+  rbctx.fillStyle = 'rgb(0,0,255)'; rbctx.fillRect(0, 0, 80, 40);
+  rbctx.fillStyle = 'rgb(255,255,0)'; rbctx.fillRect(0, 0, 20, 10);
+  const rotBigBitmap = await createImageBitmap(rotBig);
+  const noneDoc = photoRotDoc({ fit: 'none', srcW: 40, srcH: 20, rotationQuarterTurns: 1 });
+  const nSmall = drawnBox(render.renderDocument(noneDoc, new Map([['p1', rotBitmap]])));
+  const nBig = drawnBox(render.renderDocument(noneDoc, new Map([['p1', rotBigBitmap]])));
+  ok('noneRotatedFootprint', nSmall.w === 20 && nSmall.h === 37);  // 40 tall, clipped by a 37px artboard
+  ok('noneRotatedResolutionIndependent', nSmall.w === nBig.w && nSmall.h === nBig.h);
+
+  // An ADJUSTED photo rotates identically to an unadjusted one: the rotation
+  // has to happen inside the scratch canvas, not on the composite.
+  const plainBox = drawnBox(renderRot({ fit: 'contain', rotationQuarterTurns: 1 }));
+  const adjBox = drawnBox(renderRot({
+    fit: 'contain', rotationQuarterTurns: 1,
+    adjustments: { exposure: 0.6, saturation: 1, shadows: 0, highlights: 0 },
+  }));
+  ok('adjustedRotatesTheSame', plainBox.w === adjBox.w && plainBox.h === adjBox.h);
+  const adjMarker = markerAt(renderRot({
+    fit: 'contain', rotationQuarterTurns: 1,
+    adjustments: { exposure: 0.6, saturation: 1, shadows: 0, highlights: 0 },
+  }));
+  ok('adjustedMarkerAlsoTopRight', !adjMarker || (adjMarker.x > 0.5 && adjMarker.y < 0.5));
+  rotBitmap.close(); rotBigBitmap.close();
+
   // Adjustments change output pixels (exposure down => darker).
   let adoc = model.updateLayer(pdoc, pdoc.layers[0].id, {
     fit: 'cover', adjustments: { exposure: 0.4, saturation: 1, shadows: 0, highlights: 0 },

@@ -426,6 +426,10 @@ async function importPhoto(blob) {
     assetId, srcW: natural?.width ?? null, srcH: natural?.height ?? null,
   }));
   selectPhotoLayer(owner.doc().layers.at(-1).id);
+  // Put the photo's own controls — fit, size, rotate, adjustments — in front
+  // of the user for the photo they just added, however it arrived (picker,
+  // drop or paste).
+  setTool('toolPhoto');
   toast('Photo added.');
 }
 
@@ -438,6 +442,19 @@ function selectedPhotoLayer() {
 function selectPhotoLayer(id) {
   selectTool.setSelection?.(id);
   paint();
+}
+
+/** Turn the selected photo inside its box. One undo step per press; the box
+ *  is untouched, so nothing moves and nothing needs re-clamping. */
+function rotateSelectedPhoto(delta) {
+  const layer = selectedPhotoLayer();
+  if (!layer) return;
+  const next = (((layer.rotationQuarterTurns ?? 0) + delta) % 4 + 4) % 4;
+  try {
+    session.apply(model.updateLayer(doc(), layer.id, { rotationQuarterTurns: next }));
+  } catch (err) {
+    reportError(err);
+  }
 }
 
 function updatePhotoControls() {
@@ -499,6 +516,8 @@ function wirePhotoControls() {
     const y = Math.max(minY, Math.min(maxY, layer.y));
     session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
   });
+  $('photoRotateLeft').addEventListener('click', () => rotateSelectedPhoto(-1));
+  $('photoRotateRight').addEventListener('click', () => rotateSelectedPhoto(1));
   $('photoSize').addEventListener('pointerdown', () => session.beginGesture());
   $('photoSize').addEventListener('change', () => session.endGesture(doc(), true));
 }

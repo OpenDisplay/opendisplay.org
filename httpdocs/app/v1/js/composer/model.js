@@ -69,9 +69,16 @@ export function photoLayer({
   // bitmap's own dimensions would put a different crop on the panel than the
   // one the user framed.
   srcW = null, srcH = null,
+  // Quarter turns applied to the IMAGE inside its box. The box itself never
+  // turns, so bounds, hit-testing, handles and the bleed rule are unaffected.
+  rotationQuarterTurns = 0,
 }) {
   if (!PHOTO_FIT_MODES.includes(fit)) {
     throw new Error(`unknown photo fit mode: ${fit}`);
+  }
+  if (!Number.isInteger(rotationQuarterTurns)
+      || rotationQuarterTurns < 0 || rotationQuarterTurns > 3) {
+    throw new Error(`photo rotation must be 0-3 quarter turns, got ${rotationQuarterTurns}`);
   }
   return {
     id: newLayerId(),
@@ -79,6 +86,7 @@ export function photoLayer({
     assetId,
     x, y, w, h, fit,
     srcW, srcH,
+    rotationQuarterTurns,
     adjustments: {
       // Applied per layer when compositing. Tone/gamut are NOT here: they are
       // whole-image pre-dither parameters (doc.tone / doc.gamut), because M3

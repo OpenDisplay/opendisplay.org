@@ -95,30 +95,40 @@ export function applyAdjustments(data, adj) {
   return data;
 }
 
+/**
+ * Destination size for the bitmap, IN THE SOURCE IMAGE'S OWN AXES.
+ *
+ * The axis bookkeeping is the whole difficulty of rotated photos. The context
+ * rotation is what turns this into the visible footprint, so the fit SCALE is
+ * computed against the oriented (post-rotation) dimensions while the size
+ * handed to drawImage stays in the source's axes. Swapping both applies the
+ * quarter turn twice and silently changes the aspect ratio.
+ */
+function photoDrawSize(layer, bitmap, bw, bh, swap) {
+  if (layer.fit === 'none') {
+    // Natural size in PANEL pixels, unswapped — the rotation produces the
+    // srcH x srcW footprint by itself. Deliberately NOT bitmap.width/height:
+    // the editor draws a downscaled proxy and the send path a larger decode,
+    // so anchoring to the size recorded at import is what keeps the preview
+    // and the panel showing the same crop.
+    return { dw: layer.srcW ?? bitmap.width, dh: layer.srcH ?? bitmap.height };
+  }
+  const orientedW = swap ? bitmap.height : bitmap.width;
+  const orientedH = swap ? bitmap.width : bitmap.height;
+  const scale = layer.fit === 'cover'
+    ? Math.max(bw / orientedW, bh / orientedH)
+    : Math.min(bw / orientedW, bh / orientedH);
+  return { dw: bitmap.width * scale, dh: bitmap.height * scale };
+}
+
 function drawPhoto(ctx, layer, bitmap, W, H) {
   if (!bitmap) return;
   const bx = Math.round(layer.x * W);
   const by = Math.round(layer.y * H);
   const bw = Math.max(1, Math.round(layer.w * W));
   const bh = Math.max(1, Math.round(layer.h * H));
-  let dw;
-  let dh;
-  if (layer.fit === 'none') {
-    // Natural size in PANEL pixels. Deliberately NOT bitmap.width/height: the
-    // editor draws a downscaled proxy and the send path a near-full-resolution
-    // decode, so anchoring to the recorded source size is what keeps the
-    // preview and the panel showing the same crop.
-    dw = layer.srcW ?? bitmap.width;
-    dh = layer.srcH ?? bitmap.height;
-  } else {
-    const scale = layer.fit === 'cover'
-      ? Math.max(bw / bitmap.width, bh / bitmap.height)
-      : Math.min(bw / bitmap.width, bh / bitmap.height);
-    dw = bitmap.width * scale;
-    dh = bitmap.height * scale;
-  }
-  const dx = bx + (bw - dw) / 2;
-  const dy = by + (bh - dh) / 2;
+  const rot = (layer.rotationQuarterTurns ?? 0) & 0x03;
+  const { dw, dh } = photoDrawSize(layer, bitmap, bw, bh, rot === 1 || rot === 3);
 
   const adj = layer.adjustments;
   const needsAdjust = adj && (
@@ -126,22 +136,35 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
     (adj.shadows ?? 0) !== 0 || (adj.highlights ?? 0) !== 0
   );
 
+  // Rotate about the BOX centre, then draw the image centred on the origin:
+  // the same call shape works at every quarter turn, and at rot 0 it reduces
+  // to the centred placement this always did.
+  const place = (c, cx, cy) => {
+    c.translate(cx, cy);
+    if (rot) c.rotate(rot * Math.PI / 2);
+    c.drawImage(bitmap, -dw / 2, -dh / 2, dw, dh);
+  };
+
   if (!needsAdjust) {
     ctx.save();
     ctx.beginPath();
     ctx.rect(bx, by, bw, bh);
     ctx.clip();
-    ctx.drawImage(bitmap, dx, dy, dw, dh);
+    place(ctx, bx + bw / 2, by + bh / 2);
     ctx.restore();
     return;
   }
 
   // Adjust off-screen at the layer's box size, then composite: keeps the pixel
-  // math bounded by the layer rather than the whole panel. The scratch canvas
+  // math bounded by the layer rather than the whole panel. The rotation has to
+  // happen INSIDE the scratch canvas, not on the composite, or an adjusted
+  // photo would rotate and an unadjusted one would not. The scratch canvas
   // MUST keep its alpha channel, or transparent regions of the source would
   // composite over black and hide the layers underneath.
   const { canvas: tmp, ctx: tctx } = makeCanvas(bw, bh, { alpha: true });
-  tctx.drawImage(bitmap, dx - bx, dy - by, dw, dh);
+  tctx.save();
+  place(tctx, bw / 2, bh / 2);
+  tctx.restore();
   const img = tctx.getImageData(0, 0, bw, bh);
   applyAdjustments(img.data, adj);
   tctx.putImageData(img, 0, 0);
@@ -289,6 +312,15 @@ export function validateDocument(doc) {
         break;
       case 'text': checkInk(layer.color, 'text'); break;
       case 'stroke': checkInk(layer.color, 'stroke'); break;
+      case 'photo': {
+        // A draft written before photo rotation existed has no field at all,
+        // which reads as 0; anything present must be a legal quarter turn.
+        const r = layer.rotationQuarterTurns;
+        if (r !== undefined && !(Number.isInteger(r) && r >= 0 && r <= 3)) {
+          throw new Error(`photo rotation must be 0-3 quarter turns, got ${r}`);
+        }
+        break;
+      }
       default: break;
     }
   }

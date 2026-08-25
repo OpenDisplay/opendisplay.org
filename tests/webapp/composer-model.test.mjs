@@ -683,3 +683,38 @@ test('a photo records the natural source size, for the "none" fit', () => {
   const unknown = model.photoLayer({ assetId: 'a' });
   assert.equal(unknown.srcW, null, 'unknown is explicit, not undefined');
 });
+
+test('photo rotation is 0-3 quarter turns, defaulting to none', () => {
+  assert.equal(model.photoLayer({ assetId: 'a' }).rotationQuarterTurns, 0);
+  for (const r of [0, 1, 2, 3]) {
+    assert.equal(model.photoLayer({ assetId: 'a', rotationQuarterTurns: r }).rotationQuarterTurns, r);
+  }
+  for (const bad of [-1, 4, 1.5, '1', null]) {
+    assert.throws(() => model.photoLayer({ assetId: 'a', rotationQuarterTurns: bad }),
+      /quarter turns/);
+  }
+});
+
+test('rotating a photo does not move its box, so tools are unaffected', () => {
+  const size = { W: 800, H: 480 };
+  const base = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.1, w: 0.4, h: 0.5 });
+  const b0 = canvasMod.layerBounds(base, size);
+  for (const r of [1, 2, 3]) {
+    const turned = { ...base, rotationQuarterTurns: r };
+    assert.deepEqual(canvasMod.layerBounds(turned, size), b0, `bounds unchanged at ${r}`);
+    assert.deepEqual(canvasMod.handlePoints(turned, size), canvasMod.handlePoints(base, size));
+    const doc = model.addLayer(model.createDocument(DEVICE), turned);
+    assert.equal(canvasMod.hitTest(doc, { x: 0.3, y: 0.3 }, size), turned.id, 'still hit-testable');
+  }
+});
+
+test('a draft written before photo rotation existed still validates', () => {
+  const legacy = { ...model.photoLayer({ assetId: 'a' }) };
+  delete legacy.rotationQuarterTurns;
+  const doc = model.addLayer(model.createDocument(DEVICE), legacy);
+  assert.doesNotThrow(() => render.validateDocument(doc));
+  // ...but a corrupt value is refused rather than rendered as something else.
+  const bad = model.addLayer(model.createDocument(DEVICE),
+    { ...model.photoLayer({ assetId: 'a' }), rotationQuarterTurns: 9 });
+  assert.throws(() => render.validateDocument(bad), /quarter turns/);
+});
