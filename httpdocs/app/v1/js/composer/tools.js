@@ -34,6 +34,25 @@ export function bleedRange(extent) {
 }
 
 /**
+ * Keep a photo's PAN inside the bleed. A photo has no origin to clamp — the
+ * pan slides its footprint about the canvas centre — so the rule is applied to
+ * the footprint's leading edge and solved back into a pan.
+ */
+function clampPan(layer, panX, panY, size) {
+  const b = layerBounds({ ...layer, panX, panY }, size);
+  if (!b) return { panX, panY };
+  // Where the leading edge sits when the pan is zero.
+  const restX = b.x - panX;
+  const restY = b.y - panY;
+  const [minX, maxX] = bleedRange(b.w);
+  const [minY, maxY] = bleedRange(b.h);
+  return {
+    panX: Math.max(minX - restX, Math.min(maxX - restX, panX)),
+    panY: Math.max(minY - restY, Math.min(maxY - restY, panY)),
+  };
+}
+
+/**
  * Place a layer origin so its RENDERED extent stays within the bleed. Uses the
  * rendered bounds, so text alignment and the QR quiet zone are accounted for.
  */
@@ -190,6 +209,9 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
         // A stroke has no origin — remember where the drag started and the
         // points it started from, then translate the whole polyline.
         strokeDrag = { origin: pt, points: layer.points.map((p) => ({ ...p })) };
+      } else if (layer.type === 'photo') {
+        // Dragging a photo PANS it, exactly as od-app's DragGesture does.
+        grab = { dx: pt.x - (layer.panX ?? 0), dy: pt.y - (layer.panY ?? 0) };
       } else {
         grab = { dx: pt.x - (layer.x ?? 0), dy: pt.y - (layer.y ?? 0) };
       }
@@ -201,14 +223,11 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       if (!layer) return { doc, commit: false };
 
       if (resize) {
-        // Only box-shaped layers resize by handle; QR and text scale via their
-        // own `size` field, driven from the shorter artboard edge.
+        // QR and text scale via their own `size` field, driven from the shorter
+        // artboard edge. Photos have no handles at all (they zoom instead).
         const delta = { x: pt.x - resize.origin.x, y: pt.y - resize.origin.y };
         const box = resizeBox(resize.box, resize.handle, delta);
         moved = true;
-        if (layer.type === 'photo') {
-          return { doc: updateLayer(doc, dragId, box), commit: false };
-        }
         const shorter = Math.min(box.w * size.W, box.h * size.H);
         return {
           doc: updateLayer(doc, dragId, {
@@ -241,6 +260,12 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       }
 
       if (!grab) return { doc, commit: false };
+      if (layer.type === 'photo') {
+        const pan = clampPan(layer, pt.x - grab.dx, pt.y - grab.dy, size);
+        if (pan.panX === layer.panX && pan.panY === layer.panY) return { doc, commit: false };
+        moved = true;
+        return { doc: updateLayer(doc, dragId, pan), commit: false };
+      }
       const next = clampOrigin(layer, pt.x - grab.dx, pt.y - grab.dy, size);
       if (next.x === layer.x && next.y === layer.y) return { doc, commit: false };
       moved = true;
@@ -273,6 +298,6 @@ export function placeQr(doc, pt, { text, size = 0.3, color = 0, errorCorrectLeve
 }
 
 export function placePhoto(doc, { assetId, fit = 'cover', srcW = null, srcH = null }) {
-  // Photos default to the full artboard; drag/resize adjusts afterwards.
-  return addLayer(doc, photoLayer({ assetId, x: 0, y: 0, w: 1, h: 1, fit, srcW, srcH }));
+  // Centred and unzoomed: the fit mode alone decides how it meets the canvas.
+  return addLayer(doc, photoLayer({ assetId, fit, srcW, srcH }));
 }

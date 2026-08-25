@@ -5,8 +5,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadAppModule } from './lib/load-app-module.mjs';
 
+// All app modules are loaded UP FRONT. Loading them further down the file
+// leaves them in the temporal dead zone for any test registered above the
+// await — node:test starts running registered tests as soon as the microtask
+// queue drains, which is before a later top-level await resolves.
 const model = await loadAppModule('composer/model.js');
 const qr = await loadAppModule('composer/qr.js');
+const canvasMod = await loadAppModule('composer/canvas.js');
 
 const DEVICE = {
   recordId: 'rec-1', width: 800, height: 480,
@@ -146,7 +151,7 @@ test('draw tool discards a stray tap (single point) without committing', () => {
 
 test('select tool drags by grab offset and may bleed off the artboard', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'bleed', x: 0.2, y: 0.2, size: 0.4 }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
   ({ doc } = t.onDown(doc, { x: 0.22, y: 0.22 }, size));
@@ -154,20 +159,32 @@ test('select tool drags by grab offset and may bleed off the artboard', () => {
   ({ doc } = t.onMove(doc, { x: 0.62, y: 0.42 }, size));
   assert.ok(Math.abs(doc.layers[0].x - 0.6) < 1e-9, 'moved by pointer delta, not to pointer');
 
-  // Past the edge is allowed — the render clips it. A 0.4-wide element keeps
-  // 30% of itself (0.12) on the artboard, so it may reach x = 0.88.
+  // Past the edge is allowed — the render clips it. The limit is measured
+  // against the RENDERED extent (a QR block snaps to whole modules, so it is
+  // not exactly the requested 0.4), which is the whole point of clamping
+  // against layerBounds rather than the layer's own numbers.
+  // Assertions are on the RENDERED bounds, not the layer's own numbers: a QR
+  // block snaps to whole modules and its origin to whole pixels, which is
+  // exactly why the clamp works from layerBounds in the first place.
+  const px = 1 / size.W;
+  const extent = canvasMod.layerBounds(doc.layers[0], size).w;
   ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));
-  const [, maxX] = tools.bleedRange(0.4);
-  assert.ok(Math.abs(doc.layers[0].x - maxX) < 1e-9,
-    `bled to the limit, got ${doc.layers[0].x}`);
-  assert.ok(doc.layers[0].x > 0.6, 'it really did cross the old boundary');
-  assert.ok(doc.layers[0].x + 0.4 > 1, 'and part of it now hangs off the canvas');
+  const bMax = canvasMod.layerBounds(doc.layers[0], size);
+  const [, maxX] = tools.bleedRange(extent);
+  assert.ok(Math.abs(bMax.x - maxX) < 2 * px, `bled to the limit, got ${bMax.x} want ${maxX}`);
+  assert.ok(bMax.x > 0.6, 'it really did cross the old boundary');
+  assert.ok(bMax.x + extent > 1, 'and part of it now hangs off the canvas');
 
   // The other direction is bounded too, so it cannot be lost.
   ({ doc } = t.onMove(doc, { x: -5, y: -5 }, size));
-  const [minX] = tools.bleedRange(0.4);
-  assert.ok(Math.abs(doc.layers[0].x - minX) < 1e-9);
-  assert.ok(minX < 0 && doc.layers[0].x + 0.4 > 0.1, 'still reachable');
+  const bMin = canvasMod.layerBounds(doc.layers[0], size);
+  const [minX] = tools.bleedRange(extent);
+  assert.ok(Math.abs(bMin.x - minX) < 2 * px, `got ${bMin.x} want ${minX}`);
+  // "Still reachable" is the rule itself: MIN_ON_CANVAS of the element stays
+  // on the artboard, whatever the element's size.
+  assert.ok(minX < 0, 'it did cross the near edge');
+  assert.ok(bMin.x + extent >= extent * tools.MIN_ON_CANVAS - 2 * px,
+    `${(bMin.x + extent).toFixed(4)} of it is still on canvas, of ${extent.toFixed(4)}`);
   assert.equal(t.onUp(doc).commit, true);
 });
 
@@ -302,7 +319,6 @@ test('QR version/size selection agrees with segno (independent implementation)',
 // --- QR geometry: quiet zone, clamping, hit-test agreement ---
 
 const render = await loadAppModule('composer/render.js');
-const canvasMod = await loadAppModule('composer/canvas.js');
 
 test('QR geometry reserves a 4-module quiet zone on every side', () => {
   const layer = model.qrLayer({ text: 'https://opendisplay.org', x: 0.1, y: 0.1, size: 0.9 });
@@ -557,31 +573,37 @@ test('a stroke drag that cannot move (already at the limit) does not commit', ()
 
 // --- resize handles ---
 
-const canvasMod2 = await loadAppModule('composer/canvas.js');
 
-test('handles sit on the rendered corners, and strokes have none', () => {
+test('handles sit on the rendered corners; strokes and photos have none', () => {
   const size = { W: 800, H: 480 };
-  const photo = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.1, w: 0.4, h: 0.5 });
-  const pts = canvasMod2.handlePoints(photo, size);
-  assert.deepEqual(pts.nw, { x: 0.2, y: 0.1 });
-  assert.deepEqual(pts.se, { x: 0.6000000000000001, y: 0.6 });
-  assert.deepEqual(pts.ne.x, pts.se.x);
-  assert.deepEqual(pts.sw.y, pts.se.y);
-  assert.equal(canvasMod2.handlePoints(model.strokeLayer({ points: [{ x: 0, y: 0 }] }), size), null);
+  const qr = model.qrLayer({ text: 'handles', x: 0.2, y: 0.1, size: 0.4 });
+  const b = canvasMod.layerBounds(qr, size);
+  const pts = canvasMod.handlePoints(qr, size);
+  assert.ok(Math.abs(pts.nw.x - b.x) < 1e-9 && Math.abs(pts.nw.y - b.y) < 1e-9);
+  assert.ok(Math.abs(pts.se.x - (b.x + b.w)) < 1e-9);
+  assert.equal(pts.ne.x, pts.se.x);
+  assert.equal(pts.sw.y, pts.se.y);
+  assert.equal(canvasMod.handlePoints(model.strokeLayer({ points: [{ x: 0, y: 0 }] }), size), null);
+  // A photo has no frame to pull — it zooms instead, the way od-app pinches.
+  assert.equal(canvasMod.handlePoints(model.photoLayer({ assetId: 'a' }), size), null);
 });
 
 test('handles are square on screen, so their normalized size differs per axis', () => {
-  const { hw, hh } = canvasMod2.handleSize({ W: 800, H: 400 }, 16);
+  const { hw, hh } = canvasMod.handleSize({ W: 800, H: 400 }, 16);
   assert.equal(hw, 0.02);
   assert.equal(hh, 0.04, 'a shorter axis needs a larger normalized handle');
 });
 
 test('hitHandle finds a corner and ignores the layer middle', () => {
   const size = { W: 400, H: 400 };
-  const photo = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 });
-  assert.equal(canvasMod2.hitHandle(photo, { x: 0.2, y: 0.2 }, size), 'nw');
-  assert.equal(canvasMod2.hitHandle(photo, { x: 0.6, y: 0.6 }, size), 'se');
-  assert.equal(canvasMod2.hitHandle(photo, { x: 0.4, y: 0.4 }, size), null, 'middle is a move');
+  const qr = model.qrLayer({ text: 'handles', x: 0.2, y: 0.2, size: 0.4 });
+  const b = canvasMod.layerBounds(qr, size);
+  assert.equal(canvasMod.hitHandle(qr, { x: b.x, y: b.y }, size), 'nw');
+  assert.equal(canvasMod.hitHandle(qr, { x: b.x + b.w, y: b.y + b.h }, size), 'se');
+  assert.equal(canvasMod.hitHandle(qr, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, size), null,
+    'middle is a move');
+  assert.equal(canvasMod.hitHandle(model.photoLayer({ assetId: 'a' }), { x: 0.5, y: 0.5 }, size),
+    null, 'a photo has no handles at all');
 });
 
 test('resizeBox: each corner moves its own edges and anchors the opposite one', () => {
@@ -617,36 +639,64 @@ test('resizeBox clamps to the bleed and to a minimum size', () => {
   assert.equal(+(tinyNw.x + tinyNw.w).toFixed(3), 0.6, 'bottom-right corner held');
 });
 
-test('dragging a handle resizes the photo instead of moving it', () => {
+test('dragging a handle resizes a QR instead of moving it', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'resize me', x: 0.2, y: 0.2, size: 0.4 }));
   const t = tools.makeSelectTool();
   const size = { W: 400, H: 400 };
+  const b0 = canvasMod.layerBounds(doc.layers[0], size);
 
   // First click selects; the handle is only live once the layer is selected.
-  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
+  ({ doc } = t.onDown(doc, { x: b0.x + b0.w / 2, y: b0.y + b0.h / 2 }, size));
   t.onUp(doc);
-  ({ doc } = t.onDown(doc, { x: 0.6, y: 0.6 }, size));   // grab the SE handle
-  ({ doc } = t.onMove(doc, { x: 0.8, y: 0.8 }, size));
+  ({ doc } = t.onDown(doc, { x: b0.x + b0.w, y: b0.y + b0.h }, size)); // SE handle
+  ({ doc } = t.onMove(doc, { x: b0.x + b0.w + 0.2, y: b0.y + b0.h + 0.2 }, size));
 
-  const l = doc.layers[0];
-  assert.deepEqual([+l.x.toFixed(3), +l.y.toFixed(3)], [0.2, 0.2], 'did NOT move');
-  assert.deepEqual([+l.w.toFixed(3), +l.h.toFixed(3)], [0.6, 0.6], 'grew by the drag');
+  assert.ok(doc.layers[0].size > 0.4, 'grew by the drag');
   assert.equal(t.onUp(doc).commit, true, 'one undo step');
+});
+
+test('dragging a photo PANS it — there is no box to move', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 400, H: 400 };
+  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
+  assert.equal(t.selectedId(), doc.layers[0].id, 'clicking the canvas grabs the photo');
+  ({ doc } = t.onMove(doc, { x: 0.6, y: 0.55 }, size));
+  const l = doc.layers[0];
+  assert.ok(Math.abs(l.panX - 0.1) < 1e-9, `panned by the drag delta, got ${l.panX}`);
+  assert.ok(Math.abs(l.panY - 0.05) < 1e-9);
+  assert.equal(l.scale, 1, 'and did not zoom');
+  assert.equal(l.x, undefined, 'no box survives on the layer');
+  assert.equal(t.onUp(doc).commit, true, 'one undo step');
+});
+
+test('a photo cannot be panned out of sight', () => {
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400 }));
+  const t = tools.makeSelectTool();
+  const size = { W: 400, H: 400 };
+  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
+  ({ doc } = t.onMove(doc, { x: 40, y: 40 }, size));
+  const b = canvasMod.layerBounds(doc.layers[0], size);
+  assert.ok(b.x < 1 && b.x + b.w > 0, `still overlaps the canvas: ${JSON.stringify(b)}`);
 });
 
 test('grabbing the middle of a selected layer still moves it', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'move me', x: 0.2, y: 0.2, size: 0.4 }));
   const t = tools.makeSelectTool();
   const size = { W: 400, H: 400 };
-  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
+  const b = canvasMod.layerBounds(doc.layers[0], size);
+  const mid = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  ({ doc } = t.onDown(doc, mid, size));
   t.onUp(doc);
-  ({ doc } = t.onDown(doc, { x: 0.4, y: 0.4 }, size));
-  ({ doc } = t.onMove(doc, { x: 0.5, y: 0.5 }, size));
+  ({ doc } = t.onDown(doc, mid, size));
+  ({ doc } = t.onMove(doc, { x: mid.x + 0.1, y: mid.y + 0.1 }, size));
   const l = doc.layers[0];
-  assert.deepEqual([+l.x.toFixed(3), +l.y.toFixed(3)], [0.3, 0.3], 'moved');
-  assert.deepEqual([+l.w.toFixed(3), +l.h.toFixed(3)], [0.4, 0.4], 'size unchanged');
+  assert.ok(Math.abs(l.x - 0.3) < 1e-9, 'moved');
+  assert.equal(l.size, 0.4, 'size unchanged');
 });
 
 test('resizing a QR adjusts its size field, not a width/height box', () => {
@@ -655,7 +705,7 @@ test('resizing a QR adjusts its size field, not a width/height box', () => {
   const t = tools.makeSelectTool();
   const size = { W: 400, H: 400 };
   const before = doc.layers[0].size;
-  const b = canvasMod2.handlePoints(doc.layers[0], size);
+  const b = canvasMod.handlePoints(doc.layers[0], size);
   ({ doc } = t.onDown(doc, { x: 0.3, y: 0.3 }, size));    // select
   t.onUp(doc);
   ({ doc } = t.onDown(doc, b.se, size));                   // grab SE handle
@@ -695,17 +745,48 @@ test('photo rotation is 0-3 quarter turns, defaulting to none', () => {
   }
 });
 
-test('rotating a photo does not move its box, so tools are unaffected', () => {
+test('rotating a photo turns its footprint but leaves the pan alone', () => {
   const size = { W: 800, H: 480 };
-  const base = model.photoLayer({ assetId: 'a', x: 0.2, y: 0.1, w: 0.4, h: 0.5 });
+  const base = model.photoLayer({ assetId: 'a', srcW: 400, srcH: 200, fit: 'contain' });
   const b0 = canvasMod.layerBounds(base, size);
-  for (const r of [1, 2, 3]) {
-    const turned = { ...base, rotationQuarterTurns: r };
-    assert.deepEqual(canvasMod.layerBounds(turned, size), b0, `bounds unchanged at ${r}`);
-    assert.deepEqual(canvasMod.handlePoints(turned, size), canvasMod.handlePoints(base, size));
-    const doc = model.addLayer(model.createDocument(DEVICE), turned);
-    assert.equal(canvasMod.hitTest(doc, { x: 0.3, y: 0.3 }, size), turned.id, 'still hit-testable');
+  const b1 = canvasMod.layerBounds({ ...base, rotationQuarterTurns: 1 }, size);
+  // A 2:1 source contained in the canvas becomes 1:2 when turned on its side.
+  assert.ok(Math.abs((b1.w * size.W) / (b1.h * size.H) - (b0.h * size.H) / (b0.w * size.W)) < 0.02,
+    'the footprint aspect inverted');
+  // The centre does not move: rotation is about the photo's own centre.
+  const mid = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+  assert.ok(Math.abs(mid(b1).x - mid(b0).x) < 1e-9 && Math.abs(mid(b1).y - mid(b0).y) < 1e-9);
+  for (const r of [0, 1, 2, 3]) {
+    const doc = model.addLayer(model.createDocument(DEVICE),
+      { ...base, rotationQuarterTurns: r });
+    assert.equal(canvasMod.hitTest(doc, { x: 0.5, y: 0.5 }, size), doc.layers[0].id,
+      `still hit-testable at ${r}`);
   }
+});
+
+test('a legacy photo box is migrated to a pan and a zoom', () => {
+  const legacy = {
+    id: 'L1', type: 'photo', assetId: 'a',
+    x: 0.2, y: 0.1, w: 0.4, h: 0.4, fit: 'cover',
+    adjustments: { exposure: 1, saturation: 1, shadows: 0, highlights: 0 },
+  };
+  const doc = { ...model.createDocument(DEVICE), layers: [legacy] };
+  const out = model.migrateDocument(doc);
+  const l = out.layers[0];
+  assert.equal(l.x, undefined, 'the box is gone');
+  assert.equal(l.w, undefined);
+  // Box centre (0.4, 0.3) relative to the canvas centre.
+  assert.ok(Math.abs(l.panX - (-0.1)) < 1e-9, `panX ${l.panX}`);
+  assert.ok(Math.abs(l.panY - (-0.2)) < 1e-9, `panY ${l.panY}`);
+  assert.equal(l.scale, 0.4, 'the box size was its zoom in all but name');
+  assert.equal(l.fit, 'cover', 'everything else survives');
+
+  // The overwhelmingly common case — a full-canvas photo — is a no-op.
+  const full = model.migrateDocument({ ...doc, layers: [{ ...legacy, x: 0, y: 0, w: 1, h: 1 }] });
+  assert.deepEqual([full.layers[0].panX, full.layers[0].panY, full.layers[0].scale], [0, 0, 1]);
+
+  // Already-migrated documents are returned unchanged, by identity.
+  assert.equal(model.migrateDocument(out), out);
 });
 
 test('a draft written before photo rotation existed still validates', () => {

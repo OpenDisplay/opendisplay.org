@@ -124,8 +124,9 @@
 
       <div class="composer__panels">
         <div id="panelSelect" class="composer__panel">
-          <p class="composer__hint">Tap an element to select it, then drag to move it or pull a
-             corner to resize. Elements may hang off the edge of the canvas — anything past it is
+          <p class="composer__hint">Tap an element to select it, then drag to move it; text and QR
+             codes also resize by pulling a corner. A photo is the canvas background — dragging pans
+             it and the Photo panel's Zoom scales it. Anything past the edge of the canvas is
              cropped when the image is sent.</p>
         </div>
 
@@ -189,14 +190,15 @@
             <label class="composer__row">
               <span class="composer__label">Fit</span>
               <select id="photoFit" class="composer__field">
-                <option value="cover">Cover — fills the box, crops the overflow</option>
-                <option value="contain">Contain — whole photo, letterboxed</option>
-                <option value="none">None — natural size, cropped by the box</option>
+                <option value="cover">Cover — fills the canvas, crops the overflow</option>
+                <option value="contain">Contain — whole photo inside the canvas</option>
+                <option value="none">None — natural pixel size</option>
               </select>
             </label>
             <label class="composer__row">
-              <span class="composer__label">Size</span>
-              <input id="photoSize" type="range" min="0.1" max="1.25" step="0.05" value="1">
+              <span class="composer__label">Zoom</span>
+              <input id="photoSize" type="range" min="0.2" max="4" step="0.05" value="1"
+                     title="Zoom on top of the fit mode. Below 1 the photo shrinks inside the canvas; above 1 it is cropped by the canvas edge.">
             </label>
             <div class="composer__row">
               <span class="composer__label">Rotate</span>

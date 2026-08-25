@@ -54,23 +54,37 @@ export function createDocument(device) {
 
 // --- layer constructors (all geometry normalized 0…1) ---
 
-/** How a photo is mapped into its box, mirroring CSS object-fit (and od-app's
- *  PhotoFitMode, which has the same cover/contain baseline):
- *   cover   — aspect-fill: covers the box, overflow cropped (od-app's default)
- *   contain — aspect-fit: whole photo visible, letter/pillar-boxed
- *   none    — natural size, centred and cropped by the box; no scaling */
+/** How a photo is mapped onto the CANVAS, mirroring od-app's PhotoFitMode:
+ *   cover   — aspect-fill: covers the whole canvas, overflow cropped (default)
+ *   contain — aspect-fit: the whole photo is visible inside the canvas
+ *   none    — natural pixel size, neither scaled up nor down
+ *
+ * The reference frame is the canvas, NOT any per-photo rectangle: a photo is
+ * the canvas background, exactly as in od-app, where PhotoLayout.drawRect is
+ * given the canvas box as its container. `scale` then zooms on top of that
+ * baseline and `panX`/`panY` slide it, both the way od-app's pinch and drag
+ * gestures do. The canvas edge is what crops. */
 export const PHOTO_FIT_MODES = ['cover', 'contain', 'none'];
 
+/** od-app's DisplayCanvasView.minPhotoScale: below the fit baseline the photo
+ *  shrinks inside the canvas and reveals the background; this stops it
+ *  collapsing to a dot. */
+export const MIN_PHOTO_SCALE = 0.2;
+export const MAX_PHOTO_SCALE = 4;
+
 export function photoLayer({
-  assetId, x = 0, y = 0, w = 1, h = 1, fit = 'cover', adjustments = {},
-  // Natural size of the SOURCE in pixels, recorded at import. 'none' must draw
-  // at this size rather than at bitmap.width/height: the editor holds a ≤1600px
-  // proxy while the send path decodes near full resolution, so using the
-  // bitmap's own dimensions would put a different crop on the panel than the
-  // one the user framed.
+  assetId, fit = 'cover', adjustments = {},
+  // Offset from the CANVAS centre, as a fraction of the canvas (od-app's
+  // normalized `pan`). Box-independent, so it survives a panel change.
+  panX = 0, panY = 0,
+  // Zoom multiplier on top of the fit-mode baseline (od-app's `scale`).
+  scale = 1,
+  // Natural size of the SOURCE in pixels, recorded at import. Needed by the
+  // 'none' fit, and by every hit-test and bound, because the editor holds a
+  // <=1600px proxy while the send path decodes larger — so the drawn size can
+  // never be derived from the bitmap in hand.
   srcW = null, srcH = null,
-  // Quarter turns applied to the IMAGE inside its box. The box itself never
-  // turns, so bounds, hit-testing, handles and the bleed rule are unaffected.
+  // Quarter turns applied to the image itself.
   rotationQuarterTurns = 0,
 }) {
   if (!PHOTO_FIT_MODES.includes(fit)) {
@@ -84,7 +98,9 @@ export function photoLayer({
     id: newLayerId(),
     type: 'photo',
     assetId,
-    x, y, w, h, fit,
+    fit,
+    panX, panY,
+    scale: clampPhotoScale(scale),
     srcW, srcH,
     rotationQuarterTurns,
     adjustments: {
@@ -95,6 +111,53 @@ export function photoLayer({
       exposure: 1, saturation: 1, shadows: 0, highlights: 0,
       ...adjustments,
     },
+  };
+}
+
+export function clampPhotoScale(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(MIN_PHOTO_SCALE, Math.min(MAX_PHOTO_SCALE, n));
+}
+
+/**
+ * Bring a stored document up to the current photo model.
+ *
+ * Photos used to carry a box (x, y, w, h) that set the fit reference, the
+ * position AND the crop. The box is gone: fit is relative to the canvas, the
+ * position is a pan and the size is a zoom. A saved draft is converted rather
+ * than rejected — the box's centre becomes the pan, its size the zoom, which
+ * reproduces the common cases (a full-canvas photo maps to pan 0, zoom 1)
+ * and puts the rest close enough to recognise.
+ *
+ * Returns the SAME object when nothing needed converting, so callers can use
+ * identity to tell whether a draft was touched.
+ */
+export function migrateDocument(doc) {
+  if (!doc?.layers?.some(isLegacyPhoto)) return doc;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => (isLegacyPhoto(l) ? migrateLegacyPhoto(l) : l)),
+  };
+}
+
+function isLegacyPhoto(l) {
+  return l?.type === 'photo' && l.panX === undefined && l.w !== undefined;
+}
+
+function migrateLegacyPhoto(l) {
+  const w = Number(l.w) || 1;
+  const h = Number(l.h) || 1;
+  const {
+    x, y, w: _w, h: _h, ...rest
+  } = l;
+  return {
+    ...rest,
+    // Box centre, relative to the canvas centre.
+    panX: (Number(x) || 0) + w / 2 - 0.5,
+    panY: (Number(y) || 0) + h / 2 - 0.5,
+    // The box's size was its zoom in all but name.
+    scale: clampPhotoScale(w),
   };
 }
 

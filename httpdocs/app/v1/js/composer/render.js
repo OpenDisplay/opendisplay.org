@@ -96,39 +96,54 @@ export function applyAdjustments(data, adj) {
 }
 
 /**
- * Destination size for the bitmap, IN THE SOURCE IMAGE'S OWN AXES.
+ * Where a photo is drawn on the canvas, in PANEL PIXELS.
  *
- * The axis bookkeeping is the whole difficulty of rotated photos. The context
- * rotation is what turns this into the visible footprint, so the fit SCALE is
- * computed against the oriented (post-rotation) dimensions while the size
- * handed to drawImage stays in the source's axes. Swapping both applies the
- * quarter turn twice and silently changes the aspect ratio.
+ * The container is the canvas — od-app hands PhotoLayout.drawRect the canvas
+ * box, and a photo there is the background, not an element with a frame. So
+ * the fit baseline comes from the panel, `scale` zooms on top of it and the
+ * pan slides it; the canvas edge is the only crop.
+ *
+ * Sizing is anchored to the recorded source dimensions rather than the bitmap
+ * in hand: the editor holds a downscaled proxy and the send path a larger
+ * decode, and the two must place the photo identically.
+ *
+ * @returns {{dw:number, dh:number, cx:number, cy:number, fw:number, fh:number}}
+ *   dw/dh are the draw size in the SOURCE image's own axes (the rotation turns
+ *   them into the fw/fh footprint); cx/cy are the centre.
  */
-function photoDrawSize(layer, bitmap, bw, bh, swap) {
-  if (layer.fit === 'none') {
-    // Natural size in PANEL pixels, unswapped — the rotation produces the
-    // srcH x srcW footprint by itself. Deliberately NOT bitmap.width/height:
-    // the editor draws a downscaled proxy and the send path a larger decode,
-    // so anchoring to the size recorded at import is what keeps the preview
-    // and the panel showing the same crop.
-    return { dw: layer.srcW ?? bitmap.width, dh: layer.srcH ?? bitmap.height };
-  }
-  const orientedW = swap ? bitmap.height : bitmap.width;
-  const orientedH = swap ? bitmap.width : bitmap.height;
-  const scale = layer.fit === 'cover'
-    ? Math.max(bw / orientedW, bh / orientedH)
-    : Math.min(bw / orientedW, bh / orientedH);
-  return { dw: bitmap.width * scale, dh: bitmap.height * scale };
+export function photoPlacement(layer, W, H, srcAspect) {
+  const rot = (layer.rotationQuarterTurns ?? 0) & 0x03;
+  const swap = rot === 1 || rot === 3;
+  const srcW = layer.srcW ?? srcAspect?.width ?? W;
+  const srcH = layer.srcH ?? srcAspect?.height ?? H;
+  // The footprint the fit has to satisfy is the ORIENTED one; the size handed
+  // to drawImage stays in the source's axes. Doing both is the double-swap
+  // that silently changes the aspect ratio.
+  const orientedW = swap ? srcH : srcW;
+  const orientedH = swap ? srcW : srcH;
+
+  let base;
+  if (layer.fit === 'cover') base = Math.max(W / orientedW, H / orientedH);
+  else if (layer.fit === 'contain') base = Math.min(W / orientedW, H / orientedH);
+  else base = 1; // 'none': natural pixels
+
+  const scale = base * (layer.scale ?? 1);
+  const dw = srcW * scale;
+  const dh = srcH * scale;
+  return {
+    dw,
+    dh,
+    fw: swap ? dh : dw,
+    fh: swap ? dw : dh,
+    cx: W / 2 + (layer.panX ?? 0) * W,
+    cy: H / 2 + (layer.panY ?? 0) * H,
+    rot,
+  };
 }
 
 function drawPhoto(ctx, layer, bitmap, W, H) {
   if (!bitmap) return;
-  const bx = Math.round(layer.x * W);
-  const by = Math.round(layer.y * H);
-  const bw = Math.max(1, Math.round(layer.w * W));
-  const bh = Math.max(1, Math.round(layer.h * H));
-  const rot = (layer.rotationQuarterTurns ?? 0) & 0x03;
-  const { dw, dh } = photoDrawSize(layer, bitmap, bw, bh, rot === 1 || rot === 3);
+  const { dw, dh, fw, fh, cx, cy, rot } = photoPlacement(layer, W, H, bitmap);
 
   const adj = layer.adjustments;
   const needsAdjust = adj && (
@@ -136,11 +151,10 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
     (adj.shadows ?? 0) !== 0 || (adj.highlights ?? 0) !== 0
   );
 
-  // Rotate about the BOX centre, then draw the image centred on the origin:
-  // the same call shape works at every quarter turn, and at rot 0 it reduces
-  // to the centred placement this always did.
-  const place = (c, cx, cy) => {
-    c.translate(cx, cy);
+  // Rotate about the photo's centre, then draw it centred on the origin: the
+  // same call shape works at every quarter turn.
+  const place = (c, atX, atY) => {
+    c.translate(atX, atY);
     if (rot) c.rotate(rot * Math.PI / 2);
     c.drawImage(bitmap, -dw / 2, -dh / 2, dw, dh);
   };
@@ -148,27 +162,34 @@ function drawPhoto(ctx, layer, bitmap, W, H) {
   if (!needsAdjust) {
     ctx.save();
     ctx.beginPath();
-    ctx.rect(bx, by, bw, bh);
+    ctx.rect(0, 0, W, H); // the CANVAS crops — a photo has no frame of its own
     ctx.clip();
-    place(ctx, bx + bw / 2, by + bh / 2);
+    place(ctx, cx, cy);
     ctx.restore();
     return;
   }
 
-  // Adjust off-screen at the layer's box size, then composite: keeps the pixel
-  // math bounded by the layer rather than the whole panel. The rotation has to
-  // happen INSIDE the scratch canvas, not on the composite, or an adjusted
-  // photo would rotate and an unadjusted one would not. The scratch canvas
-  // MUST keep its alpha channel, or transparent regions of the source would
-  // composite over black and hide the layers underneath.
-  const { canvas: tmp, ctx: tctx } = makeCanvas(bw, bh, { alpha: true });
+  // Adjust off-screen, then composite. Bounded to the part of the footprint
+  // that is actually on the canvas, so a zoomed-in photo does not cost pixel
+  // math for the parts nobody will see. The scratch canvas MUST keep its alpha
+  // channel, or transparent regions of the source would composite over black
+  // and hide the layers underneath.
+  const sx = Math.max(0, Math.floor(cx - fw / 2));
+  const sy = Math.max(0, Math.floor(cy - fh / 2));
+  const ex = Math.min(W, Math.ceil(cx + fw / 2));
+  const ey = Math.min(H, Math.ceil(cy + fh / 2));
+  const sw = ex - sx;
+  const sh = ey - sy;
+  if (sw <= 0 || sh <= 0) return; // panned entirely off the canvas
+
+  const { canvas: tmp, ctx: tctx } = makeCanvas(sw, sh, { alpha: true });
   tctx.save();
-  place(tctx, bw / 2, bh / 2);
+  place(tctx, cx - sx, cy - sy);
   tctx.restore();
-  const img = tctx.getImageData(0, 0, bw, bh);
+  const img = tctx.getImageData(0, 0, sw, sh);
   applyAdjustments(img.data, adj);
   tctx.putImageData(img, 0, 0);
-  ctx.drawImage(tmp, bx, by); // alpha-blended onto the opaque composite
+  ctx.drawImage(tmp, sx, sy); // alpha-blended onto the opaque composite
 }
 
 function drawStroke(ctx, layer, scheme, W, H) {
@@ -318,6 +339,14 @@ export function validateDocument(doc) {
         const r = layer.rotationQuarterTurns;
         if (r !== undefined && !(Number.isInteger(r) && r >= 0 && r <= 3)) {
           throw new Error(`photo rotation must be 0-3 quarter turns, got ${r}`);
+        }
+        if (layer.scale !== undefined && !(Number.isFinite(layer.scale) && layer.scale > 0)) {
+          throw new Error(`photo zoom must be a positive number, got ${layer.scale}`);
+        }
+        for (const k of ['panX', 'panY']) {
+          if (layer[k] !== undefined && !Number.isFinite(layer[k])) {
+            throw new Error(`photo ${k} must be a number, got ${layer[k]}`);
+          }
         }
         break;
       }

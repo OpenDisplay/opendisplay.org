@@ -615,13 +615,13 @@ function updatePhotoControls() {
   $('photoControls').hidden = !layer;
   $('photoEmptyHint').hidden = !!layer;
   $('photoEmptyHint').textContent = doc().layers.some((l) => l.type === 'photo')
-    ? 'Select a photo on the canvas with Move to adjust it.'
-    : 'No photo yet. Choose one, then use Move to position it.';
+    ? 'Select a photo on the canvas with Move to adjust it — drag to pan it, Zoom to scale it.'
+    : 'No photo yet. Choose one; it fills the canvas, then drag to pan and Zoom to scale.';
   if (!layer) return;
   $('photoFit').value = layer.fit;
   // Keep the slider in step with the selected layer, or the next drag would
   // jump it to a stale value.
-  $('photoSize').value = String(layer.w ?? 1);
+  $('photoSize').value = String(layer.scale ?? 1);
   for (const [id, key] of Object.entries(ADJUST_INPUTS)) {
     $(id).value = String(layer.adjustments[key] ?? (key === 'exposure' || key === 'saturation' ? 1 : 0));
   }
@@ -659,15 +659,12 @@ function wirePhotoControls() {
   $('photoSize').addEventListener('input', () => {
     const layer = selectedPhotoLayer();
     if (!layer) return;
-    const f = Number($('photoSize').value);
-    // Growing a layer changes what "off the edge" means for it, so re-apply the
-    // bleed rule against the NEW extent — above 1.0 the box is deliberately
-    // larger than the panel and the render crops it.
-    const [minX, maxX] = tools.bleedRange(f);
-    const [minY, maxY] = tools.bleedRange(f);
-    const x = Math.max(minX, Math.min(maxX, layer.x));
-    const y = Math.max(minY, Math.min(maxY, layer.y));
-    session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
+    // Zoom on top of the fit baseline — od-app's pinch, as a slider. The pan
+    // is left alone: zooming about the photo's own centre is what a pinch
+    // does, and re-clamping here would drag the picture sideways as you zoom.
+    session.updateGesture(model.updateLayer(doc(), layer.id, {
+      scale: model.clampPhotoScale(Number($('photoSize').value)),
+    }));
   });
   $('connectBtn').addEventListener('click', () => { toggleConnection(); });
   $('viewRotateLeft').addEventListener('click', () => { rotateView(-1); });
@@ -1148,6 +1145,8 @@ export async function openComposer(record) {
       reconcileNote = `Adjusted for this panel: ${changes.join('; ')}.`;
     }
     try {
+      // Photos used to carry a box; convert before anything tries to render.
+      document_ = model.migrateDocument(document_);
       validateDocument(document_);
     } catch (err) {
       // Unreconcilable: start clean rather than install a session that cannot

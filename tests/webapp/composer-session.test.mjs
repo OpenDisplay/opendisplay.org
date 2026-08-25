@@ -40,7 +40,9 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 test('a drag gesture creates ONE history entry, and undo restores the PRE-gesture state', () => {
   const store = makeStore();
   let doc = model.createDocument(DEVICE_A);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.3, h: 0.3 }));
+  // A QR rather than a photo: this test is about the HISTORY, and a photo has
+  // no x to watch any more — it pans.
+  doc = model.addLayer(doc, model.qrLayer({ text: 'drag me', x: 0.1, y: 0.1, size: 0.3 }));
   const s = open(DEVICE_A, store, doc);
   const layerId = doc.layers[0].id;
   const t = tools.makeSelectTool();
@@ -297,15 +299,15 @@ test('a rejected discrete edit leaves history, document and draft untouched', as
 test('a gesture whose result is invalid is discarded wholesale', () => {
   const store = makeStore();
   let doc = model.createDocument(DEVICE_A);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.2, h: 0.2 }));
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400 }));
   const s = createSession({
     device: DEVICE_A, draftId: 'd', document: doc, store, onChange: () => {},
-    validate: (d) => { if (d.layers[0].x > 0.5) throw new Error('out of bounds'); },
+    validate: (d) => { if (d.layers[0].panX > 0.5) throw new Error('out of bounds'); },
   });
   s.beginGesture();
-  s.updateGesture(model.updateLayer(s.doc(), doc.layers[0].id, { x: 0.9 }));
+  s.updateGesture(model.updateLayer(s.doc(), doc.layers[0].id, { panX: 0.9 }));
   assert.throws(() => s.endGesture(s.doc(), true), /out of bounds/);
-  assert.equal(s.doc().layers[0].x, 0.1, 'reverted to the pre-gesture state');
+  assert.equal(s.doc().layers[0].panX, 0, 'reverted to the pre-gesture state');
   assert.equal(s.canUndo(), false, 'nothing recorded');
 });
 

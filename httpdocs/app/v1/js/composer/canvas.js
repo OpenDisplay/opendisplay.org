@@ -5,7 +5,7 @@
  * render. Main thread only (pointer + DOM).
  */
 
-import { qrGeometry } from './render.js';
+import { qrGeometry, photoPlacement } from './render.js';
 
 /**
  * Map a point in VIEW space (0..1 across the on-screen box) to normalized
@@ -109,8 +109,19 @@ export function makeSurface(canvasEl, {
  */
 export function layerBounds(layer, { W, H }) {
   switch (layer.type) {
-    case 'photo':
-      return { x: layer.x, y: layer.y, w: layer.w, h: layer.h };
+    case 'photo': {
+      // A photo has no frame — it is laid out against the CANVAS and cropped
+      // by it — so its bounds are the footprint it actually occupies, derived
+      // from the source size recorded at import (never from a bitmap: the
+      // editor's proxy and the send decode differ).
+      const p = photoPlacement(layer, W, H);
+      return {
+        x: (p.cx - p.fw / 2) / W,
+        y: (p.cy - p.fh / 2) / H,
+        w: p.fw / W,
+        h: p.fh / H,
+      };
+    }
     case 'text': {
       // Advance width ≈ 0.55 em for sans-serif; size is a fraction of H.
       const w = Math.min(1, layer.text.length * layer.size * 0.55 * (H / W));
@@ -170,7 +181,10 @@ export function handleSize({ W, H }, px = HANDLE_PX) {
  * Returns null for layer types that are not resizable by handle (strokes).
  */
 export function handlePoints(layer, size, px = HANDLE_PX) {
-  if (layer.type === 'stroke') return null;
+  // Photos resize by ZOOM, not by dragging a corner: they have no frame to
+  // pull. od-app uses a pinch for the same reason. Strokes have no handles
+  // either — they move but do not resize.
+  if (layer.type === 'stroke' || layer.type === 'photo') return null;
   const b = layerBounds(layer, size);
   if (!b) return null;
   const { hw, hh } = handleSize(size, px);
