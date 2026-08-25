@@ -205,9 +205,102 @@ test('composer UI: chips, off-canvas movement, handles, fit modes', async (t) =>
     await settle();
     ok('fitApplied', composer._doc().layers.find((l) => l.type === 'photo').fit === 'none');
 
+    // --- 7. canvas VIEW rotation ------------------------------------------
+    const wrap = () => canvasEl().parentElement;
+    // View coordinates must be measured against the WRAPPER: under a rotation
+    // the canvas's own bounding rect is the axis-aligned box of the rotated
+    // element, which is exactly the trap this feature has to avoid.
+    const atView = (u, v) => {
+      const r = wrap().getBoundingClientRect();
+      return { clientX: r.left + u * r.width, clientY: r.top + v * r.height };
+    };
+    const vPointer = (type, u, v) => canvasEl().dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, ...atView(u, v),
+    }));
+    const vDrag = (u0, v0, u1, v1) => {
+      vPointer('pointerdown', u0, v0);
+      vPointer('pointermove', (u0 + u1) / 2, (v0 + v1) / 2);
+      vPointer('pointermove', u1, v1);
+      vPointer('pointerup', u1, v1);
+    };
+
+    const beforeRot = wrap().getBoundingClientRect();
+    document.getElementById('viewRotateRight').click();
+    await settle();
+    await new Promise((r) => setTimeout(r, 250));   // the preference is persisted first
+    await settle();
+    ok('viewRotApplied', wrap().dataset.viewRot === '1');
+    const afterRot = wrap().getBoundingClientRect();
+    // Not a literal swap: the box is re-fitted into the stage, so the SCALE
+    // changes too. What must hold is that the aspect inverted.
+    ok('viewFootprintTurned',
+       Math.abs((afterRot.width / afterRot.height) - (beforeRot.height / beforeRot.width)) < 0.02
+       && afterRot.height > afterRot.width);
+    // The BACKING STORE is untouched: the turn is presentation only.
+    ok('backingStoreUnturned', canvasEl().width === 400 && canvasEl().height === 300);
+    ok('panelInfoSaysViewing', /viewing at 90/.test($('composerPanelInfo').textContent));
+    ok('panelInfoDistinguishes', !/· rot /.test($('composerPanelInfo').textContent));
+
+    // renderDocument must be blind to it: same document, same pixels.
+    const renderMod = await import(location.origin + '/app/v1/js/composer/render.js');
+    const sig = (d) => {
+      const r = renderMod.renderDocument(d, new Map());
+      const px = r.ctx.getImageData(0, 0, r.width, r.height).data;
+      let h = 2166136261;
+      for (let i = 0; i < px.length; i += 4) { h ^= px[i]; h = Math.imul(h, 16777619); }
+      return r.width + 'x' + r.height + ':' + (h >>> 0);
+    };
+    const docNow = composer._doc();
+    const sigRotated = sig(docNow);
+    document.getElementById('viewRotateLeft').click();
+    await settle();
+    await new Promise((r) => setTimeout(r, 250));
+    await settle();
+    ok('viewRotBack', wrap().dataset.viewRot === '0');
+    ok('renderIsBlindToTheView', sig(composer._doc()) === sigRotated);
+
+    // A drag under rotation must follow the FINGER. Turn right, then drag the
+    // photo's centre to a known point in view space and check it landed there.
+    document.getElementById('viewRotateRight').click();
+    await settle();
+    await new Promise((r) => setTimeout(r, 250));
+    await settle();
+    const photoId = composer._doc().layers.find((l) => l.type === 'photo').id;
+    const boundsOf = (id) => {
+      const l = composer._doc().layers.find((x) => x.id === id);
+      return canvasMod.layerBounds(l, { W: canvasEl().width, H: canvasEl().height });
+    };
+    const pb0 = boundsOf(photoId);
+    const startView = canvasMod.panelToView(pb0.x + pb0.w / 2, pb0.y + pb0.h / 2, 1);
+    vDrag(startView.u, startView.v, 0.65, 0.7);
+    await settle();
+    const pb1 = boundsOf(photoId);
+    const endView = canvasMod.panelToView(pb1.x + pb1.w / 2, pb1.y + pb1.h / 2, 1);
+    ok('dragFollowsTheFinger',
+       Math.abs(endView.u - 0.65) < 0.06 && Math.abs(endView.v - 0.7) < 0.06);
+    out.dragEnded = endView;
+
     out.ok = Object.values(out.checks).every(Boolean);
     return out;
   })()`, { timeoutMs: 90000 });
 
   assert.ok(result?.ok, `composer UI failed: ${JSON.stringify(result, null, 1)}`);
+
+  // The preference is per DEVICE and must survive a reload — including one that
+  // reopens the composer from a freshly rendered (and therefore freshly read)
+  // device card.
+  const persisted = await chrome.evalOnPage(profileUrl, `(async () => {
+    if (document.body.dataset.odSchema !== 'ready') throw new Error('schema not ready');
+    if (!document.querySelector('#deviceList button')) throw new Error('device list not rendered');
+    const composer = await import(location.origin + '/app/v1/js/composer/index.js');
+    const settle = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 250)));
+    [...document.querySelectorAll('#deviceList button')]
+      .find((b) => b.textContent.trim() === 'Composer').click();
+    await settle();
+    const wrap = document.getElementById('composerCanvas').parentElement;
+    return { rot: wrap.dataset.viewRot, opened: composer.hasSession() };
+  })()`, { timeoutMs: 60000 });
+  assert.equal(persisted?.opened, true, 'composer reopened after reload');
+  assert.equal(persisted?.rot, '1', 'the canvas view rotation persisted per device');
+
 });

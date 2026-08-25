@@ -140,6 +140,11 @@ export async function createDevice(fields) {
     width: fields.width,
     height: fields.height,
     rotationQuarterTurns: fields.rotationQuarterTurns ?? 0,
+    // How the CANVAS is presented for this tag, so the user can work in the
+    // orientation it is mounted in. Purely a viewing preference — unrelated to
+    // rotationQuarterTurns above, which is hardware, swaps the artboard and is
+    // handed to the encoder.
+    viewRotationQuarterTurns: fields.viewRotationQuarterTurns ?? 0,
     colorScheme: fields.colorScheme,
     transmissionModes: fields.transmissionModes ?? 0,
     partialUpdateSupport: fields.partialUpdateSupport ?? 0,
@@ -397,7 +402,9 @@ export async function exportDevices() {
     format: 'od-app-devices',
     version: 1,
     exportedAt: new Date().toISOString(),
-    devices: devices.map(({ bleId, ...rest }) => rest), // bleId is per-browser
+    // bleId and the canvas viewing preference are both per-browser; neither
+    // describes the hardware, so neither belongs in a portable export.
+    devices: devices.map(({ bleId, viewRotationQuarterTurns, ...rest }) => rest),
   };
 }
 

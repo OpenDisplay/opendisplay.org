@@ -207,11 +207,6 @@
 }
 
 .composer__canvas {
-  /* Fills the wrapper, which JS sizes to the panel's aspect ratio — od-app's
-     .aspectRatio(ar, .fit) box. Upscaling is deliberate and `pixelated` keeps
-     it honest: an e-paper panel really is that coarse. */
-  width: 100%;
-  height: 100%;
   image-rendering: pixelated;
   touch-action: none; /* pointer events own the gestures */
   background: #fff;
@@ -352,13 +347,35 @@
 .composer__progress { width: 100%; height: 0.5rem; margin: 0.25rem 0 0.5rem; }
 .composer__bar label { display: flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; }
 
+/*
+ * The wrapper is sized by JS to the panel's aspect ratio in the space
+ * available — od-app's .aspectRatio(ar, .fit) box — and takes the ROTATED
+ * footprint when the canvas view is turned a quarter. It is never itself
+ * transformed, so it stays a reliable frame of reference for pointer
+ * coordinates.
+ *
+ * Both canvases are laid out by ONE rule: they must keep the UNROTATED pixel
+ * size and share an identical position and transform, or they stop being
+ * registered with each other and the selection chrome drifts off the image it
+ * is describing. Upscaling is deliberate and `pixelated` keeps it honest: an
+ * e-paper panel really is that coarse.
+ */
 .composer__canvaswrap { position: relative; display: block; max-width: 100%; }
-.composer__canvaswrap > canvas { display: block; }
+
+.composer__canvaswrap > canvas {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--od-canvas-w, 100%);
+  height: var(--od-canvas-h, 100%);
+  transform: translate(-50%, -50%) rotate(var(--od-view-rot, 0deg));
+}
+
+.composer__canvaswrap[data-view-rot="1"] { --od-view-rot: 90deg; }
+.composer__canvaswrap[data-view-rot="2"] { --od-view-rot: 180deg; }
+.composer__canvaswrap[data-view-rot="3"] { --od-view-rot: 270deg; }
 
 .composer__overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none; /* input belongs to the render canvas underneath */
 }

@@ -7,44 +7,97 @@
 
 import { qrGeometry } from './render.js';
 
-export function makeSurface(canvasEl, { onPointerDown, onPointerMove, onPointerUp }) {
-  let dragging = false;
+/**
+ * Map a point in VIEW space (0..1 across the on-screen box) to normalized
+ * artboard coordinates, undoing a canvas view rotation.
+ *
+ * Convention: "rotate right" increments the index and applies CSS
+ * `rotate(90deg)`. CSS rotates clockwise and y points down, so the panel's
+ * top-left corner lands at the view's top-right:
+ *
+ *     forward   (u, v) = (1 - y, x)
+ *     inverse   (x, y) = (v, 1 - u)
+ *
+ * Values are deliberately NOT clamped — elements may bleed off the edge, and
+ * clamping here would pin every drag at the boundary.
+ */
+export function viewToPanel(u, v, rotationQuarterTurns = 0) {
+  switch (rotationQuarterTurns & 0x03) {
+    case 1: return { x: v, y: 1 - u };
+    case 2: return { x: 1 - u, y: 1 - v };
+    case 3: return { x: 1 - v, y: u };
+    default: return { x: u, y: v };
+  }
+}
 
+/** Inverse of viewToPanel — used by tests and by anything that has to put a
+ *  panel coordinate back on the screen. */
+export function panelToView(x, y, rotationQuarterTurns = 0) {
+  switch (rotationQuarterTurns & 0x03) {
+    case 1: return { u: 1 - y, v: x };
+    case 2: return { u: 1 - x, v: 1 - y };
+    case 3: return { u: y, v: 1 - x };
+    default: return { u: x, v: y };
+  }
+}
+
+/**
+ * @param {HTMLCanvasElement} canvasEl
+ * @param {object} handlers
+ * @param {() => number} [handlers.viewRotation] current canvas view rotation
+ */
+export function makeSurface(canvasEl, {
+  onPointerDown, onPointerMove, onPointerUp, viewRotation,
+}) {
+  let dragging = false;
+  // The rotation in force when the gesture STARTED. Pointer capture keeps a
+  // drag alive across a rotation, and changing the mapping mid-gesture would
+  // make the layer jump.
+  let gestureRot = 0;
+
+  // Measured against the WRAPPER, not the canvas: under a view rotation the
+  // canvas's own bounding rect is the axis-aligned box of the rotated element,
+  // which would give a plausible-looking but wrong mapping (drags move, just
+  // along the wrong axis). The wrapper is never transformed.
+  //
   // Deliberately UNCLAMPED. Pointer capture keeps delivering moves once the
   // finger leaves the canvas, and elements are allowed to bleed off the edge —
   // clamping here would pin a drag at the boundary no matter how far the user
   // moved. The tools bound how far an element may actually go.
-  const toNorm = (ev) => {
-    const rect = canvasEl.getBoundingClientRect();
-    return {
-      x: (ev.clientX - rect.left) / rect.width,
-      y: (ev.clientY - rect.top) / rect.height,
-    };
+  const toNorm = (ev, rot) => {
+    const box = canvasEl.parentElement ?? canvasEl;
+    const rect = box.getBoundingClientRect();
+    return viewToPanel(
+      (ev.clientX - rect.left) / rect.width,
+      (ev.clientY - rect.top) / rect.height,
+      rot,
+    );
   };
 
   canvasEl.addEventListener('pointerdown', (ev) => {
     dragging = true;
+    gestureRot = viewRotation?.() ?? 0;
     // Capture keeps the drag alive once the pointer leaves the canvas, which
     // is now normal — elements may be dragged past the edge. It is not
     // essential to the gesture, so a pointer id the browser will not capture
     // (a synthetic event, a pointer already released) must not abort it.
     try { canvasEl.setPointerCapture(ev.pointerId); } catch { /* not capturable */ }
-    onPointerDown?.(toNorm(ev), ev);
+    onPointerDown?.(toNorm(ev, gestureRot), ev);
   });
   canvasEl.addEventListener('pointermove', (ev) => {
     if (!dragging) return;
-    onPointerMove?.(toNorm(ev), ev);
+    onPointerMove?.(toNorm(ev, gestureRot), ev);
   });
   const end = (ev) => {
     if (!dragging) return;
     dragging = false;
     try { canvasEl.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
-    onPointerUp?.(toNorm(ev), ev);
+    onPointerUp?.(toNorm(ev, gestureRot), ev);
   };
   canvasEl.addEventListener('pointerup', end);
   canvasEl.addEventListener('pointercancel', end);
 
-  return { toNorm };
+  return { toNorm: (ev) => toNorm(ev, viewRotation?.() ?? 0) };
 }
 
 /**

@@ -50,6 +50,20 @@ function doc() {
   return session.doc();
 }
 
+/**
+ * How the canvas is PRESENTED for this device, in quarter turns.
+ *
+ * Nothing downstream of the DOM ever sees this: renderDocument, the dither
+ * worker, paintForSend and the encoder all work in panel space, and the turn
+ * is a CSS transform on the canvas wrapper. That is the guarantee this feature
+ * cannot change what lands on the panel — structural, not a promise to be
+ * careful. Not to be confused with panel.rotationQuarterTurns, which is
+ * hardware, swaps the artboard and IS sent.
+ */
+function viewRotation() {
+  return (session?.session?.device?.viewRotationQuarterTurns ?? 0) & 0x03;
+}
+
 function size() {
   const { width, height } = model.artboardSize(doc().panel);
   return { W: width, H: height };
@@ -196,10 +210,7 @@ function paintNow() {
   $('deleteLayerBtn').disabled = !selectTool?.selectedId();
   $('clearBtn').disabled = doc().layers.length === 0;
   paintOverlay();
-  const p = doc().panel;
-  $('composerPanelInfo').textContent =
-    `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
-    ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`;
+  updatePanelInfo();
   updatePhotoControls();
   updateClipWarning();
   updateSendControls();
@@ -227,6 +238,20 @@ function updateClipWarning() {
     ? `${clipped.length === 1 ? 'A QR code hangs' : `${clipped.length} QR codes hang`} off the `
       + 'canvas and will be cropped — a cropped code will not scan.'
     : '';
+}
+
+function updatePanelInfo() {
+  if (!session) return;
+  const p = doc().panel;
+  const rot = viewRotation();
+  $('composerPanelInfo').textContent =
+    `${p.width}×${p.height}${p.rotationQuarterTurns ? ` · rot ${p.rotationQuarterTurns * 90}°` : ''}` +
+    ` · scheme ${p.colorScheme} · ${doc().layers.length} layer(s)`
+    // Worded so a turned VIEW can never be read as a turned PANEL: the panel's
+    // own rotation above is hardware and changes what is sent; this does not.
+    + (rot ? ` · viewing at ${rot * 90}° (display unchanged)` : '');
+  $('viewRotateLeft').disabled = !session;
+  $('viewRotateRight').disabled = !session;
 }
 
 function updateSendControls() {
@@ -267,13 +292,24 @@ function fitCanvasToStage() {
   const wrap = $('composerCanvas').parentElement;
   const { W, H } = size();
   if (!(W > 0 && H > 0)) return;
+  const rot = viewRotation();
+  const swap = rot === 1 || rot === 3;
+  // The stage has to hold the ROTATED footprint, or a landscape panel viewed
+  // portrait overflows the page.
+  const viewW = swap ? H : W;
+  const viewH = swap ? W : H;
   const style = getComputedStyle(stage);
   const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
   const availW = Math.max(120, stage.clientWidth - padding);
   const availH = Math.max(160, window.innerHeight * 0.55);
-  const scale = Math.min(availW / W, availH / H);
-  wrap.style.width = `${Math.round(W * scale)}px`;
-  wrap.style.height = `${Math.round(H * scale)}px`;
+  const scale = Math.min(availW / viewW, availH / viewH);
+  wrap.style.width = `${Math.round(viewW * scale)}px`;
+  wrap.style.height = `${Math.round(viewH * scale)}px`;
+  // ...while the canvases inside keep the UNROTATED size and are turned by the
+  // transform. Both read the same two properties, so they cannot drift apart.
+  wrap.style.setProperty('--od-canvas-w', `${Math.round(W * scale)}px`);
+  wrap.style.setProperty('--od-canvas-h', `${Math.round(H * scale)}px`);
+  wrap.dataset.viewRot = String(rot);
 }
 
 /** Selection chrome colour — the same accent the active tool chip uses. */
@@ -281,9 +317,13 @@ const SELECTION_ACCENT = '#2b6cb0';
 
 /** How many PANEL pixels make one on-screen CSS pixel right now. */
 function screenScale() {
-  const wrap = $('composerCanvas').parentElement;
+  // The CANVAS, not the wrapper: after an odd quarter turn the wrapper's width
+  // is the panel's HEIGHT axis, and comparing those would silently rescale the
+  // selection chrome and every handle hit box. clientWidth is the untransformed
+  // layout width, so it stays on the panel's own axis at any rotation.
+  const canvas = $('composerCanvas');
   const { W } = size();
-  const shown = wrap.clientWidth || W;
+  const shown = canvas.clientWidth || W;
   return W > 0 ? shown / W : 1;
 }
 
@@ -444,6 +484,46 @@ function selectPhotoLayer(id) {
   paint();
 }
 
+/**
+ * Turn the CANVAS a quarter, left or right.
+ *
+ * Deliberately not an edit: it never enters the undo history, and it must not
+ * go through paint(), which would drop the dithered frame and disable Send to
+ * re-render pixels that are identical. The frame already in the backing store
+ * stays valid and rotates with the canvas.
+ */
+async function rotateView(delta) {
+  if (!session) return;
+  const owner = session;
+  const gen = owner.generation();
+  const device = owner.session.device;
+  if (!device?.recordId) return;
+  const next = (((device.viewRotationQuarterTurns ?? 0) + delta) % 4 + 4) % 4;
+  try {
+    // Persist FIRST: a preference that survives the write is the one to show.
+    // updateDevice merges inside one transaction, so a view-only patch cannot
+    // erase panel facts a config read landed meanwhile.
+    await store.updateDevice(device.recordId, { viewRotationQuarterTurns: next });
+  } catch (err) {
+    reportError(err);
+    return;
+  }
+  // The user may have switched composers while that was in flight.
+  if (!isCurrent(owner, gen)) return;
+  // Patch the CACHED record rather than installing one returned from the
+  // await: setDevice has no owner guard, and a whole re-read record could
+  // carry panel facts from a different moment into this session.
+  owner.setDevice({ ...owner.session.device, viewRotationQuarterTurns: next });
+  applyViewRotation();
+}
+
+/** Presentation-only refresh: geometry, chrome, label. No document render. */
+function applyViewRotation() {
+  fitCanvasToStage();
+  paintOverlay();
+  updatePanelInfo();
+}
+
 /** Turn the selected photo inside its box. One undo step per press; the box
  *  is untouched, so nothing moves and nothing needs re-clamping. */
 function rotateSelectedPhoto(delta) {
@@ -516,6 +596,8 @@ function wirePhotoControls() {
     const y = Math.max(minY, Math.min(maxY, layer.y));
     session.updateGesture(model.updateLayer(doc(), layer.id, { w: f, h: f, x, y }));
   });
+  $('viewRotateLeft').addEventListener('click', () => { rotateView(-1); });
+  $('viewRotateRight').addEventListener('click', () => { rotateView(1); });
   $('photoRotateLeft').addEventListener('click', () => rotateSelectedPhoto(-1));
   $('photoRotateRight').addEventListener('click', () => rotateSelectedPhoto(1));
   $('photoSize').addEventListener('pointerdown', () => session.beginGesture());
@@ -847,6 +929,7 @@ function wire() {
     }
   };
   makeSurface($('composerCanvas'), {
+    viewRotation,
     onPointerDown: guard((pt) => {
       session.beginGesture();
       const r = activeTool.onDown(doc(), pt, size());
@@ -940,12 +1023,20 @@ function wire() {
 
 /** Open the composer for a device record, restoring its draft if present.
  *  Any previous session is flushed and released first. */
-export async function openComposer(device) {
+export async function openComposer(record) {
   // STAGED HANDOFF. Everything that can fail — flushing the outgoing session,
   // reading and reconciling the incoming draft — happens BEFORE the old
   // session is released or the global is reassigned. Releasing first meant a
   // failed read left a released "zombie" session installed: still editable,
   // but permanently unable to save.
+  //
+  // Re-read the record rather than trusting the one the device CARD captured
+  // when the list was rendered: that copy is as old as the last render, so
+  // rotating device A's canvas, opening B, then reopening A from the unchanged
+  // card would bring back the stale preference. Falls back to the captured
+  // copy if the read fails — an unreachable database is not a reason to refuse
+  // to open the composer.
+  const device = (await store.getDevice(record.recordId).catch(() => null)) ?? record;
   const draftId = `draft-${device.recordId}`;
 
   // 1. Persist the outgoing session. A write failure ABORTS the switch rather
