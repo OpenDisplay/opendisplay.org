@@ -39,9 +39,11 @@ the existing `store.updateDevice`.
 - **Not in the undo history.** Rotating the view is not an edit to the
   composition; putting it in the history would make Undo mean two different
   things.
-- **Not exported.** `sanitiseImported` builds its result from a field
-  whitelist, so a new field is dropped on import automatically — no change
-  needed there, and losing a viewing preference across an export is correct.
+- **Excluded from export.** `sanitiseImported` builds from a field whitelist so
+  it would be dropped on *import* anyway — but `exportDevices` copies every
+  property except `bleId`, so without a change it would still appear in the
+  exported JSON. It is a per-browser viewing preference exactly like `bleId`,
+  so it gets stripped alongside it.
 - One caveat to respect: `updateDevice` is a blind read-modify-write inside one
   transaction. That is safe here, but the write must carry *only* the rotation
   patch — never a stale copy of the panel facts.
@@ -64,17 +66,31 @@ rotation, but the design is what makes that true.
 
 Layout mechanics:
 
-- The wrapper gets the **rotated** box (H×W for quarter turns 1 and 3); the
-  canvases keep the unrotated CSS size and are centred with
+- The wrapper gets the **rotated** box (H×W for quarter turns 1 and 3). Both
+  canvases keep the **unrotated** W×H CSS size and are centred with
   `position:absolute; left:50%; top:50%; transform: translate(-50%,-50%) rotate(Ndeg)`.
+  This is not a one-selector change: today the render canvas is
+  `width:100%;height:100%` of the wrapper and the overlay is `inset:0` plus
+  `100%/100%`, so simply adding a transform would stretch the canvas to the
+  rotated footprint *before* rotating it and would misalign the overlay against
+  it. Both existing rules have to be overridden, and both canvases must be
+  given identical size, position and transform — they are only guaranteed to
+  stay registered with each other if they are laid out by the same rule.
+  JS writes the two pixel sizes (via custom properties) and the rotation index
+  (via a `data-` attribute); CSS does the rest.
 - `fitCanvasToStage()` must fit the **rotated** aspect into the stage, or a
   portrait view of a landscape panel will overflow.
-- `screenScale()` currently divides the wrapper's width by the panel width.
-  Under a quarter turn those are different axes; it has to compare like with
-  like or the selection chrome and handle hit-boxes silently change size.
-- `handleSize()` returns a per-axis normalized size so handles are *square on
-  screen*. Under a quarter turn the axes swap, so the two components must swap
-  with them.
+- `screenScale()` currently divides the **wrapper's** width by the panel width.
+  After an odd turn the wrapper's width is the panel's *height* axis, so it
+  must measure the canvas instead: `canvas.clientWidth / W` is the untransformed
+  layout size and stays on the right axis at every rotation. Getting this wrong
+  does not fail loudly — it silently rescales the selection chrome and the
+  handle hit boxes.
+- `handleSize()` needs **no change**. Its per-axis normalized values are
+  converted straight back through `W` and `H` in `paintOverlay`, producing a
+  square in the backing store; a uniform CSS rotation preserves a square.
+  Swapping the components would *introduce* a non-square handle on a
+  non-square panel. (This was wrong in the first draft of this plan.)
 
 ### The risky part: pointer coordinates
 
@@ -99,6 +115,15 @@ rot 3: (x, y) = (1 - v, u)
 The values must stay unclamped — elements are allowed to bleed off the edge,
 and clamping here would pin every drag at the boundary.
 
+The convention: **"rotate right" increments the index and applies CSS
+`rotate(90deg)`**, which (CSS rotates clockwise, y points down) moves the
+panel's top edge to the view's right edge and its top-left corner to the view's
+top-right. Forward is `(u,v) = (1-y, x)`; the table above is its inverse.
+
+The rotation in force must be **captured at `pointerdown` and used for the whole
+gesture**. Pointer capture keeps a drag alive across a rotation, and changing
+the mapping mid-gesture would make the layer jump.
+
 This mapping is exactly the kind of thing that is easy to get backwards, so it
 gets the same treatment the panel rotation already has: a **hand-authored
 oracle test** in the style of `tests/webapp/rotation-oracle.test.mjs`, with the
@@ -108,10 +133,42 @@ rather than derived from the same formula it is checking.
 ### What the user sees
 
 - Two buttons, ⟲ / ⟳, in the composer action row, with the current rotation
-  reflected in `composerPanelInfo` when it is non-zero (so a rotated view can
-  never be mistaken for a rotated panel).
+  reflected in `composerPanelInfo` when it is non-zero, worded so a rotated
+  *view* can never be mistaken for a rotated *panel*.
 - Persisted per device, restored on open.
 - Deliberately **not** in the undo stack.
+
+### Applying it must not go through `paint()`
+
+`paint()` drops `latestDither` and invalidates the worker's outstanding renders,
+so routing a view rotation through it would disable Send and spend a full panel
+re-render on an operation that changes no pixels. Rotating needs a
+presentation-only path: re-fit the wrapper and canvases, repaint the **overlay**,
+update the info line. The dithered preview already in the backing store stays
+valid and rotates with it.
+
+### Cache lifecycle (the part that actually bites)
+
+The record is cached in three places and the plan has to say what happens to
+each:
+
+- `session.setDevice` accepts any record with a matching `recordId` — there is
+  no owner or generation guard. So the write must patch **only**
+  `viewRotationQuarterTurns` into the cached copy rather than install a whole
+  record returned from an await.
+- Every async step (the `updateDevice` write, any re-read) must capture `owner`
+  and its generation and check `isCurrent()` before touching state, or a result
+  can land in a session that replaced the one that asked for it.
+- Device *cards* capture the record as it was when the list was rendered, and
+  `openComposer` trusts that object. Rotate A, open B, then reopen A from the
+  unchanged card and A comes back at the stale preference. `openComposer` must
+  re-read the record rather than trust the captured one.
+- Persist first, then apply — or define what happens when the write fails.
+
+None of this can send wrong geometry: `prepareSend` re-reads the authoritative
+record and compares `panelSignature`, and `updateDevice` merges inside a single
+read-write transaction so a view patch cannot erase hardware truth. The failure
+mode is a wrong or stale *view*, which is worth getting right on its own terms.
 
 ### Interaction notes
 
@@ -161,14 +218,22 @@ rotating the box instead would ripple through every one of them.
 
 In `drawPhoto`, rotate about the box centre before drawing:
 
-- **cover / contain** — the fit scale must be computed against the **rotated**
-  aspect ratio, so a portrait photo turned 90° covers a landscape box the way
-  the user expects.
-- **none** — swap `srcW`/`srcH` for odd quarter turns. This is the same
-  resolution-independence rule the fit mode already depends on: the size comes
-  from the dimensions recorded at import, never from `bitmap.width`, because
-  the editor holds a ≤1600px proxy while the send path decodes near full
-  resolution.
+Getting the axes right here is the whole job, and the first draft of this plan
+had it backwards. `dw`/`dh` are the destination size passed to `drawImage` **in
+the source image's own axes**; the context rotation is what turns that into the
+visible footprint. So:
+
+- **cover / contain** — compute the fit *scale* against the **oriented**
+  dimensions (`bitmap.height × bitmap.width` for an odd turn), because that is
+  the footprint that has to cover or fit the box. Then still draw at
+  `bitmap.width * scale × bitmap.height * scale`. Scale from the oriented
+  dimensions, draw in the source's.
+- **none** — draw at `srcW × srcH`, unswapped. The rotation produces the
+  `srcH × srcW` footprint by itself. Swapping first *and* rotating applies the
+  turn twice and changes the aspect ratio.
+
+`srcW`/`srcH` are already recorded in display (EXIF-applied) orientation at
+import, so no orientation correction belongs here.
 - The adjusted path draws into an offscreen scratch canvas sized to the box and
   then composites. The rotation has to be applied **inside** that scratch
   canvas, not to the composite, or an adjusted photo will rotate and an
@@ -191,8 +256,13 @@ so all three pick this up from one change.
    is distinguishable from 0°).
 2. cover/contain use the rotated aspect: a portrait source in a landscape box
    at 90° fills it, where at 0° it letterboxes.
-3. "none" at 90° draws `srcH × srcW`, and is identical for a proxy bitmap and a
-   2× bitmap — the invariance test the fit mode already has, under rotation.
+3. "none" at 90° occupies an `srcH × srcW` footprint, and its **crop geometry**
+   is the same for a proxy bitmap and a 2× bitmap. Note the existing test
+   asserts byte identity, which only works because its fixture is a solid
+   colour: two decodes at different resolutions resample differently and are
+   not required to match pixel for pixel. The rotation test asserts the drawn
+   region's bounding box instead, which is the claim that is actually being
+   made.
 4. An adjusted photo and an unadjusted one rotate identically.
 5. Rotation does not move the layer box: bounds, hit-test and handle positions
    are unchanged.
@@ -219,9 +289,15 @@ so all three pick this up from one change.
   device and means something completely different. Naming, the info line, and
   the tests all need to keep them apart; a reviewer should be pointed at this
   specifically.
-- **`screenScale` and `handleSize` are axis-sensitive** and will produce
-  plausible-but-wrong handle sizes and hit boxes under a quarter turn rather
-  than failing loudly.
+- **`screenScale` is axis-sensitive** and will produce plausible-but-wrong
+  handle sizes and hit boxes under a quarter turn rather than failing loudly.
+- **The photo-rotation axis convention** is easy to apply twice (scale from the
+  oriented dimensions, draw in the source's). A square test fixture would hide
+  it completely, so the fixtures must be non-square.
+- **The send decode is capped at 2× the panel's longest edge**
+  (`decodeForPanel`), not full resolution. That can under-resolve a `none` crop
+  or an extreme-aspect `cover` crop. Pre-existing, not introduced here, but it
+  is why the invariance claim is about geometry rather than pixels.
 - **Hardware qualification is still outstanding** for everything in this app
   (`docs/webapp-hardware-qualification.md`); neither feature changes that, and
   feature A is specifically designed so it cannot make it worse.
