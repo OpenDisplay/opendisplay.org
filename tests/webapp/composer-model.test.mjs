@@ -211,7 +211,7 @@ test('the bleed limit is the artboard for big elements, the element for small', 
 
 test('select tool: selection PERSISTS after pointer-up (Delete acts on it)', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.5, h: 0.5 }));
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400 }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
   ({ doc } = t.onDown(doc, { x: 0.2, y: 0.2 }, size));
@@ -225,7 +225,7 @@ test('select tool: selection PERSISTS after pointer-up (Delete acts on it)', () 
 
 test('select tool: a click without movement does not create a history entry', () => {
   let doc = model.createDocument(DEVICE);
-  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', x: 0.1, y: 0.1, w: 0.5, h: 0.5 }));
+  doc = model.addLayer(doc, model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400 }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
   ({ doc } = t.onDown(doc, { x: 0.2, y: 0.2 }, size));
