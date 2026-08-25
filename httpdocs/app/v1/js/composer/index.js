@@ -30,6 +30,11 @@ const $ = (id) => document.getElementById(id);
  *  are only decoded at send time (M3). */
 const PROXY_MAX_PX = 1600;
 
+/** Memory ceiling for a send-time decode, in megapixels of source. 12 MP is
+ *  ~48 MB of RGBA — the same number image-size.js already treats as the most
+ *  it dares decode when it cannot bound the result. */
+const SEND_DECODE_MAX_MEGAPIXELS = 12;
+
 let session = null;
 let wired = false;
 let dither = null;
@@ -503,15 +508,66 @@ function reportError(err) {
  * pixels for the visible crop, and capping at the old value would send a
  * visibly softer image than the preview promised.
  */
-function decodeForPanel(blob, panel, doc_ = null, assetId = null) {
-  const { width, height } = model.artboardSize(panel);
-  // Largest zoom any layer applies to THIS asset (the same photo may appear
-  // more than once at different zooms; the sharpest one wins).
-  const zoom = (doc_?.layers ?? [])
+/** Largest zoom any layer applies to `assetId` — the same photo may appear
+ *  more than once, and the sharpest use decides the decode. */
+function assetZoom(doc_, assetId) {
+  return (doc_?.layers ?? [])
     .filter((l) => l.type === 'photo' && l.assetId === assetId)
     .reduce((m, l) => Math.max(m, l.scale ?? 1), 1);
+}
+
+/** Longest-edge cap for the send decode of one asset. */
+function sendDecodeCap(panel, zoom) {
+  const { width, height } = model.artboardSize(panel);
   const headroom = 2 * Math.max(1, Math.min(zoom, model.MAX_PHOTO_SCALE));
-  return decodeBounded(blob, Math.max(1, Math.round(Math.max(width, height) * headroom)));
+  return Math.max(1, Math.round(Math.max(width, height) * headroom));
+}
+
+function decodeForPanel(blob, panel, zoom = 1) {
+  return decodeBounded(blob, sendDecodeCap(panel, zoom), {
+    // The cap follows the zoom, so it can exceed a big phone photo's own
+    // dimensions — at which point "no downscale needed" would decode at native
+    // size. The budget keeps the allocation bounded whatever the cap says.
+    budgetMegapixels: SEND_DECODE_MAX_MEGAPIXELS,
+  });
+}
+
+/**
+ * Fill in srcW/srcH for photos saved before those were recorded.
+ *
+ * Every piece of a photo's geometry is derived from the source size — the
+ * bitmap cannot stand in, because the editor holds a downscaled proxy and the
+ * send path a larger decode — so a layer without it falls back to the canvas
+ * dimensions and draws at the wrong aspect. Reading it costs a header slice of
+ * the stored original, and only for drafts that predate the field.
+ *
+ * Failures are swallowed: an unreadable header leaves the fallback in place,
+ * which is at least self-consistent between bounds and rendering.
+ */
+async function backfillSourceSizes(document_) {
+  const needy = document_.layers.filter(
+    (l) => l.type === 'photo' && l.assetId && (l.srcW == null || l.srcH == null),
+  );
+  if (!needy.length) return document_;
+  const sizes = new Map();
+  for (const layer of needy) {
+    if (sizes.has(layer.assetId)) continue;
+    try {
+      const asset = await store.getAsset(layer.assetId);
+      if (!asset?.blob) continue;
+      const natural = await readImageSize(asset.blob);
+      if (natural?.width > 0 && natural?.height > 0) sizes.set(layer.assetId, natural);
+    } catch { /* leave the fallback in place */ }
+  }
+  if (!sizes.size) return document_;
+  return {
+    ...document_,
+    layers: document_.layers.map((l) => {
+      const n = (l.type === 'photo' && (l.srcW == null || l.srcH == null))
+        ? sizes.get(l.assetId) : null;
+      return n ? { ...l, srcW: n.width, srcH: n.height } : l;
+    }),
+  };
 }
 
 /** Decode a ≤PROXY_MAX_PX editing proxy for the interactive canvas; the
@@ -769,8 +825,18 @@ function requestDitherNow() {
   // frame that gets sent. The client holds the render until every referenced
   // asset is acknowledged, so a frame can never be missing a photo.
   for (const layer of current.layers) {
-    if (!layer.assetId || client.hasAsset(layer.assetId)) continue;
+    if (!layer.assetId) continue;
     const assetId = layer.assetId;
+    // The worker's bitmap was decoded for the zoom in force at the time. Zoom
+    // in afterwards and the cached one is too coarse for the frame that gets
+    // SENT — the preview would sharpen while the panel got the old pixels. Ask
+    // for a bigger one when the requirement grows; never when it shrinks,
+    // which would re-decode on every nudge of the slider.
+    const wantCap = sendDecodeCap(current.panel, assetZoom(current, assetId));
+    if (client.hasAsset(assetId)) {
+      if (client.assetCap(assetId) >= wantCap) continue;
+      client.dropAsset(assetId);
+    }
     store.getAsset(assetId)
       .then(async (asset) => {
         // A device switch during the load invalidates this asset entirely.
@@ -782,7 +848,8 @@ function requestDitherNow() {
           );
         }
         await client.addAsset(assetId, asset.blob,
-          (b) => decodeForPanel(b, current.panel, current, assetId));
+          (b) => decodeForPanel(b, current.panel, assetZoom(current, assetId)),
+          wantCap);
       })
       .catch((err) => {
         if (!isCurrent(owner, ownerGen)) return;
@@ -1168,6 +1235,12 @@ export async function openComposer(record) {
   let reconcileNote = '';
   if (existing?.doc) {
     document_ = model.fromDraft(existing);
+    // Give every photo its natural size BEFORE anything reads its geometry.
+    // It has to happen here, not after the session is installed: migration
+    // needs it to convert an old box into the right zoom, and a later "quiet"
+    // document replacement could land in the middle of a gesture the user had
+    // already started, promoting half a drag into committed history.
+    document_ = await backfillSourceSizes(document_);
     // The device may have been rebound to different hardware (repair allows
     // dimension and scheme changes), so the draft's layers can be invalid for
     // the panel it is about to render on: reconcile BEFORE installing the
@@ -1267,21 +1340,6 @@ export async function openComposer(record) {
       owner.setBitmap(layer.assetId, bmp);
     } catch (err) {
       reportError(err);
-    }
-    // Backfill the natural size for drafts saved before it was recorded. Every
-    // photo's geometry is derived from it — the bitmap cannot stand in, because
-    // the editor's is a downscaled proxy — so a layer without it falls back to
-    // the canvas dimensions and draws at the wrong aspect until this lands.
-    if (layer.srcW == null || layer.srcH == null) {
-      try {
-        const natural = await readImageSize(asset.blob);
-        if (!isCurrent(owner, gen)) return;
-        if (natural?.width > 0 && natural?.height > 0) {
-          owner.setDocumentQuietly(model.updateLayer(owner.doc(), layer.id, {
-            srcW: natural.width, srcH: natural.height,
-          }));
-        }
-      } catch { /* leave the fallback in place; it is at least self-consistent */ }
     }
   }
 

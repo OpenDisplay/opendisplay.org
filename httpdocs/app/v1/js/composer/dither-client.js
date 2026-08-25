@@ -30,7 +30,9 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
   // the PRE-edit one. A result arriving in that window would look current and
   // be republished as sendable. Invalidation is synchronous with the edit.
   let staleBefore = 0;
-  /** assetId -> {state: 'pending'|'ready', attempt: number} */
+  /** assetId -> {state: 'pending'|'ready', attempt: number, cap: number}
+   *  `cap` is the decode size the bitmap was made at, so a caller can tell
+   *  whether a zoomed-in frame has outgrown it. */
   const assetState = new Map();
   let nextAttempt = 1;
 
@@ -96,10 +98,10 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
 
   return {
     /** Hand the worker its OWN bitmap for an asset (transferred once). */
-    async addAsset(assetId, blob, decode) {
+    async addAsset(assetId, blob, decode, cap = 0) {
       if (assetState.has(assetId)) return;
       const attempt = nextAttempt++;
-      assetState.set(assetId, { state: 'pending', attempt });
+      assetState.set(assetId, { state: 'pending', attempt, cap });
       const ownerWorkerAtStart = worker;
       try {
         const bitmap = await decode(blob);
@@ -125,6 +127,22 @@ export function createDitherClient({ workerUrl, onResult, onError }) {
 
     assetReady(assetId) {
       return assetState.get(assetId)?.state === 'ready';
+    },
+
+    /** Decode size the cached bitmap was made at (0 when unknown). */
+    assetCap(assetId) {
+      return assetState.get(assetId)?.cap ?? 0;
+    },
+
+    /**
+     * Forget one asset so a bigger decode can replace it — used when zooming
+     * in outgrows the bitmap the worker holds. The worker releases its copy
+     * too; the replacement arrives as an ordinary addAsset, and the render is
+     * held until it is acknowledged, so no frame is ever built on the old one.
+     */
+    dropAsset(assetId) {
+      if (!assetState.delete(assetId)) return;
+      worker?.postMessage({ type: 'prune', keep: [...assetState.keys()] });
     },
 
     /**

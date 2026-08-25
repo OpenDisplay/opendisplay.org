@@ -869,26 +869,102 @@ test('shrinking or turning a panned photo cannot strand it off-canvas', () => {
   assert.ok(tb.x < 1 && tb.x + tb.w > 0, `turned photo still reachable: ${JSON.stringify(tb)}`);
 });
 
-test('a photo is grabbable anywhere on the canvas, wherever it has been panned', () => {
-  // od-app pans the photo from a drag anywhere the annotations do not claim.
-  // Hit-testing the footprint would make a photo panned off the canvas
-  // impossible to select, and so impossible to bring back.
+test('an empty-canvas DRAG pans the photo; an empty-canvas TAP deselects', () => {
+  // od-app distinguishes the two, and the distinction matters: making the
+  // photo a normal pointer-down hit meant a plain tap on empty canvas selected
+  // it and armed Delete, and nothing could ever be deselected again.
+  const size = { W: 800, H: 480 };
+  let doc = model.createDocument(DEVICE);
+  // Shrunk and panned into a corner, so most of the canvas is NOT the photo.
+  doc = model.addLayer(doc, model.photoLayer({
+    assetId: 'a', srcW: 400, srcH: 400, fit: 'contain', scale: 0.2, panX: 0.3, panY: 0.3,
+  }));
+  doc = model.addLayer(doc, model.qrLayer({ text: 'pick me', x: 0.05, y: 0.05, size: 0.3 }));
+  const photoId = doc.layers[0].id;
+  const qrId = doc.layers[1].id;
+  const empty = { x: 0.5, y: 0.05 };
+  assert.equal(canvasMod.hitTest(doc, empty, size), null, 'the test point really is empty');
+
+  // TAP: selects nothing, so Delete stays disarmed.
+  let t = tools.makeSelectTool();
+  const qrB = canvasMod.layerBounds(doc.layers[1], size);
+  ({ doc } = t.onDown(doc, { x: qrB.x + qrB.w / 2, y: qrB.y + qrB.h / 2 }, size));
+  assert.equal(t.selectedId(), qrId, 'something is selected to begin with');
+  t.onUp(doc);
+  ({ doc } = t.onDown(doc, empty, size));
+  assert.equal(t.selectedId(), null, 'the tap deselected');
+  assert.equal(t.onUp(doc).commit, false, 'and recorded nothing');
+  assert.ok(Math.abs(doc.layers[0].panX - 0.3) < 1e-9, 'the photo did not move');
+
+  // A movement SHORTER than the slop is still a tap.
+  t = tools.makeSelectTool();
+  ({ doc } = t.onDown(doc, empty, size));
+  ({ doc } = t.onMove(doc, { x: empty.x + tools.TAP_SLOP / 2, y: empty.y }, size));
+  assert.ok(Math.abs(doc.layers[0].panX - 0.3) < 1e-9, 'jitter does not pan');
+  assert.equal(t.onUp(doc).commit, false);
+
+  // DRAG: pans the background photo, without selecting it.
+  t = tools.makeSelectTool();
+  ({ doc } = t.onDown(doc, empty, size));
+  ({ doc } = t.onMove(doc, { x: empty.x - 0.2, y: empty.y + 0.1 }, size));
+  assert.ok(doc.layers[0].panX < 0.3 - 0.1, `panned, got ${doc.layers[0].panX}`);
+  assert.equal(t.selectedId(), null, 'panning the background does not arm Delete');
+  assert.equal(t.onUp(doc).commit, true, 'but it is one undo step');
+
+  // Clicking the photo ITSELF still selects it, so its panel controls work.
+  t = tools.makeSelectTool();
+  const pb = canvasMod.layerBounds(doc.layers[0], size);
+  ({ doc } = t.onDown(doc, { x: pb.x + pb.w / 2, y: pb.y + pb.h / 2 }, size));
+  assert.equal(t.selectedId(), photoId);
+
+  // An annotation UNDER a shrunk photo is still selectable where it shows.
+  assert.equal(canvasMod.hitTest(doc, { x: qrB.x + qrB.w / 2, y: qrB.y + qrB.h / 2 }, size), qrId);
+});
+
+test('a photo panned off the canvas can still be brought back', () => {
+  // Its footprint is unreachable, so only the empty-canvas drag can recover it
+  // — which is why that gesture exists.
   const size = { W: 800, H: 480 };
   let doc = model.createDocument(DEVICE);
   doc = model.addLayer(doc, model.photoLayer({
-    assetId: 'a', srcW: 400, srcH: 400, fit: 'contain', scale: 0.2, panX: 0.24, panY: 0.24,
+    assetId: 'a', srcW: 400, srcH: 400, fit: 'contain', scale: 0.2,
   }));
-  const id = doc.layers[0].id;
-  for (const pt of [{ x: 0.02, y: 0.02 }, { x: 0.5, y: 0.5 }, { x: 0.98, y: 0.98 }]) {
-    assert.equal(canvasMod.hitTest(doc, pt, size), id, `grabbable at ${JSON.stringify(pt)}`);
+  const t = tools.makeSelectTool();
+  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
+  ({ doc } = t.onMove(doc, { x: 40, y: 40 }, size));
+  t.onUp(doc);
+  const far = canvasMod.layerBounds(doc.layers[0], size);
+  assert.equal(canvasMod.hitTest(doc, { x: 0.1, y: 0.1 }, size), null,
+    'nothing to click at the far corner');
+
+  const t2 = tools.makeSelectTool();
+  ({ doc } = t2.onDown(doc, { x: 0.1, y: 0.1 }, size));
+  ({ doc } = t2.onMove(doc, { x: 0.02, y: 0.02 }, size));
+  const back = canvasMod.layerBounds(doc.layers[0], size);
+  assert.ok(back.x < far.x, `dragged back towards the canvas: ${back.x} < ${far.x}`);
+});
+
+test('the bleed range is CONTINUOUS across extent 1', () => {
+  // A branch at exactly 1 gave a barely-oversized element half an artboard of
+  // extra travel, so shrinking one back across the boundary made it jump.
+  const at = (e) => tools.bleedRange(e);
+  const eps = 1e-6;
+  const [loBelow, hiBelow] = at(1 - eps);
+  const [loAt, hiAt] = at(1);
+  const [loAbove, hiAbove] = at(1 + eps);
+  assert.ok(Math.abs(loBelow - loAt) < 1e-4 && Math.abs(loAt - loAbove) < 1e-4,
+    `lo jumped: ${loBelow} ${loAt} ${loAbove}`);
+  assert.ok(Math.abs(hiBelow - hiAt) < 1e-4 && Math.abs(hiAt - hiAbove) < 1e-4,
+    `hi jumped: ${hiBelow} ${hiAt} ${hiAbove}`);
+
+  // No step anywhere else either.
+  let prev = at(0.01);
+  for (let e = 0.02; e <= 6; e += 0.01) {
+    const cur = at(e);
+    assert.ok(Math.abs(cur[0] - prev[0]) < 0.02 && Math.abs(cur[1] - prev[1]) < 0.02,
+      `step at extent ${e.toFixed(2)}: ${JSON.stringify(prev)} -> ${JSON.stringify(cur)}`);
+    prev = cur;
   }
-  // Off the canvas entirely is still not a hit — the pointer is in the bleed.
-  assert.equal(canvasMod.hitTest(doc, { x: 1.4, y: 0.5 }, size), null);
-  // And an annotation on top still wins.
-  doc = model.addLayer(doc, model.qrLayer({ text: 'on top', x: 0.3, y: 0.3, size: 0.3 }));
-  const qrB = canvasMod.layerBounds(doc.layers[1], size);
-  assert.equal(canvasMod.hitTest(doc, { x: qrB.x + qrB.w / 2, y: qrB.y + qrB.h / 2 }, size),
-    doc.layers[1].id, 'the QR is above the background photo');
 });
 
 test('legacy migration preserves the SIZE the old box drew', () => {

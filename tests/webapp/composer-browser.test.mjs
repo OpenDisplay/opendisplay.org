@@ -415,6 +415,37 @@ window.resultPromise = (async () => {
   ok('transparentPhotoDoesNotBlackOut', !(bottom[0] < 40 && bottom[1] < 40 && bottom[2] < 40));
   transparentBitmap.close();
 
+  // A generous cap must NOT become "decode at native size": the memory budget
+  // is a separate limit from how sharp the caller asked for. Without it, a cap
+  // raised to follow a 4x zoom makes a big phone photo look "already small
+  // enough" and the full bitmap is allocated — the exact allocation the cap
+  // existed to prevent.
+  {
+    const sizeMod2 = await import('/app/v1/js/composer/image-size.js');
+    const src = new OffscreenCanvas(2000, 1000);   // 2 MP stand-in
+    const sctx = src.getContext('2d');
+    sctx.fillStyle = 'rgb(200,10,10)'; sctx.fillRect(0, 0, 2000, 1000);
+    const blob = await src.convertToBlob({ type: 'image/png' });
+
+    // Cap far above the source: unbudgeted, it decodes at native size.
+    const native = await sizeMod2.decodeBounded(blob, 9000);
+    ok('generousCapDecodesNative', native.width === 2000 && native.height === 1000);
+    native.close?.();
+
+    // The same call with a 0.5 MP budget must come back inside it, with the
+    // aspect ratio intact.
+    const budgeted = await sizeMod2.decodeBounded(blob, 9000, { budgetMegapixels: 0.5 });
+    const mp = (budgeted.width * budgeted.height) / 1e6;
+    ok('budgetBoundsTheDecode', mp <= 0.55);
+    ok('budgetKeepsAspect', Math.abs(budgeted.width / budgeted.height - 2) < 0.05);
+    budgeted.close?.();
+
+    // A source already inside the budget is untouched by it.
+    const small = await sizeMod2.decodeBounded(blob, 9000, { budgetMegapixels: 60 });
+    ok('budgetIgnoresSmallSources', small.width === 2000);
+    small.close?.();
+  }
+
   // --- bounded decode: dimensions come from the HEADER, never a full decode ---
   const sizeMod = await import('/app/v1/js/composer/image-size.js');
   const big = new OffscreenCanvas(1200, 300);

@@ -438,3 +438,45 @@ test('pending() reports whether a render is outstanding', () => {
     restore();
   }
 });
+
+// --- decode-size upgrades when the zoom outgrows the cached bitmap --------
+
+test('an asset can be replaced with a larger decode, and is held until ready', async () => {
+  const { client, results, restore } = clientWithFakeWorker();
+  try {
+    await client.addAsset('photo', {}, async () => ({}), 800);
+    await flush();
+    assert.equal(client.assetCap('photo'), 800);
+
+    // Zooming in wants a sharper decode. Dropping releases the worker's copy.
+    client.dropAsset('photo');
+    assert.equal(client.hasAsset('photo'), false);
+    assert.equal(client.assetCap('photo'), 0);
+    const pruned = FakeWorker.last.posted.filter((m) => m.type === 'prune');
+    assert.equal(pruned.length, 1, 'the worker was told to release it');
+    assert.deepEqual(pruned[0].keep, [], 'nothing else was kept by mistake');
+
+    // A render referencing it must NOT go out while the replacement is absent.
+    const id = client.request({ layers: [{ assetId: 'photo' }] }, {});
+    assert.equal(FakeWorker.last.renders().length, 0, 'held: no bitmap for that layer');
+
+    await client.addAsset('photo', {}, async () => ({}), 3200);
+    await flush();
+    assert.equal(client.assetCap('photo'), 3200);
+    assert.equal(FakeWorker.last.renders().length, 1, 'released once acknowledged');
+    FakeWorker.last.reply(id);
+    assert.deepEqual(results, [id]);
+  } finally {
+    restore();
+  }
+});
+
+test('dropAsset on an unknown id does nothing', () => {
+  const { client, restore } = clientWithFakeWorker();
+  try {
+    client.dropAsset('never-added');   // must not post, must not throw
+    assert.equal(FakeWorker.last, null);
+  } finally {
+    restore();
+  }
+});

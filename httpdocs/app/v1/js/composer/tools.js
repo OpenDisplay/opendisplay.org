@@ -38,15 +38,25 @@ export const MIN_ON_CANVAS = 0.3;
  * @returns {[number, number]} inclusive min/max for the box's leading edge
  */
 export function bleedRange(extent) {
+  // Enough of the element must stay on the artboard to grab it again — but
+  // never demand more overlap than the artboard minus the bleed, or something
+  // wider than the canvas is asked for more than exists and the interval
+  // inverts. (An inverted interval does not throw: Math.max(lo, Math.min(hi,v))
+  // silently pins every drag to one value.)
   const overlap = Math.min(extent * MIN_ON_CANVAS, 1 - CANVAS_BLEED);
-  let lo = overlap - extent;   // element's trailing edge sits at `overlap`
-  let hi = 1 - overlap;        // element's leading edge sits at 1 - overlap
-  if (extent <= 1) {
-    lo = Math.max(lo, -CANVAS_BLEED);
-    hi = Math.min(hi, 1 + CANVAS_BLEED - extent);
-  }
-  // Defensive: an inverted interval silently pins every drag to one value,
-  // which is exactly the failure this replaced.
+
+  // The drift cap. For an element that FITS this is CANVAS_BLEED — it may hang
+  // that far off. For one that does not fit, hanging off is inherent, so the
+  // cap becomes "do not uncover more than CANVAS_BLEED of the artboard".
+  // Written as min/max of the two rather than an `if`, so it is CONTINUOUS at
+  // extent == 1: a branch there gave a barely-oversized element about half an
+  // artboard of extra travel, and shrinking one back across the boundary made
+  // it jump.
+  const driftLo = Math.min(-CANVAS_BLEED, 1 - CANVAS_BLEED - extent);
+  const driftHi = Math.max(CANVAS_BLEED, 1 + CANVAS_BLEED - extent);
+
+  const lo = Math.max(overlap - extent, driftLo);
+  const hi = Math.min(1 - overlap, driftHi);
   return lo <= hi ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
 }
 
@@ -192,6 +202,11 @@ export function resizeBox(start, handle, delta) {
  * A pointer-down on a corner HANDLE of the selected layer starts a resize;
  * anywhere else on the layer starts a move.
  */
+/** A drag must travel this far (normalized) before an empty-canvas gesture is
+ *  treated as a background pan rather than a tap. od-app uses the same idea
+ *  with a 10pt tapSlop. */
+export const TAP_SLOP = 0.02;
+
 export function makeSelectTool({ onSelect, handlePx } = {}) {
   let selectedId = null;
   let dragId = null;
@@ -199,6 +214,9 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
   let strokeDrag = null; // {origin, points} — strokes move by translation
   let resize = null;     // {handle, origin, box} — corner-handle resize
   let moved = false;
+  // A pointer-down on empty canvas: it is a TAP (deselect) until it moves far
+  // enough to be a background pan.
+  let pendingPan = null;
   return {
     name: 'select',
     onDown(doc, pt, size) {
@@ -224,8 +242,18 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       strokeDrag = null;
       grab = null;
       resize = null;
+      pendingPan = null;
       onSelect?.(selectedId);
-      if (!dragId) return { doc, commit: false };
+      if (!dragId) {
+        // Nothing under the pointer. A photo is the canvas background, so a
+        // DRAG from here pans it — which is also the only way back for a photo
+        // panned off the canvas, where its footprint can no longer be hit.
+        // A TAP must still deselect, and must NOT select the photo: that would
+        // arm Delete from an empty-space click.
+        const photo = [...doc.layers].reverse().find((l) => l.type === 'photo');
+        if (photo) pendingPan = { id: photo.id, origin: pt };
+        return { doc, commit: false };
+      }
       const layer = doc.layers.find((l) => l.id === dragId);
       if (layer.type === 'stroke') {
         // A stroke has no origin — remember where the drag started and the
@@ -240,6 +268,22 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       return { doc, commit: false };
     },
     onMove(doc, pt, size) {
+      if (pendingPan) {
+        if (Math.hypot(pt.x - pendingPan.origin.x, pt.y - pendingPan.origin.y) < TAP_SLOP) {
+          return { doc, commit: false };
+        }
+        // Promoted to a background pan. Deliberately WITHOUT selecting it: the
+        // photo panel's controls are reached by clicking the photo itself.
+        const layer = doc.layers.find((l) => l.id === pendingPan.id);
+        const origin = pendingPan.origin;
+        pendingPan = null;
+        if (!layer) return { doc, commit: false };
+        dragId = layer.id;
+        // Anchored to where the gesture STARTED, not to where it crossed the
+        // slop — otherwise the travel spent proving it was a drag is thrown
+        // away and the photo lurches to catch up.
+        grab = { dx: origin.x - (layer.panX ?? 0), dy: origin.y - (layer.panY ?? 0) };
+      }
       if (!dragId) return { doc, commit: false };
       const layer = doc.layers.find((l) => l.id === dragId);
       if (!layer) return { doc, commit: false };
@@ -299,6 +343,7 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       grab = null;
       strokeDrag = null;
       resize = null;
+      pendingPan = null;
       moved = false;
       // Commit only if the layer actually moved: a plain click selects
       // without polluting the undo stack.

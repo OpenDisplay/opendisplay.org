@@ -240,15 +240,6 @@ export function hitTest(doc, { x, y }, size) {
       if (l.points.length === 1 && Math.hypot(l.points[0].x - x, l.points[0].y - y) <= tol) return l.id;
       continue;
     }
-    if (l.type === 'photo') {
-      // A photo is the canvas BACKGROUND, so anywhere on the canvas grabs it —
-      // od-app pans the photo from a drag anywhere the annotations do not
-      // claim. Hit-testing its footprint instead would make a photo that has
-      // been panned, shrunk or turned off the canvas impossible to select, and
-      // therefore impossible to bring back.
-      if (x >= 0 && x <= 1 && y >= 0 && y <= 1) return l.id;
-      continue;
-    }
     const b = layerBounds(l, size);
     if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return l.id;
   }

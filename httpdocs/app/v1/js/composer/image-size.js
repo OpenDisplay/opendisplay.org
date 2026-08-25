@@ -208,13 +208,24 @@ export class UnsupportedImageError extends Error {
  *   there is then no way to bound the decode. Failing closed beats decoding a
  *   50-megapixel AVIF at full size on a phone.
  */
-export async function decodeBounded(blob, cap, { imageOrientation = 'from-image' } = {}) {
+export async function decodeBounded(blob, cap, {
+  imageOrientation = 'from-image',
+  // Hard ceiling on the DECODE, independent of how sharp the caller asked for.
+  // Without it a generous cap means "no downscale needed", which decodes at
+  // native size — a 48-megapixel phone photo is ~192 MB of RGBA, and the
+  // resize-unsupported guard below never fires because no resize was asked
+  // for. Sharpness is a preference; this is a memory limit.
+  budgetMegapixels = null,
+} = {}) {
   const size = await readImageSize(blob).catch(() => null);
   if (!size || !(size.width > 0) || !(size.height > 0)) {
     throw new UnsupportedImageError();
   }
   const longest = Math.max(size.width, size.height);
   const megapixels = (size.width * size.height) / 1e6;
+  if (budgetMegapixels > 0 && megapixels > budgetMegapixels) {
+    cap = Math.min(cap, Math.max(1, Math.floor(longest * Math.sqrt(budgetMegapixels / megapixels))));
+  }
 
   // Refuse absurd sources BEFORE decoding. Where the browser ignores the
   // resize options the full bitmap is allocated first, so the limit there must
