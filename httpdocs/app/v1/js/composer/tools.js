@@ -19,26 +19,48 @@ export const CANVAS_BLEED = 0.25;
 export const MIN_ON_CANVAS = 0.3;
 
 /**
- * Legal range for one axis of an element's rendered box: it may cross the edge
- * up to CANVAS_BLEED of the artboard, provided MIN_ON_CANVAS of the element is
- * still on it. Big elements are limited by the bleed, small ones by the
- * visibility floor.
+ * Legal range for one axis of an element's rendered box.
+ *
+ * The rule is an OVERLAP requirement: enough of the element must stay on the
+ * artboard to grab it again. For something that fits, that is MIN_ON_CANVAS of
+ * the element, and the drift is additionally capped at CANVAS_BLEED so a small
+ * element cannot wander into the far bleed.
+ *
+ * An element LARGER than the artboard needs both caps lifted, and this is
+ * where the first version of this function broke: it asked for MIN_ON_CANVAS
+ * of the *element*, which past 1/MIN_ON_CANVAS exceeds the whole artboard and
+ * cannot be satisfied, and it capped the leading edge at -CANVAS_BLEED, which
+ * for a 3x-wide cover photo forbids panning at all. The interval inverted and
+ * every drag collapsed to one value. So the demanded overlap is never more
+ * than the artboard minus the bleed, and the drift caps apply only to elements
+ * that actually fit.
+ *
  * @returns {[number, number]} inclusive min/max for the box's leading edge
  */
 export function bleedRange(extent) {
-  const visible = extent * MIN_ON_CANVAS;
-  return [
-    Math.max(-CANVAS_BLEED, visible - extent),
-    Math.min(1 - visible, 1 + CANVAS_BLEED - extent),
-  ];
+  const overlap = Math.min(extent * MIN_ON_CANVAS, 1 - CANVAS_BLEED);
+  let lo = overlap - extent;   // element's trailing edge sits at `overlap`
+  let hi = 1 - overlap;        // element's leading edge sits at 1 - overlap
+  if (extent <= 1) {
+    lo = Math.max(lo, -CANVAS_BLEED);
+    hi = Math.min(hi, 1 + CANVAS_BLEED - extent);
+  }
+  // Defensive: an inverted interval silently pins every drag to one value,
+  // which is exactly the failure this replaced.
+  return lo <= hi ? [lo, hi] : [(lo + hi) / 2, (lo + hi) / 2];
 }
 
 /**
  * Keep a photo's PAN inside the bleed. A photo has no origin to clamp — the
  * pan slides its footprint about the canvas centre — so the rule is applied to
  * the footprint's leading edge and solved back into a pan.
+ *
+ * Exported because the footprint changes when the FIT, ZOOM or ROTATION
+ * changes, not only when the photo is dragged: without re-applying it there,
+ * shrinking or turning a panned photo could leave it entirely off-canvas and
+ * unreachable.
  */
-function clampPan(layer, panX, panY, size) {
+export function clampPan(layer, panX, panY, size) {
   const b = layerBounds({ ...layer, panX, panY }, size);
   if (!b) return { panX, panY };
   // Where the leading edge sits when the pan is zero.
@@ -110,9 +132,9 @@ export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
 export const MIN_LAYER_SIZE = 0.05;
 
 /**
- * Apply a corner-handle resize to a photo layer's box, keeping it on the
- * artboard and never smaller than MIN_LAYER_SIZE. Pure, so it is unit-testable
- * without pointer plumbing.
+ * Apply a corner-handle resize to a text or QR layer's box, keeping it within
+ * the bleed and never smaller than MIN_LAYER_SIZE. Pure, so it is unit-testable
+ * without pointer plumbing. (Photos do not use this: they have no box.)
  * @param {{x,y,w,h}} start  the box when the gesture began
  * @param {string} handle    'nw' | 'ne' | 'se' | 'sw'
  * @param {{x,y}} delta      pointer movement since the gesture began

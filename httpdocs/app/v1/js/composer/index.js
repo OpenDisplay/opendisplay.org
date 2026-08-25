@@ -494,13 +494,24 @@ function reportError(err) {
  * The editing proxy (1600px) can be too SMALL for a large panel, but a modern
  * 48-megapixel phone photo decoded at full size would cost hundreds of MB per
  * asset — on the device most likely to be a phone. The most detail any layer
- * can use is its box in panel pixels, so cap there (×2 for headroom on `cover`
- * crops). decodeBounded reads the header first, so the full-size bitmap is
- * never allocated at all.
+ * can use is what it is DRAWN at, so cap there. decodeBounded reads the header
+ * first, so the full-size bitmap is never allocated at all.
+ *
+ * The bound has to follow the zoom. It used to be a flat 2x the panel's
+ * longest side, which was reasonable when a photo could not be drawn larger
+ * than its box; a photo zoomed to 4x now needs four times as many source
+ * pixels for the visible crop, and capping at the old value would send a
+ * visibly softer image than the preview promised.
  */
-function decodeForPanel(blob, panel) {
+function decodeForPanel(blob, panel, doc_ = null, assetId = null) {
   const { width, height } = model.artboardSize(panel);
-  return decodeBounded(blob, Math.max(1, Math.max(width, height) * 2));
+  // Largest zoom any layer applies to THIS asset (the same photo may appear
+  // more than once at different zooms; the sharpest one wins).
+  const zoom = (doc_?.layers ?? [])
+    .filter((l) => l.type === 'photo' && l.assetId === assetId)
+    .reduce((m, l) => Math.max(m, l.scale ?? 1), 1);
+  const headroom = 2 * Math.max(1, Math.min(zoom, model.MAX_PHOTO_SCALE));
+  return decodeBounded(blob, Math.max(1, Math.round(Math.max(width, height) * headroom)));
 }
 
 /** Decode a ≤PROXY_MAX_PX editing proxy for the interactive canvas; the
@@ -604,10 +615,24 @@ function rotateSelectedPhoto(delta) {
   if (!layer) return;
   const next = (((layer.rotationQuarterTurns ?? 0) + delta) % 4 + 4) % 4;
   try {
-    session.apply(model.updateLayer(doc(), layer.id, { rotationQuarterTurns: next }));
+    session.apply(model.updateLayer(doc(), layer.id,
+      // Turning swaps the footprint's axes, so a pan that was legal before can
+      // put the photo out of reach. Re-apply the rule against the NEW shape.
+      withPanInBounds({ ...layer, rotationQuarterTurns: next })));
   } catch (err) {
     reportError(err);
   }
+}
+
+/** A patch for `layer` that keeps its pan legal for its CURRENT footprint. */
+function withPanInBounds(layer) {
+  const pan = tools.clampPan(layer, layer.panX ?? 0, layer.panY ?? 0, size());
+  return {
+    rotationQuarterTurns: layer.rotationQuarterTurns,
+    fit: layer.fit,
+    scale: layer.scale,
+    ...pan,
+  };
 }
 
 function updatePhotoControls() {
@@ -637,7 +662,15 @@ const ADJUST_INPUTS = {
 function wirePhotoControls() {
   $('photoFit').addEventListener('change', (ev) => {
     const layer = selectedPhotoLayer();
-    if (layer) session.apply(model.updateLayer(doc(), layer.id, { fit: ev.target.value }));
+    if (!layer) return;
+    // Each mode is a clean framing baseline, so switching resets the zoom and
+    // the pan — od-app's ComposerView.setFitMode does exactly this. It also
+    // means a fit change can never stand a photo somewhere its new footprint
+    // cannot be reached from.
+    session.apply(model.updateLayer(doc(), layer.id, {
+      fit: ev.target.value, scale: 1, panX: 0, panY: 0,
+    }));
+    $('photoSize').value = '1';
   });
   for (const [id, key] of Object.entries(ADJUST_INPUTS)) {
     // `input` previews live; `change` commits one history entry per drag.
@@ -659,12 +692,13 @@ function wirePhotoControls() {
   $('photoSize').addEventListener('input', () => {
     const layer = selectedPhotoLayer();
     if (!layer) return;
-    // Zoom on top of the fit baseline — od-app's pinch, as a slider. The pan
-    // is left alone: zooming about the photo's own centre is what a pinch
-    // does, and re-clamping here would drag the picture sideways as you zoom.
-    session.updateGesture(model.updateLayer(doc(), layer.id, {
-      scale: model.clampPhotoScale(Number($('photoSize').value)),
-    }));
+    // Zoom on top of the fit baseline — od-app's pinch, as a slider. Zooming
+    // about the photo's own centre is what a pinch does, so the pan is kept —
+    // but it must still be re-clamped, because SHRINKING a photo that was
+    // panned to the edge can leave its smaller footprint entirely off-canvas.
+    const scale = model.clampPhotoScale(Number($('photoSize').value));
+    session.updateGesture(model.updateLayer(doc(), layer.id,
+      withPanInBounds({ ...layer, scale })));
   });
   $('connectBtn').addEventListener('click', () => { toggleConnection(); });
   $('viewRotateLeft').addEventListener('click', () => { rotateView(-1); });
@@ -747,7 +781,8 @@ function requestDitherNow() {
             + 'or re-import the image to send this composition.',
           );
         }
-        await client.addAsset(assetId, asset.blob, (b) => decodeForPanel(b, current.panel));
+        await client.addAsset(assetId, asset.blob,
+          (b) => decodeForPanel(b, current.panel, current, assetId));
       })
       .catch((err) => {
         if (!isCurrent(owner, ownerGen)) return;
@@ -1232,6 +1267,21 @@ export async function openComposer(record) {
       owner.setBitmap(layer.assetId, bmp);
     } catch (err) {
       reportError(err);
+    }
+    // Backfill the natural size for drafts saved before it was recorded. Every
+    // photo's geometry is derived from it — the bitmap cannot stand in, because
+    // the editor's is a downscaled proxy — so a layer without it falls back to
+    // the canvas dimensions and draws at the wrong aspect until this lands.
+    if (layer.srcW == null || layer.srcH == null) {
+      try {
+        const natural = await readImageSize(asset.blob);
+        if (!isCurrent(owner, gen)) return;
+        if (natural?.width > 0 && natural?.height > 0) {
+          owner.setDocumentQuietly(model.updateLayer(owner.doc(), layer.id, {
+            srcW: natural.width, srcH: natural.height,
+          }));
+        }
+      } catch { /* leave the fallback in place; it is at least self-consistent */ }
     }
   }
 

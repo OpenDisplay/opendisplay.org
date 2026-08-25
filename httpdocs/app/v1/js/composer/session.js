@@ -198,6 +198,23 @@ export function createSession({
       notify();
     },
 
+    /**
+     * Replace the document WITHOUT recording an edit.
+     *
+     * For repairs the user did not ask for and must not be charged for —
+     * backfilling a photo's natural size into a draft saved before that field
+     * existed. It cannot go through apply(): that would push an undo entry the
+     * user cannot explain, mark the session dirty, and autosave a change they
+     * never made. The document is replaced in place, so undo still leads back
+     * to whatever they last did themselves.
+     */
+    setDocumentQuietly(next) {
+      validate(next);
+      session.history = { ...session.history, present: next };
+      if (session.working) session.working = next;
+      notify();
+    },
+
     isDirty,
 
     /** Discrete edit outside a gesture (place text/QR/photo, delete layer).

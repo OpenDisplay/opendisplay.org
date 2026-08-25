@@ -54,10 +54,16 @@ export function createDocument(device) {
 
 // --- layer constructors (all geometry normalized 0…1) ---
 
-/** How a photo is mapped onto the CANVAS, mirroring od-app's PhotoFitMode:
+/** How a photo is mapped onto the CANVAS:
  *   cover   — aspect-fill: covers the whole canvas, overflow cropped (default)
  *   contain — aspect-fit: the whole photo is visible inside the canvas
  *   none    — natural pixel size, neither scaled up nor down
+ *
+ * The first two are od-app's PhotoFitMode. The third is NOT: od-app's is
+ * `stretch` (non-uniform fill). This app offers `none` instead, deliberately —
+ * a distortion-free natural size is more useful on a panel whose pixels are
+ * expensive than a squashed one. The reference frame and the reset-on-change
+ * behaviour do follow od-app.
  *
  * The reference frame is the canvas, NOT any per-photo rectangle: a photo is
  * the canvas background, exactly as in od-app, where PhotoLayout.drawRect is
@@ -135,9 +141,10 @@ export function clampPhotoScale(v) {
  */
 export function migrateDocument(doc) {
   if (!doc?.layers?.some(isLegacyPhoto)) return doc;
+  const { width: W, height: H } = artboardSize(doc.panel ?? {});
   return {
     ...doc,
-    layers: doc.layers.map((l) => (isLegacyPhoto(l) ? migrateLegacyPhoto(l) : l)),
+    layers: doc.layers.map((l) => (isLegacyPhoto(l) ? migrateLegacyPhoto(l, W, H) : l)),
   };
 }
 
@@ -145,7 +152,7 @@ function isLegacyPhoto(l) {
   return l?.type === 'photo' && l.panX === undefined && l.w !== undefined;
 }
 
-function migrateLegacyPhoto(l) {
+function migrateLegacyPhoto(l, W, H) {
   const w = Number(l.w) || 1;
   const h = Number(l.h) || 1;
   const {
@@ -156,9 +163,42 @@ function migrateLegacyPhoto(l) {
     // Box centre, relative to the canvas centre.
     panX: (Number(x) || 0) + w / 2 - 0.5,
     panY: (Number(y) || 0) + h / 2 - 0.5,
-    // The box's size was its zoom in all but name.
-    scale: clampPhotoScale(w),
+    scale: clampPhotoScale(legacyZoom(l, w, h, W, H)),
   };
+}
+
+/**
+ * The zoom that reproduces what the old box actually drew.
+ *
+ * "scale = box width" is only right when the box was square in normalized
+ * units, and it is flatly wrong for `none`, which drew at natural pixel size
+ * no matter what the box was — treating the box width as a zoom there shrinks
+ * a 400px photo in a 0.4-wide box to 160px, which is silent data loss rather
+ * than an approximation.
+ *
+ * For cover/contain the honest conversion is the ratio of the two fit factors:
+ * what the box demanded over what the canvas now demands. The per-photo crop
+ * the box also provided cannot be reproduced — it no longer exists — but the
+ * SIZE can be preserved exactly.
+ */
+function legacyZoom(l, w, h, W, H) {
+  if (l.fit === 'none') return 1;
+  const srcW = Number(l.srcW);
+  const srcH = Number(l.srcH);
+  if (!(srcW > 0 && srcH > 0 && W > 0 && H > 0)) {
+    // No source dimensions to reason from (an even older draft): the box size
+    // is the best proxy available, and matches what the box did for a photo
+    // whose aspect was close to the panel's.
+    return w;
+  }
+  const rot = (l.rotationQuarterTurns ?? 0) & 0x03;
+  const swap = rot === 1 || rot === 3;
+  const oW = swap ? srcH : srcW;
+  const oH = swap ? srcW : srcH;
+  const pick = l.fit === 'cover' ? Math.max : Math.min;
+  const inBox = pick((w * W) / oW, (h * H) / oH);
+  const inCanvas = pick(W / oW, H / oH);
+  return inCanvas > 0 ? inBox / inCanvas : w;
 }
 
 export function strokeLayer({ points = [], color = 0, width = 0.01 }) {

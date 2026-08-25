@@ -111,11 +111,16 @@ export function applyAdjustments(data, adj) {
  *   dw/dh are the draw size in the SOURCE image's own axes (the rotation turns
  *   them into the fw/fh footprint); cx/cy are the centre.
  */
-export function photoPlacement(layer, W, H, srcAspect) {
+export function photoPlacement(layer, W, H) {
   const rot = (layer.rotationQuarterTurns ?? 0) & 0x03;
   const swap = rot === 1 || rot === 3;
-  const srcW = layer.srcW ?? srcAspect?.width ?? W;
-  const srcH = layer.srcH ?? srcAspect?.height ?? H;
+  // Deliberately NOT falling back to the bitmap: layerBounds has no bitmap to
+  // offer, so a bitmap fallback here would make hit-testing and clamping
+  // describe a different rectangle from the one drawn. One fallback, used by
+  // both. (Photos imported since srcW/srcH existed always carry them, and
+  // openComposer backfills older drafts from the stored original.)
+  const srcW = layer.srcW ?? W;
+  const srcH = layer.srcH ?? H;
   // The footprint the fit has to satisfy is the ORIENTED one; the size handed
   // to drawImage stays in the source's axes. Doing both is the double-swap
   // that silently changes the aspect ratio.
@@ -143,7 +148,7 @@ export function photoPlacement(layer, W, H, srcAspect) {
 
 function drawPhoto(ctx, layer, bitmap, W, H) {
   if (!bitmap) return;
-  const { dw, dh, fw, fh, cx, cy, rot } = photoPlacement(layer, W, H, bitmap);
+  const { dw, dh, fw, fh, cx, cy, rot } = photoPlacement(layer, W, H);
 
   const adj = layer.adjustments;
   const needsAdjust = adj && (

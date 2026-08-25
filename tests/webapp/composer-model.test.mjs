@@ -559,16 +559,60 @@ test('dragging a stroke translates it as a unit, bounded by the same bleed', () 
 
 test('a stroke drag that cannot move (already at the limit) does not commit', () => {
   let doc = model.createDocument(DEVICE);
-  // Spans the whole artboard, so its bleed range is a single point.
+  // Parked exactly at the bleed limit for its own extent, then pushed further.
+  const extent = 0.4;
+  const [, hiX] = tools.bleedRange(extent);
+  const [, hiY] = tools.bleedRange(extent);
   doc = model.addLayer(doc, model.strokeLayer({
-    points: [{ x: -tools.CANVAS_BLEED, y: -tools.CANVAS_BLEED },
-             { x: 1, y: 1 }],
+    points: [{ x: hiX, y: hiY }, { x: hiX + extent, y: hiY + extent }],
   }));
   const t = tools.makeSelectTool();
   const size = { W: 800, H: 480 };
-  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
-  ({ doc } = t.onMove(doc, { x: -5, y: -5 }, size));
+  ({ doc } = t.onDown(doc, { x: hiX + extent / 2, y: hiY + extent / 2 }, size));
+  ({ doc } = t.onMove(doc, { x: 5, y: 5 }, size));
   assert.equal(t.onUp(doc).commit, false, 'no movement was possible, so no history entry');
+});
+
+test('the clamp interval never inverts, at any extent', () => {
+  // An inverted interval does not throw — it silently pins every drag to a
+  // single value, which is how an oversized photo became unpannable.
+  for (const extent of [0, 0.01, 0.3, 0.99, 1, 1.01, 1.5, 2, 3, 4, 10]) {
+    const [lo, hi] = tools.bleedRange(extent);
+    assert.ok(lo <= hi, `extent ${extent} inverted: [${lo}, ${hi}]`);
+    assert.ok(Number.isFinite(lo) && Number.isFinite(hi), `extent ${extent} not finite`);
+    if (extent > 0) {
+      assert.ok(hi > lo, `extent ${extent} has no room to move: [${lo}, ${hi}]`);
+      // Whatever the size, the element still overlaps the canvas at both ends.
+      assert.ok(lo + extent > 0, `extent ${extent}: lost off the near edge`);
+      assert.ok(hi < 1, `extent ${extent}: lost off the far edge`);
+    }
+  }
+});
+
+test('an oversized photo can be panned across its full width', () => {
+  // A 3x-wide cover footprint: the old rule demanded 30% of the ELEMENT stay
+  // on canvas, which past 1/MIN_ON_CANVAS exceeds the whole canvas, and capped
+  // the leading edge at the bleed, which forbids panning something bigger than
+  // the canvas. Both had to go for large extents.
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({
+    assetId: 'a', srcW: 2400, srcH: 480, fit: 'cover',
+  }));
+  const t = tools.makeSelectTool();
+  const size = { W: 800, H: 480 };
+  const b = canvasMod.layerBounds(doc.layers[0], size);
+  assert.ok(b.w > 2.5, `the footprint really is oversized: ${b.w}`);
+
+  ({ doc } = t.onDown(doc, { x: 0.5, y: 0.5 }, size));
+  ({ doc } = t.onMove(doc, { x: 0.4, y: 0.5 }, size));
+  assert.ok(Math.abs(doc.layers[0].panX - (-0.1)) < 1e-9, 'a small drag pans by the delta');
+  ({ doc } = t.onMove(doc, { x: 0.2, y: 0.5 }, size));
+  assert.ok(Math.abs(doc.layers[0].panX - (-0.3)) < 1e-9, 'and keeps panning');
+  // It can reach far enough to bring the far end of the image into view.
+  ({ doc } = t.onMove(doc, { x: -50, y: 0.5 }, size));
+  const far = canvasMod.layerBounds(doc.layers[0], size);
+  assert.ok(far.x + far.w < 1 + 1e-6 && far.x + far.w > 1 - tools.CANVAS_BLEED - 1e-6,
+    `the image's far edge reached the canvas: ${far.x + far.w}`);
 });
 
 // --- resize handles ---
@@ -798,4 +842,97 @@ test('a draft written before photo rotation existed still validates', () => {
   const bad = model.addLayer(model.createDocument(DEVICE),
     { ...model.photoLayer({ assetId: 'a' }), rotationQuarterTurns: 9 });
   assert.throws(() => render.validateDocument(bad), /quarter turns/);
+});
+
+test('shrinking or turning a panned photo cannot strand it off-canvas', () => {
+  const size = { W: 800, H: 480 };
+  // Panned hard to one side while large...
+  const big = model.photoLayer({ assetId: 'a', srcW: 2400, srcH: 480, fit: 'cover', scale: 1 });
+  const panned = { ...big, ...tools.clampPan(big, -50, 0, size) };
+  const bPanned = canvasMod.layerBounds(panned, size);
+  assert.ok(bPanned.x < -1, 'it really is panned a long way');
+
+  // ...then shrunk. Without re-clamping, the small footprint stays where the
+  // big one was allowed to be — which is nowhere near the canvas.
+  const shrunk = { ...panned, scale: 0.2 };
+  const stranded = canvasMod.layerBounds(shrunk, size);
+  assert.ok(stranded.x + stranded.w < 0, 'the un-reclamped footprint IS off-canvas');
+
+  const fixed = { ...shrunk, ...tools.clampPan(shrunk, shrunk.panX, shrunk.panY, size) };
+  const b = canvasMod.layerBounds(fixed, size);
+  assert.ok(b.x < 1 && b.x + b.w > 0, `re-clamped back into view: ${JSON.stringify(b)}`);
+
+  // Same for a quarter turn, which swaps the footprint's axes.
+  const turned = { ...panned, rotationQuarterTurns: 1 };
+  const turnedFixed = { ...turned, ...tools.clampPan(turned, turned.panX, turned.panY, size) };
+  const tb = canvasMod.layerBounds(turnedFixed, size);
+  assert.ok(tb.x < 1 && tb.x + tb.w > 0, `turned photo still reachable: ${JSON.stringify(tb)}`);
+});
+
+test('a photo is grabbable anywhere on the canvas, wherever it has been panned', () => {
+  // od-app pans the photo from a drag anywhere the annotations do not claim.
+  // Hit-testing the footprint would make a photo panned off the canvas
+  // impossible to select, and so impossible to bring back.
+  const size = { W: 800, H: 480 };
+  let doc = model.createDocument(DEVICE);
+  doc = model.addLayer(doc, model.photoLayer({
+    assetId: 'a', srcW: 400, srcH: 400, fit: 'contain', scale: 0.2, panX: 0.24, panY: 0.24,
+  }));
+  const id = doc.layers[0].id;
+  for (const pt of [{ x: 0.02, y: 0.02 }, { x: 0.5, y: 0.5 }, { x: 0.98, y: 0.98 }]) {
+    assert.equal(canvasMod.hitTest(doc, pt, size), id, `grabbable at ${JSON.stringify(pt)}`);
+  }
+  // Off the canvas entirely is still not a hit — the pointer is in the bleed.
+  assert.equal(canvasMod.hitTest(doc, { x: 1.4, y: 0.5 }, size), null);
+  // And an annotation on top still wins.
+  doc = model.addLayer(doc, model.qrLayer({ text: 'on top', x: 0.3, y: 0.3, size: 0.3 }));
+  const qrB = canvasMod.layerBounds(doc.layers[1], size);
+  assert.equal(canvasMod.hitTest(doc, { x: qrB.x + qrB.w / 2, y: qrB.y + qrB.h / 2 }, size),
+    doc.layers[1].id, 'the QR is above the background photo');
+});
+
+test('legacy migration preserves the SIZE the old box drew', () => {
+  const panel = { width: 800, height: 480, colorScheme: 4, rotationQuarterTurns: 0 };
+  const base = {
+    id: 'L1', type: 'photo', assetId: 'a', srcW: 400, srcH: 400,
+    adjustments: { exposure: 1, saturation: 1, shadows: 0, highlights: 0 },
+  };
+  const migrate = (l) => model.migrateDocument({
+    ...model.createDocument({ ...DEVICE, ...panel }), panel, layers: [l],
+  }).layers[0];
+
+  // 'none' NEVER depended on the box: it drew at natural pixel size. Carrying
+  // the box width across as a zoom would shrink a 400px photo to 160px.
+  assert.equal(migrate({ ...base, fit: 'none', x: 0.2, y: 0.2, w: 0.4, h: 0.4 }).scale, 1);
+
+  // contain in a half-size box drew at half the size it would in the canvas.
+  const half = migrate({ ...base, fit: 'contain', x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+  const full = migrate({ ...base, fit: 'contain', x: 0, y: 0, w: 1, h: 1 });
+  assert.equal(full.scale, 1, 'a full-canvas photo is an exact no-op');
+  assert.ok(Math.abs(half.scale - 0.5) < 1e-9, `half-box contain -> zoom 0.5, got ${half.scale}`);
+
+  // A NON-SQUARE box: "scale = w" was simply the wrong number here.
+  const wide = migrate({ ...base, fit: 'contain', x: 0, y: 0.25, w: 1, h: 0.5 });
+  // contain of a square source in a 800x240 box fits the height: 240/400.
+  // In the full canvas it fits the height too: 480/400. So the zoom is 0.5.
+  assert.ok(Math.abs(wide.scale - 0.5) < 1e-9, `non-square box -> zoom 0.5, got ${wide.scale}`);
+
+  // Without source dimensions there is nothing to reason from; the box width
+  // is the documented fallback rather than a silent guess.
+  const { srcW, srcH, ...noDims } = base;
+  assert.equal(migrate({ ...noDims, fit: 'cover', x: 0, y: 0, w: 0.4, h: 0.4 }).scale, 0.4);
+});
+
+test('photoPlacement never falls back to a bitmap, so bounds match the render', () => {
+  // layerBounds has no bitmap to offer. If drawing used one and bounds did
+  // not, the two would describe different rectangles and hit-testing would
+  // point at empty canvas.
+  const legacy = { id: 'L1', type: 'photo', assetId: 'a', fit: 'contain', panX: 0, panY: 0, scale: 1 };
+  const p = render.photoPlacement(legacy, 800, 480);
+  assert.equal(p.fw, 800, 'falls back to the canvas, in both callers');
+  assert.equal(p.fh, 480);
+  const b = canvasMod.layerBounds(legacy, { W: 800, H: 480 });
+  assert.ok(Math.abs(b.w - 1) < 1e-9 && Math.abs(b.h - 1) < 1e-9);
+  // photoPlacement takes no fourth argument any more.
+  assert.equal(render.photoPlacement.length, 3);
 });

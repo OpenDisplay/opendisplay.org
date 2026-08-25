@@ -213,7 +213,12 @@ window.resultPromise = (async () => {
   const photoBitmap = await createImageBitmap(photoCanvas);
 
   let pdoc = model.createDocument(DEVICE);
-  pdoc = model.addLayer(pdoc, model.photoLayer({ assetId: 'p1', x: 0, y: 0, w: 1, h: 1, fit: 'contain' }));
+  // srcW/srcH as a real import records them: geometry is derived from the
+  // SOURCE size, never from the bitmap in hand, because the editor holds a
+  // proxy and the send path a larger decode.
+  pdoc = model.addLayer(pdoc, model.photoLayer({
+    assetId: 'p1', fit: 'contain', srcW: 40, srcH: 20,
+  }));
   const pr = render.renderDocument(pdoc, new Map([['p1', photoBitmap]]));
   const ppx = pr.ctx.getImageData(0, 0, pr.width, pr.height).data;
   let sawPhoto = false, photoOpaque = true;
@@ -240,7 +245,7 @@ window.resultPromise = (async () => {
   frctx.fillStyle = 'rgb(200,40,40)'; frctx.fillRect(0, 0, 80, 40);
   const bigBitmap = await createImageBitmap(fullResCanvas);
 
-  const ndoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'none', srcW: 40, srcH: 20 });
+  const ndoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'none' });
   const nProxy = render.renderDocument(ndoc, new Map([['p1', photoBitmap]]));
   const nFull = render.renderDocument(ndoc, new Map([['p1', bigBitmap]]));
   const rowOf = (c) => [...c.ctx.getImageData(0, Math.floor(c.height / 2), c.width, 1).data];
@@ -259,7 +264,8 @@ window.resultPromise = (async () => {
   ok('noneDiffersFromContain', JSON.stringify(rowOf(nProxy)) !== JSON.stringify(containRow));
 
   // A source BIGGER than the artboard is cropped by the box, not shrunk.
-  const cropDoc = model.updateLayer(pdoc, pdoc.layers[0].id, { fit: 'none', srcW: 400, srcH: 200 });
+  const cropDoc = model.updateLayer(pdoc, pdoc.layers[0].id,
+    { fit: 'none', srcW: 400, srcH: 200 });
   const cropped = render.renderDocument(cropDoc, new Map([['p1', photoBitmap]]));
   const cropRow = [...cropped.ctx.getImageData(0, Math.floor(cropped.height / 2), cropped.width, 1).data];
   let allPhoto = true;
@@ -279,7 +285,7 @@ window.resultPromise = (async () => {
   const rotBitmap = await createImageBitmap(rotSrc);
 
   const photoRotDoc = (patch) => model.addLayer(model.createDocument(DEVICE),
-    model.photoLayer({ assetId: 'p1', x: 0, y: 0, w: 1, h: 1, ...patch }));
+    model.photoLayer({ assetId: 'p1', srcW: 40, srcH: 20, ...patch }));
   const renderRot = (patch) => render.renderDocument(photoRotDoc(patch), new Map([['p1', rotBitmap]]));
   // Where the yellow marker ended up, as a fraction of the artboard.
   const markerAt = (r) => {
@@ -346,7 +352,10 @@ window.resultPromise = (async () => {
   ok('noneRotatedResolutionIndependent', nSmall.w === nBig.w && nSmall.h === nBig.h);
 
   // An ADJUSTED photo rotates identically to an unadjusted one: the rotation
-  // has to happen inside the scratch canvas, not on the composite.
+  // has to happen inside the scratch canvas, not on the composite. Compared by
+  // GEOMETRY, not pixel-for-pixel — the adjusted path rasterises onto a
+  // transparent scratch canvas and round-trips premultiplied alpha, which can
+  // shift an edge pixel by one level even with a no-op adjustment.
   const plainBox = drawnBox(renderRot({ fit: 'contain', rotationQuarterTurns: 1 }));
   const adjBox = drawnBox(renderRot({
     fit: 'contain', rotationQuarterTurns: 1,
