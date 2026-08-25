@@ -28,6 +28,9 @@ let grantedById = new Map(); // bleId -> BluetoothDevice
 let connectedRecordId = null;
 let busy = false;
 let bluetoothGated = false;
+/** Did getDevices() actually answer? If not, `grantedById` being empty says
+ *  nothing about any device, and the UI must not pretend otherwise. */
+let sweepUsable = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,27 +47,70 @@ function reportError(err) {
 
 async function sweepPermissions() {
   grantedById = new Map();
+  sweepUsable = false;
   try {
     // Timeboxed: getDevices() can hang where no Bluetooth backend exists
     // (headless, some platforms). A missed sweep only degrades rows to
     // chooser-per-connect — it must never stall the whole app.
     const sweep = navigator.bluetooth?.getDevices?.();
     if (!sweep) return;
+    let timedOut = false;
     const devices = await Promise.race([
       sweep,
-      new Promise((r) => setTimeout(() => r([]), 3000)),
+      new Promise((r) => setTimeout(() => { timedOut = true; r([]); }, 3000)),
     ]);
+    if (timedOut) return;
     for (const d of devices) grantedById.set(d.id, d);
+    sweepUsable = true;
   } catch {
     /* getDevices unavailable: every row degrades to chooser-per-connect */
   }
 }
 
+/**
+ * The badge on a device card.
+ *
+ * This used to say "Permission missing" for three completely different
+ * situations, only one of which was even a permission:
+ *
+ *   1. a record with no bleId — imported from a file, or never bound in this
+ *      browser. Nothing was ever granted, so nothing can be missing;
+ *   2. getDevices() unavailable or timed out — the sweep map is empty, so
+ *      EVERY row was labelled as if its permission had been revoked, when in
+ *      fact we simply could not tell;
+ *   3. genuinely no persisted permission for this device in this profile.
+ *
+ * None of the three is a fault, and in all three the device still connects —
+ * the browser just shows its chooser first. So the badge now says what will
+ * HAPPEN rather than implying something is broken, and says nothing at all
+ * when it does not know.
+ *
+ * @returns {[string, string, string]|null} [kind, label, explanation], or null
+ *          for "no useful thing to say"
+ */
 function permissionChip(record) {
-  if (record.recordId === connectedRecordId) return ['connected', 'Connected'];
-  if (!record.bleId) return ['missing', 'Permission missing'];
-  if (grantedById.has(record.bleId)) return ['granted', 'Permission available'];
-  return ['missing', 'Permission missing'];
+  if (record.recordId === connectedRecordId) {
+    return ['connected', 'Connected', 'Connected to this device right now.'];
+  }
+  if (!record.bleId) {
+    return ['neutral', 'Not linked yet',
+      'Saved, but never matched to a physical tag in this browser — an '
+      + 'imported device starts this way. Connect once and pick it from the '
+      + 'browser\'s list to link it.'];
+  }
+  if (!sweepUsable) {
+    // This browser cannot tell us what it remembers. Claiming either answer
+    // would be a guess, and the pessimistic guess is the alarming one.
+    return null;
+  }
+  if (grantedById.has(record.bleId)) {
+    return ['granted', 'Ready to connect',
+      'This browser remembers permission for this tag, so Connect goes '
+      + 'straight through without asking you to choose it.'];
+  }
+  return ['neutral', 'Choose on connect',
+    'This browser has no remembered permission for this tag, so Connect will '
+    + 'ask you to pick it from a list first. Nothing is wrong.'];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +174,7 @@ async function renderList() {
 }
 
 function deviceCard(record) {
-  const [chipKind, chipText] = permissionChip(record);
+  const badge = permissionChip(record);
   const card = document.createElement('article');
   card.className = 'odapp-card';
   card.dataset.recordId = record.recordId;
@@ -145,9 +191,14 @@ function deviceCard(record) {
     `${record.width}×${record.height} · scheme ${record.colorScheme}${rot}` +
     `${record.firmwareVersion ? ` · fw ${record.firmwareVersion}` : ''} · seen ${fmtLastSeen(record.lastSeen)}`;
 
-  const chip = document.createElement('span');
-  chip.className = `odapp-chip odapp-chip--${chipKind}`;
-  chip.textContent = chipText;
+  let chip = null;
+  if (badge) {
+    const [chipKind, chipText, chipWhy] = badge;
+    chip = document.createElement('span');
+    chip.className = `odapp-chip odapp-chip--${chipKind}`;
+    chip.textContent = chipText;
+    chip.title = chipWhy;
+  }
 
   const actions = document.createElement('div');
   actions.className = 'odapp-card__actions';
@@ -191,7 +242,7 @@ function deviceCard(record) {
   }).catch(() => {});
   btn('Forget', () => forgetFlow(record));
 
-  card.append(title, chip, meta, actions);
+  card.append(...[title, chip, meta, actions].filter(Boolean));
   return card;
 }
 

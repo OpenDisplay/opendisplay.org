@@ -158,6 +158,9 @@
 
 .odapp-chip--connected { border-color: #2c8a2c; color: #2c8a2c; }
 .odapp-chip--granted { border-color: #4a7ab8; color: #4a7ab8; }
+/* Deliberately NOT a warning colour: "choose on connect" and "not linked yet"
+   are normal states, not faults. Amber here read as "something is wrong". */
+.odapp-chip--neutral { border-color: rgba(128, 128, 128, 0.55); opacity: 0.85; }
 .odapp-chip--missing { border-color: #b8862c; color: #b8862c; }
 
 .odapp__filebtn { display: inline-block; }
