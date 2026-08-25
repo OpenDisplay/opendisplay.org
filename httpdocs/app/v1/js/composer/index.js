@@ -1222,10 +1222,12 @@ export function hasSession() {
  */
 export async function refreshConnectionState() {
   if (!session) return;
+  const owner = session;
+  const gen = owner.generation();
   // Reflect the adapter's state at once: a disconnect must disable Send now,
   // not after an IndexedDB read that could be slow or blocked.
   updateSendControls();
-  const recordId = session.session.device?.recordId;
+  const recordId = owner.session.device?.recordId;
   if (recordId) {
     // Re-read the record: a repair/rebind may have installed the real binding
     // (imported records start with bleId null), and comparing the connection
@@ -1233,9 +1235,13 @@ export async function refreshConnectionState() {
     // disabled forever.
     try {
       const fresh = await store.getDevice(recordId);
-      if (fresh) session.setDevice(fresh);
+      // "Still a session" is NOT enough. setDevice only checks that the record
+      // ids match, so closing this composer and reopening the SAME device
+      // builds a new session that would happily accept this older read — and
+      // with it whatever the record looked like at the earlier moment.
+      if (fresh && isCurrent(owner, gen)) owner.setDevice(fresh);
     } catch { /* fall through to the cached copy */ }
   }
-  if (!session) return;   // a switch may have happened while we read
+  if (!isCurrent(owner, gen)) return;   // a switch happened while we read
   updateSendControls();
 }

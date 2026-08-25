@@ -688,3 +688,15 @@ test('flush does NOT reject when the final catch-up write wins', async () => {
   assert.equal(s.isDirty(), false);
   s.release();
 });
+
+test('setDevice only accepts a record for the session it belongs to', () => {
+  // The guard that makes refreshConnectionState's currency check load-bearing:
+  // matching record ids is all setDevice checks, so a read issued by an
+  // earlier session for the SAME device would otherwise be accepted here.
+  const store = makeStore();
+  const s = open(DEVICE_A, store);
+  s.setDevice({ ...DEVICE_A, name: 'renamed' });
+  assert.equal(s.session.device.name, 'renamed', 'its own record is taken');
+  s.setDevice({ ...DEVICE_B, name: 'someone else' });
+  assert.equal(s.session.device.name, 'renamed', 'a foreign record is refused');
+});

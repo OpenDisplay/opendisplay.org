@@ -244,6 +244,10 @@ window.resultPromise = (async () => {
   const nProxy = render.renderDocument(ndoc, new Map([['p1', photoBitmap]]));
   const nFull = render.renderDocument(ndoc, new Map([['p1', bigBitmap]]));
   const rowOf = (c) => [...c.ctx.getImageData(0, Math.floor(c.height / 2), c.width, 1).data];
+  // NB: byte identity holds here only because the fixture is a solid colour.
+  // Two decodes at different resolutions resample differently in general, so
+  // what this actually establishes is that the drawn EXTENTS match — which is
+  // the claim being made. Do not generalise it to photographic sources.
   ok('noneIsResolutionIndependent', JSON.stringify(rowOf(nProxy)) === JSON.stringify(rowOf(nFull)));
 
   // 40x20 natural inside a 60x37 artboard leaves background at the edges, and
