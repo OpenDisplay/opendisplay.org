@@ -1327,6 +1327,11 @@ function renderBuilder(){
             input.type = 'text';
             input.placeholder = `text, fixed ${f.size} bytes, null-terminated`;
             input.maxLength = f.size - 1; // reserve last byte for null terminator
+          } else if (f.type === 'bytes' || f.name === 'encryption_key' || parseSizeToken(f.size) > 8) {
+            input.type = 'text';
+            input.placeholder = `hex bytes (${f.size} bytes, ${parseSizeToken(f.size) * 2} hex chars)`;
+            input.spellcheck = false;
+            input.autocomplete = 'off';
           } else if (f.name === 'ssid') {
             input.type = 'text';
             input.placeholder = 'WiFi SSID (fixed 32 bytes, null-terminated)';
@@ -1388,16 +1393,14 @@ function collectPacketBytes(){ if(!schema) { alert('Load schema first'); return 
           for(let i=0;i<fsize;i++){
             packet.push(i < bytes.length ? bytes[i] : 0);
           }
-        } else if(f.name === 'encryption_key'){
-          // Special handling for encryption_key: parse as hex bytes
+        } else if(f.type === 'bytes' || f.name === 'encryption_key' || fsize > 8){
+          // Opaque byte blobs (EIK, advertisement_key, encryption_key, large reserved, …)
           if(raw){
             const bytes = parseValueToBytes(raw);
-            // Pad with zeros if too short, truncate if too long
-          for(let i=0;i<fsize;i++){
-            packet.push(i < bytes.length ? bytes[i] : 0);
+            for(let i=0;i<fsize;i++){
+              packet.push(i < bytes.length ? bytes[i] : 0);
             }
           } else {
-            // Default: all zeros (encryption disabled)
             for(let i=0;i<fsize;i++) packet.push(0);
           }
         } else {
@@ -1735,7 +1738,7 @@ function parseRawBytes(bytes){
               const text = new TextDecoder('utf-8', { fatal: false }).decode(slice);
               pkt.fields.push({ name: f.name, raw: bytesToHex(valBytes), value: text, kind: 'utf8' });
               cur += s;
-            } else if (f.name === 'encryption_key' || f.name === 'reserved' || s > 8) {
+            } else if (f.type === 'bytes' || f.name === 'encryption_key' || f.name === 'reserved' || s > 8) {
               pkt.fields.push({ name: f.name, raw: bytesToHex(valBytes), hexPayload: true });
               cur += s;
             } else {
@@ -1975,6 +1978,12 @@ function renderBuilderFromInstances(){
             input.type = 'text';
             input.placeholder = `text, fixed ${f.size} bytes, null-terminated`;
             input.maxLength = f.size - 1; // reserve last byte for null terminator
+            input.value = inst.fields[f.name] || '';
+          } else if (f.type === 'bytes' || f.name === 'encryption_key' || parseSizeToken(f.size) > 8) {
+            input.type = 'text';
+            input.placeholder = `hex bytes (${f.size} bytes, ${parseSizeToken(f.size) * 2} hex chars)`;
+            input.spellcheck = false;
+            input.autocomplete = 'off';
             input.value = inst.fields[f.name] || '';
           } else if (f.name === 'ssid') {
             input.type = 'text';
