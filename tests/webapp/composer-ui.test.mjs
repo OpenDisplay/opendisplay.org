@@ -280,9 +280,98 @@ test('composer UI: chips, off-canvas movement, handles, fit modes', async (t) =>
        Math.abs(endView.u - 0.65) < 0.06 && Math.abs(endView.v - 0.7) < 0.06);
     out.dragEnded = endView;
 
+    // --- 8. pinch and ctrl+wheel zoom -------------------------------------
+    const photoLayer = () => composer._doc().layers.find((l) => l.type === 'photo');
+    const pev = (type, id, u, v, extra = {}) => {
+      const r = wrap().getBoundingClientRect();
+      canvasEl().dispatchEvent(new PointerEvent(type, {
+        bubbles: true, pointerId: id, pointerType: 'touch', isPrimary: id === 1,
+        clientX: r.left + u * r.width, clientY: r.top + v * r.height, ...extra,
+      }));
+    };
+    // Back to an unrotated view so the arithmetic is easy to reason about.
+    document.getElementById('viewRotateLeft').click();
+    await settle();
+    await new Promise((r) => setTimeout(r, 250));
+    $('toolSelect').click();
+    $('photoFit').value = 'contain';
+    $('photoFit').dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    const zoomBefore = photoLayer().scale;
+
+    // Two fingers, spread apart -> zoom in.
+    pev('pointerdown', 11, 0.40, 0.5);
+    pev('pointerdown', 12, 0.60, 0.5);
+    pev('pointermove', 12, 0.80, 0.5);
+    pev('pointerup', 12, 0.80, 0.5);
+    pev('pointerup', 11, 0.40, 0.5);
+    await settle();
+    ok('pinchZoomedIn', photoLayer().scale > zoomBefore * 1.5);
+    ok('pinchIsOneUndoStep', $('undoBtn').disabled === false);
+    const afterPinch = photoLayer().scale;
+    $('undoBtn').click();
+    await settle();
+    ok('pinchUndoneInOneStep', Math.abs(photoLayer().scale - zoomBefore) < 1e-9);
+    $('redoBtn').click();
+    await settle();
+    ok('pinchRedone', Math.abs(photoLayer().scale - afterPinch) < 1e-9);
+
+    // A pinch that starts MID-STROKE must not leave a stroke behind.
+    $('toolDraw').click();
+    const layersBefore = composer._doc().layers.length;
+    pev('pointerdown', 21, 0.2, 0.2);
+    pev('pointermove', 21, 0.4, 0.4);
+    pev('pointerdown', 22, 0.7, 0.7);      // preempts
+    pev('pointermove', 22, 0.9, 0.9);
+    pev('pointerup', 22, 0.9, 0.9);
+    pev('pointerup', 21, 0.4, 0.4);        // the survivor is inert
+    await settle();
+    ok('strokeDiscardedByPinch', composer._doc().layers.length === layersBefore);
+    $('toolSelect').click();
+
+    // ctrl+wheel zooms; a PLAIN wheel must not touch the document.
+    const beforeWheel = photoLayer().scale;
+    const r0 = wrap().getBoundingClientRect();
+    canvasEl().dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaY: 500,
+      clientX: r0.left + r0.width / 2, clientY: r0.top + r0.height / 2,
+    }));
+    await settle();
+    ok('plainWheelIgnored', photoLayer().scale === beforeWheel);
+    canvasEl().dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaY: -500, ctrlKey: true,
+      clientX: r0.left + r0.width / 2, clientY: r0.top + r0.height / 2,
+    }));
+    await new Promise((r) => setTimeout(r, 500));   // the burst settles
+    await settle();
+    ok('ctrlWheelZoomed', photoLayer().scale > beforeWheel);
+
+    // The anchor holds: zooming about a corner keeps that corner's content.
+    const canvasMod2 = canvasMod;
+    const anchor = { x: 0.2, y: 0.8 };
+    const bA = canvasMod2.layerBounds(photoLayer(), { W: canvasEl().width, H: canvasEl().height });
+    const withinBefore = { u: (anchor.x - bA.x) / bA.w, v: (anchor.y - bA.y) / bA.h };
+    canvasEl().dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaY: -300, ctrlKey: true,
+      clientX: r0.left + anchor.x * r0.width, clientY: r0.top + anchor.y * r0.height,
+    }));
+    await new Promise((r) => setTimeout(r, 500));
+    await settle();
+    const bB = canvasMod2.layerBounds(photoLayer(), { W: canvasEl().width, H: canvasEl().height });
+    const withinAfter = { u: (anchor.x - bB.x) / bB.w, v: (anchor.y - bB.y) / bB.h };
+    out.anchor = { withinBefore, withinAfter };
+    ok('wheelZoomIsAnchored',
+       Math.abs(withinAfter.u - withinBefore.u) < 0.02
+       && Math.abs(withinAfter.v - withinBefore.v) < 0.02);
+
+    // Leave the view rotated: the reload check below asserts it persisted.
+    document.getElementById('viewRotateRight').click();
+    await settle();
+    await new Promise((r) => setTimeout(r, 250));
+
     out.ok = Object.values(out.checks).every(Boolean);
     return out;
-  })()`, { timeoutMs: 90000 });
+  })()`, { timeoutMs: 120000 });
 
   assert.ok(result?.ok, `composer UI failed: ${JSON.stringify(result, null, 1)}`);
 

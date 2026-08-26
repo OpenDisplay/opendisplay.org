@@ -1012,3 +1012,44 @@ test('photoPlacement never falls back to a bitmap, so bounds match the render', 
   // photoPlacement takes no fourth argument any more.
   assert.equal(render.photoPlacement.length, 3);
 });
+
+// --- anchored zoom --------------------------------------------------------
+
+test('zoomAbout holds the anchor over the same content', () => {
+  const size = { W: 800, H: 480 };
+  const layer = model.photoLayer({ assetId: 'a', srcW: 800, srcH: 480, fit: 'contain' });
+  // Where a given normalized anchor sits WITHIN the photo, as a fraction of
+  // the photo's own footprint. That is what must not move.
+  const within = (l, anchor) => {
+    const b = canvasMod.layerBounds(l, size);
+    return { u: (anchor.x - b.x) / b.w, v: (anchor.y - b.y) / b.h };
+  };
+  for (const anchor of [{ x: 0.5, y: 0.5 }, { x: 0.1, y: 0.9 }, { x: 0.83, y: 0.2 }]) {
+    for (const next of [0.4, 1, 2.5, 4]) {
+      const before = within(layer, anchor);
+      const after = within({ ...layer, ...tools.zoomAbout(layer, next, anchor) }, anchor);
+      assert.ok(Math.abs(after.u - before.u) < 1e-9 && Math.abs(after.v - before.v) < 1e-9,
+        `anchor ${JSON.stringify(anchor)} at zoom ${next}: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+    }
+  }
+});
+
+test('zoomAbout the centre is a pure scale, leaving the pan alone', () => {
+  const layer = model.photoLayer({ assetId: 'a', srcW: 400, srcH: 400, panX: 0.1, panY: -0.2 });
+  const p = tools.zoomAbout(layer, 2, { x: 0.5, y: 0.5 });
+  assert.equal(p.scale, 2);
+  assert.ok(Math.abs(p.panX - 0.2) < 1e-9, 'the pan scales with it, as it must');
+  assert.ok(Math.abs(p.panY - (-0.4)) < 1e-9);
+});
+
+test('zoomAbout is reversible and survives a degenerate current scale', () => {
+  const layer = model.photoLayer({ assetId: 'a', srcW: 400, srcH: 300, panX: 0.05, panY: 0.07 });
+  const anchor = { x: 0.3, y: 0.8 };
+  const up = { ...layer, ...tools.zoomAbout(layer, 3, anchor) };
+  const back = tools.zoomAbout(up, 1, anchor);
+  assert.ok(Math.abs(back.panX - layer.panX) < 1e-9, 'zooming back returns the framing');
+  assert.ok(Math.abs(back.panY - layer.panY) < 1e-9);
+  // A zero/absent current scale must not produce NaN.
+  const odd = tools.zoomAbout({ ...layer, scale: 0 }, 2, anchor);
+  assert.ok(Number.isFinite(odd.panX) && Number.isFinite(odd.panY));
+});

@@ -680,6 +680,63 @@ function rotateSelectedPhoto(delta) {
   }
 }
 
+/**
+ * Pinch / ctrl+wheel zoom.
+ *
+ * The TARGET is frozen when the gesture starts — the selected photo if there
+ * is one, else the topmost, the same rule the empty-canvas pan recovery uses.
+ * Retargeting halfway through would make a pinch jump between photos.
+ *
+ * The pan is written UNCLAMPED during the gesture and clamped once at the
+ * end. A hard clamp mid-pinch fights the anchor: the point under the fingers
+ * slides away and the photo appears to resist. Rubber-band, then settle.
+ */
+let zoomGesture = null;
+
+function zoomTarget() {
+  const selected = selectedPhotoLayer();
+  if (selected) return selected;
+  return [...doc().layers].reverse().find((l) => l.type === 'photo') ?? null;
+}
+
+function beginZoomGesture() {
+  if (!session || zoomGesture) return;
+  const layer = zoomTarget();
+  if (!layer) return;
+  session.beginGesture();
+  zoomGesture = { id: layer.id, base: layer.scale ?? 1, changed: false };
+}
+
+function updateZoomGesture({ ratio, anchor }) {
+  if (!session || !zoomGesture) return;
+  const layer = doc().layers.find((l) => l.id === zoomGesture.id);
+  if (!layer) return;
+  const next = model.clampPhotoScale(zoomGesture.base * ratio);
+  const patch = tools.zoomAbout(layer, next, anchor);
+  if (next === layer.scale && patch.panX === layer.panX && patch.panY === layer.panY) return;
+  zoomGesture.changed = true;
+  // ONE update: scale and pan are a single coupled edit, never two.
+  session.updateGesture(model.updateLayer(doc(), layer.id, patch));
+  $('photoSize').value = String(next);
+}
+
+function endZoomGesture() {
+  if (!session || !zoomGesture) return;
+  const { id, changed } = zoomGesture;
+  zoomGesture = null;
+  const layer = doc().layers.find((l) => l.id === id);
+  if (!layer || !changed) {
+    try { session.endGesture(doc(), false); } catch { /* already ended */ }
+    return;
+  }
+  try {
+    // Settle back into legality now the fingers are up.
+    session.endGesture(model.updateLayer(doc(), id, withPanInBounds(layer)), true);
+  } catch (err) {
+    reportError(err);
+  }
+}
+
 /** A patch for `layer` that keeps its pan legal for its CURRENT footprint. */
 function withPanInBounds(layer) {
   const pan = tools.clampPan(layer, layer.panX ?? 0, layer.panY ?? 0, size());
@@ -962,6 +1019,9 @@ function makePlaceTool(kind) {
       placed = false;
       return { doc: document_, commit: did };
     },
+    /** A pinch that lands on the same tap must not leave the element behind:
+     *  the document is reverted by the caller, and this forgets the claim. */
+    onCancel() { placed = false; },
   };
 }
 
@@ -1103,6 +1163,18 @@ function wire() {
   };
   makeSurface($('composerCanvas'), {
     viewRotation,
+    // A second pointer preempts whatever the first was doing. The document is
+    // reverted by ENDING the gesture without committing — the session already
+    // discards its working copy on that path, which is exactly od-app's manual
+    // revert, for free — and the tool drops its own state so onUp can never
+    // turn the abandoned half-gesture into a commit.
+    onPointerCancel: () => {
+      try { session?.endGesture(doc(), false); } catch { /* already ended */ }
+      activeTool?.onCancel?.();
+    },
+    onZoomStart: (g) => beginZoomGesture(g),
+    onZoomMove: (g) => updateZoomGesture(g),
+    onZoomEnd: () => endZoomGesture(),
     onPointerDown: guard((pt) => {
       session.beginGesture();
       const r = activeTool.onDown(doc(), pt, size());

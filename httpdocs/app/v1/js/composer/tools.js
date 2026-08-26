@@ -61,6 +61,36 @@ export function bleedRange(extent) {
 }
 
 /**
+ * Zoom a photo about an ANCHOR that must stay over the same content.
+ *
+ * od-app zooms about the photo's centre, but that is a consequence of its
+ * arbitration rather than a framing decision: `pinchActive` freezes its whole
+ * drag layer, so pan cannot move during a pinch and anchored zoom is
+ * unreachable by construction. Anchoring is what makes zoom a navigation
+ * gesture instead of a scale gesture — without it every framing adjustment
+ * becomes zoom-then-pan-to-recover.
+ *
+ * The photo's centre sits at 0.5 + pan in normalized canvas units, so keeping
+ * anchor `a` over the same content means moving the centre to
+ * a(1 - k) + k·centre, which is the expression below. Exact for every fit
+ * mode and quarter turn, because the footprint is linear in `scale`.
+ *
+ * @param {object} layer   photo layer
+ * @param {number} scale   the NEW zoom
+ * @param {{x,y}} anchor   normalized panel coordinates to hold fixed
+ * @returns {{scale, panX, panY}} patch
+ */
+export function zoomAbout(layer, scale, anchor) {
+  const from = layer.scale ?? 1;
+  const k = from > 0 ? scale / from : 1;
+  return {
+    scale,
+    panX: k * (layer.panX ?? 0) + (1 - k) * (anchor.x - 0.5),
+    panY: k * (layer.panY ?? 0) + (1 - k) * (anchor.y - 0.5),
+  };
+}
+
+/**
  * Keep a photo's PAN inside the bleed. A photo has no origin to clamp — the
  * pan slides its footprint about the canvas centre — so the rule is applied to
  * the footprint's leading edge and solved back into a pan.
@@ -132,6 +162,10 @@ export function makeDrawTool({ color = 0, width = 0.01 } = {}) {
       }
       return { doc, commit: true };
     },
+    /** Abandon the stroke in progress. The document is reverted by the caller
+     *  (endGesture with commit false); this drops the tool's own state, which
+     *  onUp would otherwise turn into a committed stroke. */
+    onCancel() { activeId = null; },
     setColor(c) { color = c; },
     setWidth(w) { width = w; },
   };
@@ -348,6 +382,18 @@ export function makeSelectTool({ onSelect, handlePx } = {}) {
       // Commit only if the layer actually moved: a plain click selects
       // without polluting the undo stack.
       return { doc, commit: didMove };
+    },
+    /** Abandon the drag/resize/pan in progress WITHOUT committing it. Calling
+     *  onUp instead would return commit:true for anything that had moved —
+     *  precisely the half-gesture a cancel exists to discard. The SELECTION is
+     *  kept: a pinch should not also deselect what the user had chosen. */
+    onCancel() {
+      dragId = null;
+      grab = null;
+      strokeDrag = null;
+      resize = null;
+      pendingPan = null;
+      moved = false;
     },
     selectedId() { return selectedId; },
     setSelection(id) { selectedId = id; onSelect?.(id); },

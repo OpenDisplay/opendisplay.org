@@ -6,6 +6,7 @@
  */
 
 import { qrGeometry, photoPlacement } from './render.js';
+import { createGestureRouter } from './gestures.js';
 
 /**
  * Map a point in VIEW space (0..1 across the on-screen box) to normalized
@@ -46,14 +47,40 @@ export function panelToView(x, y, rotationQuarterTurns = 0) {
  * @param {object} handlers
  * @param {() => number} [handlers.viewRotation] current canvas view rotation
  */
+/** A ctrl+wheel burst this far apart is treated as a new zoom gesture (and so
+ *  a new undo entry). Trackpads emit a dense stream, then stop. */
+const WHEEL_IDLE_MS = 260;
+
+/** Wheel delta -> multiplicative zoom. Multiplicative so a tick feels the same
+ *  at 0.3x as at 3x; linear addition does not. */
+const WHEEL_ZOOM_K = 0.0025;
+
 export function makeSurface(canvasEl, {
-  onPointerDown, onPointerMove, onPointerUp, viewRotation,
+  onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
+  onZoomStart, onZoomMove, onZoomEnd, viewRotation,
 }) {
-  let dragging = false;
-  // The rotation in force when the gesture STARTED. Pointer capture keeps a
-  // drag alive across a rotation, and changing the mapping mid-gesture would
-  // make the layer jump.
+  // The rotation and the box are frozen for the WHOLE sequence — from the
+  // first pointer down until the last is up — not per pointer. A drag survives
+  // a rotation (pointer capture keeps delivering), and a pinch has two
+  // pointers whose downs would otherwise each re-freeze it mid-gesture.
   let gestureRot = 0;
+  let frozenRect = null;
+  let active = 0;
+
+  const box = () => canvasEl.parentElement ?? canvasEl;
+
+  function beginSequence() {
+    if (active === 0) {
+      gestureRot = viewRotation?.() ?? 0;
+      frozenRect = box().getBoundingClientRect();
+    }
+    active += 1;
+  }
+
+  function endSequence() {
+    active = Math.max(0, active - 1);
+    if (active === 0) frozenRect = null;
+  }
 
   // Measured against the WRAPPER, not the canvas: under a view rotation the
   // canvas's own bounding rect is the axis-aligned box of the rotated element,
@@ -64,40 +91,79 @@ export function makeSurface(canvasEl, {
   // finger leaves the canvas, and elements are allowed to bleed off the edge —
   // clamping here would pin a drag at the boundary no matter how far the user
   // moved. The tools bound how far an element may actually go.
-  const toNorm = (ev, rot) => {
-    const box = canvasEl.parentElement ?? canvasEl;
-    const rect = box.getBoundingClientRect();
+  const toNorm = (ev, rot = gestureRot, rect = frozenRect) => {
+    const r = rect ?? box().getBoundingClientRect();
     return viewToPanel(
-      (ev.clientX - rect.left) / rect.width,
-      (ev.clientY - rect.top) / rect.height,
+      (ev.clientX - r.left) / r.width,
+      (ev.clientY - r.top) / r.height,
       rot,
     );
   };
 
+  const router = createGestureRouter({
+    onToolDown: onPointerDown,
+    onToolMove: onPointerMove,
+    onToolUp: onPointerUp,
+    onToolCancel: onPointerCancel,
+    onZoomStart,
+    onZoomMove,
+    onZoomEnd,
+  });
+
   canvasEl.addEventListener('pointerdown', (ev) => {
-    dragging = true;
-    gestureRot = viewRotation?.() ?? 0;
+    beginSequence();
     // Capture keeps the drag alive once the pointer leaves the canvas, which
     // is now normal — elements may be dragged past the edge. It is not
     // essential to the gesture, so a pointer id the browser will not capture
     // (a synthetic event, a pointer already released) must not abort it.
     try { canvasEl.setPointerCapture(ev.pointerId); } catch { /* not capturable */ }
-    onPointerDown?.(toNorm(ev, gestureRot), ev);
+    router.down(ev.pointerId, toNorm(ev), { x: ev.clientX, y: ev.clientY }, ev.pointerType);
   });
   canvasEl.addEventListener('pointermove', (ev) => {
-    if (!dragging) return;
-    onPointerMove?.(toNorm(ev, gestureRot), ev);
+    router.move(ev.pointerId, toNorm(ev), { x: ev.clientX, y: ev.clientY });
   });
-  const end = (ev) => {
-    if (!dragging) return;
-    dragging = false;
+  canvasEl.addEventListener('pointerup', (ev) => {
     try { canvasEl.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
-    onPointerUp?.(toNorm(ev, gestureRot), ev);
-  };
-  canvasEl.addEventListener('pointerup', end);
-  canvasEl.addEventListener('pointercancel', end);
+    router.up(ev.pointerId, toNorm(ev), { x: ev.clientX, y: ev.clientY });
+    endSequence();
+  });
+  canvasEl.addEventListener('pointercancel', (ev) => {
+    try { canvasEl.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
+    router.cancel(ev.pointerId);
+    endSequence();
+  });
 
-  return { toNorm: (ev) => toNorm(ev, viewRotation?.() ?? 0) };
+  // ctrl+wheel is the trackpad pinch on every desktop browser, and the only
+  // zoom a mouse has. A PLAIN wheel is deliberately left alone: the canvas is
+  // capped at 55% of the viewport, so the tool chips, the photo panel and Send
+  // are below the fold — swallowing the wheel would put the composer's own
+  // controls out of reach of the commonest scroll gesture. The canvas is not a
+  // scroll container, and panning the photo is a document edit, not a view
+  // change, so a stray scroll must never alter what gets sent.
+  let wheelTimer = null;
+  let wheelScale = 1;
+  canvasEl.addEventListener('wheel', (ev) => {
+    if (!ev.ctrlKey) return;
+    ev.preventDefault(); // touch-action does not suppress ctrl+wheel page zoom
+    // deltaMode 1 is lines (Firefox), 2 is pages; normalise to pixels.
+    const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1;
+    if (wheelTimer === null) {
+      gestureRot = viewRotation?.() ?? 0;
+      frozenRect = box().getBoundingClientRect();
+      wheelScale = 1;
+      onZoomStart?.({ anchor: toNorm(ev) });
+    }
+    clearTimeout(wheelTimer);
+    wheelScale *= Math.exp(-ev.deltaY * unit * WHEEL_ZOOM_K);
+    onZoomMove?.({ ratio: wheelScale, anchor: toNorm(ev) });
+    wheelTimer = setTimeout(() => {
+      wheelTimer = null;
+      if (active === 0) frozenRect = null;
+      onZoomEnd?.();
+    }, WHEEL_IDLE_MS);
+  }, { passive: false });
+
+  return { toNorm: (ev) => toNorm(ev, viewRotation?.() ?? 0, null) };
 }
 
 /**
