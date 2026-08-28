@@ -3434,8 +3434,8 @@ class OpenDisplayBLE {
    * @param {number} r - Red component (0-255)
    * @param {number} g - Green component (0-255)
    * @param {number} b - Blue component (0-255)
-   * @param {number} colorScheme - Color scheme (0-6)
-   * @returns {string} Color name ('black', 'white', 'red', 'yellow', 'green', 'blue')
+   * @param {number} colorScheme - Color scheme (0-8)
+   * @returns {string} Color name ('black', 'white', 'red', 'yellow', 'green', 'blue', 'orange')
    */
   detectColor(r, g, b, colorScheme) {
     if (colorScheme === 6) {
@@ -3459,19 +3459,23 @@ class OpenDisplayBLE {
     const colorYellow = [255, 255, 0];
     const colorGreen = [0, 255, 0];
     const colorBlue = [0, 0, 255];
+    const colorOrange = [255, 128, 0];
     const availableColors = [];
     
     availableColors.push({ color: colorBlack, name: 'black' });
     availableColors.push({ color: colorWhite, name: 'white' });
-    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorRed, name: 'red' });
     }
-    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorYellow, name: 'yellow' });
     }
-    if (colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorGreen, name: 'green' });
       availableColors.push({ color: colorBlue, name: 'blue' });
+    }
+    if (colorScheme === 7) {
+      availableColors.push({ color: colorOrange, name: 'orange' });
     }
     
     let minDist = Infinity;
@@ -3495,7 +3499,7 @@ class OpenDisplayBLE {
    * @param {number} r - Red component (0-255)
    * @param {number} g - Green component (0-255)
    * @param {number} b - Blue component (0-255)
-   * @param {number} colorScheme - Color scheme (0-6)
+   * @param {number} colorScheme - Color scheme (0-8)
    * @returns {Array} RGB array [r, g, b] of nearest color
    */
   findNearestColor(r, g, b, colorScheme) {
@@ -3523,18 +3527,22 @@ class OpenDisplayBLE {
     const colorYellow = [255, 255, 0];
     const colorGreen = [0, 255, 0];
     const colorBlue = [0, 0, 255];
+    const colorOrange = [255, 128, 0];
     const availableColors = [];
     availableColors.push({ color: colorBlack, name: 'black' });
     availableColors.push({ color: colorWhite, name: 'white' });
-    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 1 || colorScheme === 3 || colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorRed, name: 'red' });
     }
-    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 2 || colorScheme === 3 || colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorYellow, name: 'yellow' });
     }
-    if (colorScheme === 4 || colorScheme === 8) {
+    if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
       availableColors.push({ color: colorGreen, name: 'green' });
       availableColors.push({ color: colorBlue, name: 'blue' });
+    }
+    if (colorScheme === 7) {
+      availableColors.push({ color: colorOrange, name: 'orange' });
     }
     let minDist = Infinity;
     let nearestColor = colorWhite;
@@ -3666,7 +3674,7 @@ class OpenDisplayBLE {
   /**
    * Encode canvas to byte array for display
    * @param {HTMLCanvasElement} canvas - Canvas element
-   * @param {number} colorScheme - Color scheme (0-6)
+   * @param {number} colorScheme - Color scheme (0-8)
    * @param {number} rotation - Display rotation (0=0°, 1=90°, 2=180°, 3=270°)
    * @param {number} originalWidth - Original width before rotation
    * @param {number} originalHeight - Original height before rotation
@@ -3731,10 +3739,19 @@ class OpenDisplayBLE {
     
     const byteData = [];
     
-    if (colorScheme === 4 || colorScheme === 8) {
-      // 6-color scheme: 2 pixels per byte (nibbles). Scheme 8 (bwgbry_split) packs
+    if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
+      // 6-color and 7-color scheme: 2 pixels per byte (nibbles). Scheme 8 (bwgbry_split) packs
       // the left half-plane first (all rows' left bytes), then the right half-plane,
       // so dual-CS panels can stream CS1 then CS2 with no framebuffer.
+      //
+      // Schemes 4/8 (Spectra 6) and scheme 7 (ACeP) use different nibble codes for the same
+      // colors, so the table is selected per scheme rather than shared. Scheme 7
+      // keeps Spectra 6's yellow=2/red=3 but moves blue and green down to 4/5 to
+      // free 6 for orange
+      const sevenColor = colorScheme === 7;
+      const nibbleFor = sevenColor
+        ? { black: 0, white: 1, yellow: 2, red: 3, blue: 4, green: 5, orange: 6 }
+        : { black: 0, white: 1, yellow: 2, red: 3, blue: 5, green: 6 };
       const packRowMajor = (x0, x1) => {
         let currentByte = 0;
         let nibblePosition = 1;
@@ -3745,13 +3762,7 @@ class OpenDisplayBLE {
             const g = pixels[i + 1];
             const b = pixels[i + 2];
             const color = this.detectColor(r, g, b, colorScheme);
-            let colorValue = 0;
-            if (color === 'black') colorValue = 0;
-            else if (color === 'white') colorValue = 1;
-            else if (color === 'yellow') colorValue = 2;
-            else if (color === 'red') colorValue = 3;
-            else if (color === 'green') colorValue = 6;
-            else if (color === 'blue') colorValue = 5;
+            const colorValue = nibbleFor[color] ?? 0;
 
             if (nibblePosition === 1) {
               currentByte = (colorValue << 4);
