@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.2...1.14.0) (2026-08-28)
+
+
+### Features
+
+* fix release please ([1952016](https://github.com/OpenDisplay/opendisplay.org/commit/19520166c116e8bb51bb6e1bc90c1ff5f03a6c21))
+
 ## [1.13.2](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.1...1.13.2) (2026-08-12)
 
 
