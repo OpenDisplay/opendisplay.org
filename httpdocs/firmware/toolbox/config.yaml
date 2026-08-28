@@ -177,6 +177,9 @@ ble_proto:
           5:
             name: Soldered
             description: Soldered Electronics
+          6:
+            name: good_display
+            description: Good Display
       - name: board_type
         size: 1
         description: Board identifier (depends on manufacturer_id)
@@ -278,6 +281,10 @@ ble_proto:
               1:
                 name: Inkplate_10
                 description: Inkplate 10
+            6:
+              0:
+                name: ESP32_133C02
+                description: ESP32-133C02 (ESP32-S3, 7.09"/13.3" Spectra6 driver board)
       - name: board_revision
         size: 1
         description: Board revision number
@@ -1771,3 +1778,82 @@ ble_proto:
         size: 32
         type: text
         description: User-defined string field 3 (null-terminated, zero-padded)
+    45:
+      name: findmy_config
+      required: false
+      repeatable: false
+      description: >
+        Network G (FMDN) and network A (legacy offline-finding) provisioning. Prefer secp160r1
+        with advertisement_key = generate_eid(eik, 0) (static, no device clock).
+        secp256r1 rotates on-device from eik + time_base_unix.
+        Network A uses net_a_enable plus net_a_adv_key = 28-byte
+        advertisement public key X from your A-side provisioning tool.
+        net_a_time_base is unused (static mode). Unused bytes must be zero.
+      fields:
+      - name: flags
+        size: 1
+        description: Enable flags and future reserved bits
+        bits:
+          0:
+            name: fmdn_enable
+            description: Enable network G (FMDN) advertising
+          1:
+            name: net_a_enable
+            description: Enable network A (legacy offline-finding) advertising
+          2:
+            name: reserved_2
+          3:
+            name: reserved_3
+          4:
+            name: reserved_4
+          5:
+            name: reserved_5
+          6:
+            name: reserved_6
+          7:
+            name: reserved_7
+      - name: fmdn_k
+        size: 1
+        description: FMDN rotation period exponent K (typically 10 for network G)
+      - name: fmdn_curve
+        size: 1
+        description: FMDN EID curve / advertise mode
+        enum:
+          0:
+            name: secp160r1
+            description: Static 20-byte EID via advertisement_key (network G compatible)
+          1:
+            name: secp256r1
+            description: Rotating 32-byte EID from eik (extended advertising)
+      - name: reserved0
+        size: 5
+        description: Reserved bytes; must be zero
+      - name: eik
+        size: 32
+        type: bytes
+        description: Network G ephemeral identity key (64 hex chars from G-side register)
+      - name: net_a_adv_key
+        size: 28
+        type: bytes
+        description: >
+          Network A 28-byte advertisement public key X (56 hex chars).
+          From your A-side keys export (advertisement key, not private key).
+      - name: time_base_unix
+        size: 4
+        type: uint32
+        description: Unix epoch for secp256r1 rotation; write 0 for static secp160r1
+      - name: net_a_time_base
+        size: 4
+        type: uint32
+        description: Unused in static network A mode; write 0
+      - name: advertisement_key
+        size: 20
+        type: bytes
+        description: >
+          Static 20-byte SECP160 advertisement EID for network G
+          (generate_eid(eik, 0)). Required when fmdn_curve=secp160r1.
+      - name: reserved1
+        size: 32
+        type: bytes
+        description: Reserved bytes for future extensions; must be zero
+

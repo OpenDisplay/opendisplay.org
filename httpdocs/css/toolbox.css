@@ -159,6 +159,17 @@
   transform:none!important;
   box-shadow:none!important;
 }
+.findmy-option{
+  margin:0 0 14px;
+  width:100%;
+}
+.findmy-option .wifi-field{margin:0}
+.findmy-option input[type=text]{
+  font-family:var(--font-mono), ui-monospace, monospace;
+  font-size:12px;
+}
+.findmy-option .encryption-hint.is-ok{color:var(--accent)}
+.findmy-option .encryption-hint.is-error{color:#c45c5c}
 #premadeConfigSection #presetGrid{margin-top:0}
 .page-inner.tool-ui button.incomplete{
   opacity:0.5;cursor:pointer;background:var(--fg3)

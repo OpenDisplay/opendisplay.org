@@ -430,6 +430,13 @@
 
       <section class="toolbox-advanced">
         <p class="toolbox-advanced__label">Advanced</p>
+      <div class="findmy-option" id="findMyOptionGroup">
+        <div class="wifi-field">
+          <label for="findMyProvisionInput">Tracker provisioning code (ODFM1)</label>
+          <input type="text" id="findMyProvisionInput" maxlength="512" autocomplete="off" spellcheck="false" placeholder="ODFM1...." />
+        </div>
+        <p id="findMyProvisionHint" class="encryption-hint">Optional. Paste an ODFM1. code from Home Assistant (v1, network G) or Tracker Hub (v2, G+A).</p>
+      </div>
       <div class="ble-actions" style="margin-top: 0;">
         <button type="button" id="shareSimpleConfigBtn" class="toolbox-advanced-btn" title="Copy a link with your driver board, display, and power settings">Copy setup link</button>
       </div>
@@ -1327,6 +1334,11 @@ function renderBuilder(){
             input.type = 'text';
             input.placeholder = `text, fixed ${f.size} bytes, null-terminated`;
             input.maxLength = f.size - 1; // reserve last byte for null terminator
+          } else if (f.type === 'bytes' || f.name === 'encryption_key' || parseSizeToken(f.size) > 8) {
+            input.type = 'text';
+            input.placeholder = `hex bytes (${f.size} bytes, ${parseSizeToken(f.size) * 2} hex chars)`;
+            input.spellcheck = false;
+            input.autocomplete = 'off';
           } else if (f.name === 'ssid') {
             input.type = 'text';
             input.placeholder = 'WiFi SSID (fixed 32 bytes, null-terminated)';
@@ -1388,16 +1400,14 @@ function collectPacketBytes(){ if(!schema) { alert('Load schema first'); return 
           for(let i=0;i<fsize;i++){
             packet.push(i < bytes.length ? bytes[i] : 0);
           }
-        } else if(f.name === 'encryption_key'){
-          // Special handling for encryption_key: parse as hex bytes
+        } else if(f.type === 'bytes' || f.name === 'encryption_key' || fsize > 8){
+          // Opaque byte blobs (EIK, advertisement_key, encryption_key, large reserved, …)
           if(raw){
             const bytes = parseValueToBytes(raw);
-            // Pad with zeros if too short, truncate if too long
-          for(let i=0;i<fsize;i++){
-            packet.push(i < bytes.length ? bytes[i] : 0);
+            for(let i=0;i<fsize;i++){
+              packet.push(i < bytes.length ? bytes[i] : 0);
             }
           } else {
-            // Default: all zeros (encryption disabled)
             for(let i=0;i<fsize;i++) packet.push(0);
           }
         } else {
@@ -1735,7 +1745,7 @@ function parseRawBytes(bytes){
               const text = new TextDecoder('utf-8', { fatal: false }).decode(slice);
               pkt.fields.push({ name: f.name, raw: bytesToHex(valBytes), value: text, kind: 'utf8' });
               cur += s;
-            } else if (f.name === 'encryption_key' || f.name === 'reserved' || s > 8) {
+            } else if (f.type === 'bytes' || f.name === 'encryption_key' || f.name === 'reserved' || s > 8) {
               pkt.fields.push({ name: f.name, raw: bytesToHex(valBytes), hexPayload: true });
               cur += s;
             } else {
@@ -1975,6 +1985,12 @@ function renderBuilderFromInstances(){
             input.type = 'text';
             input.placeholder = `text, fixed ${f.size} bytes, null-terminated`;
             input.maxLength = f.size - 1; // reserve last byte for null terminator
+            input.value = inst.fields[f.name] || '';
+          } else if (f.type === 'bytes' || f.name === 'encryption_key' || parseSizeToken(f.size) > 8) {
+            input.type = 'text';
+            input.placeholder = `hex bytes (${f.size} bytes, ${parseSizeToken(f.size) * 2} hex chars)`;
+            input.spellcheck = false;
+            input.autocomplete = 'off';
             input.value = inst.fields[f.name] || '';
           } else if (f.name === 'ssid') {
             input.type = 'text';
@@ -2354,6 +2370,7 @@ function initializeSimpleConfigMode() {
   if (espDeepSleepSlider) {
     espDeepSleepSlider.oninput = updateEspDeepSleepLabel;
   }
+  initFindMyOptionUi();
   const encSlider = document.getElementById('initRandomEncryptionSlider');
   if (encSlider) {
     const encWrap = encSlider.closest('.encryption-slider-wrap');
@@ -2553,6 +2570,116 @@ function getWifiConfigFromUi() {
     encryption_type: String(encType),
     reserved: ''
   };
+}
+
+function _b64UrlToBytes(b64url) {
+  let b64 = (b64url || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function _bytesToHex(bytes) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function parseFindMyProvisioningToken(token) {
+  const raw = (token || '').trim();
+  if (!raw) return null;
+  if (!raw.startsWith('ODFM1.')) {
+    throw new Error('Code must start with ODFM1.');
+  }
+  const payload = _b64UrlToBytes(raw.slice(6));
+  if (payload.length < 61) throw new Error('Code is truncated.');
+  const version = payload[0];
+  if (version !== 1 && version !== 2) {
+    throw new Error(`Unsupported code version ${version}.`);
+  }
+  const k = payload[1];
+  const curve = payload[2];
+  const flags = payload[3];
+  const pairDate =
+    ((payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7]) >>> 0;
+  const eik = payload.slice(8, 40);
+  const advertisementKey = payload.slice(40, 60);
+  const nameLen = payload[60];
+  if (payload.length < 61 + nameLen) throw new Error('Code name is truncated.');
+  const name = new TextDecoder().decode(payload.slice(61, 61 + nameLen));
+  let netAAdvKey = '';
+  let findMyFlags = 1;
+  if (version === 2) {
+    const netAStart = 61 + nameLen;
+    if (payload.length < netAStart + 28) {
+      throw new Error('Code is missing network A advertisement key (v2).');
+    }
+    netAAdvKey = _bytesToHex(payload.slice(netAStart, netAStart + 28));
+    findMyFlags = 0x3;
+  }
+  return {
+    name,
+    k,
+    curve,
+    flags,
+    pair_date: pairDate,
+    eik: _bytesToHex(eik),
+    advertisement_key: _bytesToHex(advertisementKey),
+    net_a_adv_key: netAAdvKey,
+    findmy_flags: findMyFlags,
+    version
+  };
+}
+
+function getFindMyProvisionFromUi() {
+  const el = document.getElementById('findMyProvisionInput');
+  const raw = (el && el.value || '').trim();
+  if (!raw) return null;
+  return parseFindMyProvisioningToken(raw);
+}
+
+function updateFindMyProvisionHint() {
+  const hint = document.getElementById('findMyProvisionHint');
+  const el = document.getElementById('findMyProvisionInput');
+  if (!hint || !el) return;
+  const raw = (el.value || '').trim();
+  hint.classList.remove('is-ok', 'is-error');
+  if (!raw) {
+    hint.textContent = 'Optional. Paste an ODFM1. code from Home Assistant (v1, network G) or Tracker Hub (v2, G+A).';
+    return;
+  }
+  try {
+    const parsed = parseFindMyProvisioningToken(raw);
+    hint.classList.add('is-ok');
+    const netLabel = parsed.version === 2 ? 'G+A' : 'G';
+    hint.textContent = 'Ready: "' + parsed.name + '" (' + netLabel + ', secp' + (parsed.curve === 0 ? '160' : '256') + '). Will be written with Configure over Bluetooth.';
+  } catch (err) {
+    hint.classList.add('is-error');
+    hint.textContent = err && err.message ? err.message : 'Invalid provisioning code.';
+  }
+}
+
+function validateFindMyUi() {
+  const el = document.getElementById('findMyProvisionInput');
+  const raw = (el && el.value || '').trim();
+  if (!raw) return true;
+  try {
+    parseFindMyProvisioningToken(raw);
+    return true;
+  } catch (err) {
+    alert(err && err.message ? err.message : 'Invalid tracker provisioning code.');
+    if (el) el.focus();
+    return false;
+  }
+}
+
+function initFindMyOptionUi() {
+  const el = document.getElementById('findMyProvisionInput');
+  if (!el || el.dataset.findMyWired) return;
+  el.dataset.findMyWired = '1';
+  el.addEventListener('input', updateFindMyProvisionHint);
+  el.addEventListener('change', updateFindMyProvisionHint);
+  updateFindMyProvisionHint();
 }
 
 function validateWifiUi() {
@@ -3181,6 +3308,9 @@ async function startSimpleAutoInstall() {
       return;
     }
     if (!validateWifiUi()) {
+      return;
+    }
+    if (!validateFindMyUi()) {
       return;
     }
   }
@@ -3902,6 +4032,46 @@ function mergeSimpleConfigToFull() {
     }
   } else {
     lastAutoInstallRedirectKeyHex = null;
+  }
+
+  instances.packets = instances.packets.filter(function (p) {
+    return !(p.pid === '45' && p._autoToolboxFindMy);
+  });
+  let findMy = null;
+  try {
+    findMy = getFindMyProvisionFromUi();
+  } catch (_err) {
+    findMy = null;
+  }
+  if (findMy) {
+    const findMyFields = {
+      flags: findMy.findmy_flags != null ? findMy.findmy_flags : 1,
+      fmdn_k: String(findMy.k),
+      fmdn_curve: String(findMy.curve),
+      reserved0: '',
+      eik: findMy.eik,
+      net_a_adv_key: findMy.net_a_adv_key || '',
+      time_base_unix: '0',
+      net_a_time_base: '0',
+      advertisement_key: findMy.advertisement_key,
+      reserved1: ''
+    };
+    instances.packets.push({
+      uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      pid: '45',
+      fields: findMyFields,
+      _autoToolboxFindMy: true
+    });
+    if (findMy.name) {
+      const dataExt = instances.packets.find(function (p) { return p.pid === '44'; });
+      if (dataExt && dataExt.fields) {
+        const existingName = (dataExt.fields.friendly_name || '').trim();
+        if (!existingName) {
+          dataExt.fields.friendly_name =
+            findMy.name.length <= 31 ? findMy.name : findMy.name.slice(0, 31);
+        }
+      }
+    }
   }
 }
 

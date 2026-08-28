@@ -29,7 +29,8 @@
     "inkplate-5v2": 26,
     "inkplate-10": 27,
     "nrf54l15-xiao": 28,
-    "ee02": 29
+    "ee02": 29,
+    "good-display-133c02": 30
   },
   "displays": {
     "ep154-200x200": 1,
@@ -72,7 +73,8 @@
     "inkplate-5v2-1280x720": 38,
     "inkplate-10-1200x825": 39,
     "ep397-800x480": 40,
-    "ep426-800x480-4g": 41
+    "ep426-800x480-4g": 41,
+    "ep709-spectra-1200x1600": 42
   },
   "powerOptions": {
     "usb": 1,

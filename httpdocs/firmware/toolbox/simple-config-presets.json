@@ -147,6 +147,64 @@
          "index": 29
       },
       {
+         "id": "good-display-133c02",
+         "name": "Good Display 133C02",
+         "connectorPins": [
+            60
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x1",
+            "pwr_pin": "45",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "6",
+            "board_type": "0",
+            "board_revision": "0x1",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "6",
+            "busy": "7",
+            "dc": "0xFF",
+            "cs": "18",
+            "data": "41",
+            "clk": "9",
+            "cs2": "17"
+         },
+         "buttons": {
+            "instance_number": "0x0",
+            "input_type": "1",
+            "display_as": "1",
+            "inputpin1": "12",
+            "inputpin2": "13",
+            "inputpin3": "14",
+            "inputpin4": "0xff",
+            "inputpin5": "0xff",
+            "inputpin6": "0xff",
+            "inputpin7": "0xff",
+            "inputpin8": "0xff",
+            "isused": "0x7",
+            "invert": "0x0",
+            "pullups": "0x0",
+            "pulldowns": "0x0",
+            "button_data_byte_index": "0",
+            "reserved": "0x0"
+         },
+         "defaultDisplay": "ep133a-spectra-1200x1600",
+         "defaultPower": "usb",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "25",
+         "index": 30
+      },
+      {
          "id": "ee03",
          "name": "Seeed EE03 (ESP32-S3)",
          "connectorPins": [
@@ -2811,6 +2869,24 @@
             "full_update_mC": "2875"
          },
          "index": 37
+      },
+      {
+         "id": "ep709-spectra-1200x1600",
+         "name": "7.09\" Spectra 6 Color dual-CS (1200×1600, bwgbry_split)",
+         "connectorPins": [
+            60
+         ],
+         "panelIcType": "66",
+         "config": {
+            "pixel_width": "1200",
+            "pixel_height": "1600",
+            "active_width_mm": "108",
+            "active_height_mm": "144",
+            "partial_update_support": "0",
+            "color_scheme": "8",
+            "full_update_mC": "2875"
+         },
+         "index": 42
       },
       {
          "id": "inkplate-5v2-1280x720",
