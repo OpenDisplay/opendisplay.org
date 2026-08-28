@@ -1771,3 +1771,78 @@ ble_proto:
         size: 32
         type: text
         description: User-defined string field 3 (null-terminated, zero-padded)
+    45:
+      name: findmy_config
+      required: false
+      repeatable: false
+      description: >
+        Google FMDN provisioning for GoogleFindMyTools / Find Hub. Prefer secp160r1
+        with advertisement_key = generate_eid(eik, 0) (static, no device clock).
+        secp256r1 rotates on-device from eik + time_base_unix (not used by GFT).
+        Apple fields are reserved; unused bytes must be zero.
+      fields:
+      - name: flags
+        size: 1
+        description: Enable flags and future reserved bits
+        bits:
+          0:
+            name: fmdn_enable
+            description: Enable Google Find My Device Network advertising
+          1:
+            name: apple_enable
+            description: Reserved for future Apple Find My advertising
+          2:
+            name: reserved_2
+          3:
+            name: reserved_3
+          4:
+            name: reserved_4
+          5:
+            name: reserved_5
+          6:
+            name: reserved_6
+          7:
+            name: reserved_7
+      - name: fmdn_k
+        size: 1
+        description: FMDN rotation period exponent K (use 10 for GoogleFindMyTools)
+      - name: fmdn_curve
+        size: 1
+        description: FMDN EID curve / advertise mode
+        enum:
+          0:
+            name: secp160r1
+            description: Static 20-byte EID via advertisement_key (GoogleFindMyTools compatible)
+          1:
+            name: secp256r1
+            description: Rotating 32-byte EID from eik (extended advertising; not used by GFT)
+      - name: reserved0
+        size: 5
+        description: Reserved bytes; must be zero
+      - name: eik
+        size: 32
+        type: bytes
+        description: Google FMDN Ephemeral Identity Key (64 hex chars from GoogleFindMyTools register)
+      - name: apple_master_secret
+        size: 28
+        type: bytes
+        description: Reserved for future Apple P-224 seed material; write all zeros for now
+      - name: time_base_unix
+        size: 4
+        type: uint32
+        description: Unix epoch for secp256r1 rotation; write 0 for static secp160r1
+      - name: apple_time_base
+        size: 4
+        type: uint32
+        description: Reserved for future Apple rotation epoch; write zero for now
+      - name: advertisement_key
+        size: 20
+        type: bytes
+        description: >
+          Static 20-byte SECP160 advertisement EID for GoogleFindMyTools
+          (generate_eid(eik, 0) / Advertisement Key). Required when fmdn_curve=secp160r1.
+      - name: reserved1
+        size: 32
+        type: bytes
+        description: Reserved bytes for future FMDN and Apple extensions; must be zero
+
