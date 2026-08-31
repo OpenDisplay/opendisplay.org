@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.0...1.15.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* sync firmware binaries to OpenDisplay/Firmware v2.26.3 ([6ee1833](https://github.com/OpenDisplay/opendisplay.org/commit/6ee1833da66ff36a113faca2b884a38834d9a8d4))
+* sync firmware binaries to OpenDisplay/Firmware v2.26.3 ([3757dcf](https://github.com/OpenDisplay/opendisplay.org/commit/3757dcf19bf9ad7568c8814fab845c1087ecbcba))
+
 ## [1.15.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.14.0...1.15.0) (2026-08-31)
 
 
