@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.2](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.1...1.15.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* correct Solum 4.2 physical dimensions ([7ba5e14](https://github.com/OpenDisplay/opendisplay.org/commit/7ba5e14ff1c23a42eeb3ebc0792569dca6a55482))
+* Merge pull request [#100](https://github.com/OpenDisplay/opendisplay.org/issues/100) from Misiu/solum_4.2 ([4402410](https://github.com/OpenDisplay/opendisplay.org/commit/44024104ab7348bc000c27a0707d76991180fe50))
+
 ## [1.15.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.0...1.15.1) (2026-08-31)
 
 
