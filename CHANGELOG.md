@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.14.0...1.15.0) (2026-08-31)
+
+
+### Features
+
+* add EL022F6W4A 2.2" BWRY display preset ([f7f6d8c](https://github.com/OpenDisplay/opendisplay.org/commit/f7f6d8c8629eb7f6941c6463b6221f11157ac14b))
+* add EL022F6W4A 2.2" BWRY display preset ([a8e99ee](https://github.com/OpenDisplay/opendisplay.org/commit/a8e99ee8d4eb91bad44e73f2db4fe7bc306e9836))
+
 ## [1.14.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.13.2...1.14.0) (2026-08-28)
 
 
