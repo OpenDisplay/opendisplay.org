@@ -992,7 +992,7 @@ ble_proto:
         description: LED channel 4 pin number (if present)
       - name: led_flags
         size: 1
-        description: LED invert (bitfield)
+        description: LED invert + options (bitfield); bit 4 = flash on button press
         bits:
           0:
             name: led1_invert
@@ -1003,7 +1003,8 @@ ble_proto:
           3:
             name: led4_invert
           4:
-            name: reserved_4
+            name: button_press
+            description: Short LED flash on button press (including button-wake synthetic click)
           5:
             name: reserved_5
           6:
@@ -1528,13 +1529,14 @@ ble_proto:
         description: Optional enable (e.g. FET); 0xFF = unused
       - name: flags
         size: 1
-        description: Bit 0 = enable pin active high (else active low)
+        description: Bit 0 = enable pin active high; bit 1 = chirp on button press
         bits:
           0:
             name: enable_active_high
             description: Enable pin is active high when set; otherwise active low
           1:
-            name: reserved_1
+            name: button_press
+            description: Short buzzer chirp on button press (including button-wake synthetic click)
           2:
             name: reserved_2
           3:
