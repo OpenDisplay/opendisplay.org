@@ -430,6 +430,17 @@
 
       <section class="toolbox-advanced">
         <p class="toolbox-advanced__label">Advanced</p>
+      <div class="button-feedback-option" id="buttonFeedbackOptionGroup" style="display: none;">
+        <label class="button-feedback-check" id="ledButtonPressOption" style="display: none;">
+          <input type="checkbox" id="ledButtonPressCheckbox" />
+          <span>Flash LED on button press</span>
+        </label>
+        <label class="button-feedback-check" id="buzzerButtonPressOption" style="display: none;">
+          <input type="checkbox" id="buzzerButtonPressCheckbox" />
+          <span>Buzz on button press</span>
+        </label>
+        <p class="encryption-hint">Off by default. Only applies when this board has an LED or buzzer configured.</p>
+      </div>
       <div class="findmy-option" id="findMyOptionGroup">
         <div class="wifi-field">
           <label for="findMyProvisionInput">Tracker provisioning code (ODFM1)</label>
@@ -2555,6 +2566,48 @@ function updateWifiVisibility(board) {
   }
 }
 
+const OD_LED_FLAG_BUTTON_PRESS = 1 << 4;
+const OD_BUZZER_FLAG_BUTTON_PRESS = 1 << 1;
+
+function parseConfigFlagByte(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value & 0xFF;
+  const s = String(value).trim();
+  const n = s.startsWith('0x') || s.startsWith('0X') ? parseInt(s, 16) : parseInt(s, 10);
+  return Number.isFinite(n) ? (n & 0xFF) : 0;
+}
+
+function withFlagBit(value, bit, enabled) {
+  const cur = parseConfigFlagByte(value);
+  return enabled ? (cur | bit) : (cur & ~bit);
+}
+
+function isLedButtonPressEnabledInUi() {
+  const el = document.getElementById('ledButtonPressCheckbox');
+  return !!(el && el.checked);
+}
+
+function isBuzzerButtonPressEnabledInUi() {
+  const el = document.getElementById('buzzerButtonPressCheckbox');
+  return !!(el && el.checked);
+}
+
+function updateButtonFeedbackVisibility(board) {
+  const group = document.getElementById('buttonFeedbackOptionGroup');
+  const ledOpt = document.getElementById('ledButtonPressOption');
+  const buzzerOpt = document.getElementById('buzzerButtonPressOption');
+  const ledCb = document.getElementById('ledButtonPressCheckbox');
+  const buzzerCb = document.getElementById('buzzerButtonPressCheckbox');
+  if (!group || !ledOpt || !buzzerOpt) return;
+  const hasLed = !!(board && board.led);
+  const hasBuzzer = !!(board && board.buzzerConfig);
+  ledOpt.style.display = hasLed ? 'flex' : 'none';
+  buzzerOpt.style.display = hasBuzzer ? 'flex' : 'none';
+  group.style.display = (hasLed || hasBuzzer) ? 'flex' : 'none';
+  if (!hasLed && ledCb) ledCb.checked = false;
+  if (!hasBuzzer && buzzerCb) buzzerCb.checked = false;
+}
+
 function getWifiConfigFromUi() {
   const ssidEl = document.getElementById('wifiSsidInput');
   const passEl = document.getElementById('wifiPasswordInput');
@@ -2708,6 +2761,7 @@ function initWifiOptionUi() {
     window.addEventListener('resize', syncWifiSliderUi);
   }
   updateWifiVisibility(simpleConfigSelections.driverBoard);
+  updateButtonFeedbackVisibility(simpleConfigSelections.driverBoard);
 }
 
 function espDeepSleepSecondsToMinutes(seconds) {
@@ -2829,6 +2883,7 @@ function handleDriverBoardChange() {
     installButtonContainer.style.display = 'none';
     updateEspDeepSleepVisibility(null);
     updateWifiVisibility(null);
+    updateButtonFeedbackVisibility(null);
     updateSwitchToFullModeButton();
     return;
   }
@@ -2839,6 +2894,7 @@ function handleDriverBoardChange() {
   toolboxDeviceConfigured = false;
   updateEspDeepSleepVisibility(selectedBoard);
   updateWifiVisibility(selectedBoard);
+  updateButtonFeedbackVisibility(selectedBoard);
   
   // Show install button if board has install config (USB install is unavailable on iOS / Bluefy)
   if (selectedBoard.installConfig && toolboxCanShowUsbInstall(selectedBoard.installConfig.type)) {
@@ -3835,14 +3891,20 @@ function mergeSimpleConfigToFull() {
   
   // Add LED packet if driver board has LED configuration
   if (simpleConfigSelections.driverBoard && simpleConfigSelections.driverBoard.led) {
+    const ledFields = { ...simpleConfigSelections.driverBoard.led };
+    ledFields.led_flags = withFlagBit(
+      ledFields.led_flags,
+      OD_LED_FLAG_BUTTON_PRESS,
+      isLedButtonPressEnabledInUi()
+    );
     const existingLed = instances.packets.find(p => p.pid === '33' && p.fields.instance_number === '0x0');
     if (existingLed) {
-      existingLed.fields = { ...simpleConfigSelections.driverBoard.led };
+      existingLed.fields = ledFields;
     } else {
       const ledInst = {
         uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         pid: '33',
-        fields: { ...simpleConfigSelections.driverBoard.led }
+        fields: ledFields
       };
       instances.packets.push(ledInst);
     }
@@ -3923,14 +3985,20 @@ function mergeSimpleConfigToFull() {
   }
 
   if (simpleConfigSelections.driverBoard && simpleConfigSelections.driverBoard.buzzerConfig) {
+    const buzzerFields = { ...simpleConfigSelections.driverBoard.buzzerConfig };
+    buzzerFields.flags = withFlagBit(
+      buzzerFields.flags,
+      OD_BUZZER_FLAG_BUTTON_PRESS,
+      isBuzzerButtonPressEnabledInUi()
+    );
     const existingBuzzer = instances.packets.find(p => p.pid === '41' && p.fields.instance_number === '0x0');
     if (existingBuzzer) {
-      existingBuzzer.fields = { ...simpleConfigSelections.driverBoard.buzzerConfig };
+      existingBuzzer.fields = buzzerFields;
     } else {
       const buzzerInst = {
         uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         pid: '41',
-        fields: { ...simpleConfigSelections.driverBoard.buzzerConfig }
+        fields: buzzerFields
       };
       instances.packets.push(buzzerInst);
     }
