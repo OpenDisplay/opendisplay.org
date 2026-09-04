@@ -119,7 +119,6 @@ const FILES = {
   'index.html': '<html>root</html>',
   'app/index.html': '<html>app</html>',
   'app/current-version.txt': 'v1\n',
-  'app/RELEASED_VERSIONS': 'v1\n',
   'app/v1/app.css': 'css',
   'app/v1/js/main.js': 'js',
   'js/ble-common.js': 'lib',
@@ -194,72 +193,21 @@ test('identical manifests: no uploads at all', () => {
   assert.deepEqual(uploads, []);
 });
 
-// --- Web OD App release preflight ---
+// --- the app deploys with the rest of the site ---
 
-const APP_FILES = {
-  'index.html': '<html>root</html>',
-  'app/index.html': '<html>app</html>',
-  'app/current-version.txt': 'v1\n',
-  'app/RELEASED_VERSIONS': '# comment\nv1\n',
-  'app/v1/app.css': 'css',
-};
-
-test('deploy proceeds when the current app version is declared immutable', () => {
-  const fx = setup(APP_FILES);
-  const { code } = runDeploy(fx);
-  assert.equal(code, 0);
-});
-
-test('deploy REFUSES to publish an app version missing from RELEASED_VERSIONS', () => {
-  const fx = setup({ ...APP_FILES, 'app/RELEASED_VERSIONS': '# nothing released yet\n' });
-  const { code, uploads, output } = runDeploy(fx);
-  assert.notEqual(code, 0, 'a mutable version must not be released');
-  assert.deepEqual(uploads, [], 'nothing was uploaded');
-  assert.match(output, /NOT listed in app\/RELEASED_VERSIONS/);
-});
-
-test('deploy REFUSES when the pointer names a directory that does not exist', () => {
-  const fx = setup({ ...APP_FILES, 'app/current-version.txt': 'v9\n' });
-  const { code, output } = runDeploy(fx);
-  assert.notEqual(code, 0);
-  assert.match(output, /does not exist/);
-});
-
-test('a site without the app deploys unaffected by the preflight', () => {
-  const fx = setup({ 'index.html': '<html>root</html>', 'js/x.js': 'x' });
-  assert.equal(runDeploy(fx).code, 0);
-});
-
-test('an UNRELEASED app is NOT published, and does not block the rest of the site', () => {
-  // The repository's current state. Unreleased must mean unpublished: httpdocs
-  // deploys wholesale, so without the exclusion the unqualified app would go
-  // live regardless of the pointer.
-  const fx = setup({
-    'index.html': '<html>root</html>',
-    'js/site.js': 'site',
-    'app/index.html': '<html>app</html>',
-    'app/RELEASED_VERSIONS': '# nothing released yet\n',
-    'app/v1/app.css': 'css',
-  });
-  const { code, uploads, output } = runDeploy(fx);
-  assert.equal(code, 0, 'unrelated site files still deploy');
-  const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
-  assert.ok(names.some((n) => n.endsWith('js/site.js')), 'the site deployed');
-  assert.ok(!names.some((n) => n.includes('/app/')),
-    `the unreleased app must not be published: ${names.join(', ')}`);
-});
-
-test('once released, the app IS published', () => {
+test('the app is published like any other part of httpdocs', () => {
+  // There was a release gate here: a preflight in the deploy script that
+  // excluded httpdocs/app/ until a version was declared in RELEASED_VERSIONS.
+  // It has been removed, so /app/ now publishes on an ordinary release with no
+  // separate approval step — which is what these assertions pin.
   const fx = setup({
     'index.html': '<html>root</html>',
     'app/index.html': '<html>app</html>',
-    'app/current-version.txt': 'v1\n',
-    'app/RELEASED_VERSIONS': 'v1\n',
     'app/v1/app.css': 'css',
   });
   const { code, uploads } = runDeploy(fx);
   assert.equal(code, 0);
-  const names = uploads.map((u) => u.replace(/^ftp:\/\/[^/]+\//, ''));
-  assert.ok(names.some((n) => n.includes('/app/v1/app.css')));
-  assert.ok(names.some((n) => n.endsWith('/app/index.html')));
+  assert.ok(uploads.some((u) => u.endsWith('app/index.html')), 'the app entry page ships');
+  assert.ok(uploads.some((u) => u.endsWith('app/v1/app.css')), 'and its versioned assets');
 });
+
