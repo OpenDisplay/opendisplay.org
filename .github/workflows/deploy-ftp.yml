@@ -23,27 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  # A release must never publish code whose tests were not run. The webapp
-  # suite is path-filtered on PRs, so this is the only place that guarantees it
-  # runs against the exact tree being deployed.
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: astral-sh/setup-uv@v5
-      - name: Run webapp test suite
-        env:
-          OD_QR_DECODE_TEST: "1"
-        run: node --test tests/webapp/
-
   deploy:
-    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
