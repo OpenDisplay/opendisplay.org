@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OD App — OpenDisplay</title>
+  <meta name="description" content="OpenDisplay web app: saved devices and a canvas composer for BLE e-paper displays.">
+  <!-- Entry page must revalidate (Cache-Control: no-cache) so a cached copy never
+       pins a superseded v<N>/ asset graph. That header is production server
+       config — verify on the host per DESIGN_WEB_OD_APP_PLAN.md §9 M0. -->
+  <link rel="icon" href="../favicon.ico">
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="v1/app.css">
+</head>
+<body>
+  <main class="odapp">
+    <header class="odapp__header">
+      <a class="odapp__brand" href="../index.html">OpenDisplay</a>
+      <h1 class="odapp__title">OD App <span class="odapp__beta">beta</span></h1>
+      <nav class="odapp__nav" aria-label="Views">
+        <button id="navDevices" class="odapp__navbtn odapp__navbtn--active" type="button">Devices</button>
+        <button id="navComposer" class="odapp__navbtn" type="button" disabled title="Open a device's Composer from its card below — no connection needed">Composer</button>
+      </nav>
+    </header>
+
+    <section id="gateBanner" class="odapp__gate" hidden></section>
+    <!-- Shown when the browser cannot remember Bluetooth permissions, which is
+         the only reason Connect keeps opening the chooser. -->
+    <section id="permissionNote" class="odapp__note" role="status" hidden></section>
+
+    <section id="viewDevices" class="odapp__view">
+      <div class="odapp__toolbar">
+        <button id="btnAddDevice" class="odapp__btn odapp__btn--primary" type="button" disabled>Add device…</button>
+        <button id="btnExport" class="odapp__btn" type="button">Export list</button>
+        <label class="odapp__btn odapp__filebtn">Import list<input id="importFile" type="file" accept="application/json" hidden></label>
+        <span id="statusLine" class="odapp__status" role="status">Loading…</span>
+      </div>
+      <div id="deviceList" class="odapp__cards"></div>
+      <p id="emptyState" class="odapp__empty" hidden>
+        No saved devices yet. Use <strong>Add device…</strong> to pair an OpenDisplay tag over Bluetooth.
+      </p>
+    </section>
+
+    <dialog id="keyDialog" class="odapp-dialog">
+      <form id="keyForm" method="dialog">
+        <h2>Device is locked</h2>
+        <p>"<span id="keyDeviceName"></span>" requires its encryption key (32 hex characters).</p>
+        <input id="keyInput" type="password" autocomplete="off" spellcheck="false"
+               placeholder="00112233445566778899AABBCCDDEEFF" class="odapp-dialog__input">
+        <p id="keyError" class="odapp-dialog__error" role="alert"></p>
+        <label class="odapp-dialog__check"><input id="keySaveCheck" type="checkbox" checked> Save key for this device</label>
+        <div class="odapp-dialog__actions">
+          <button type="button" class="odapp__btn" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="submit" class="odapp__btn odapp__btn--primary">Unlock</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rebindDialog" class="odapp-dialog">
+      <h2>Is this a saved device?</h2>
+      <p>"<span id="rebindDeviceName"></span>" matches saved device(s) whose Bluetooth permission was lost.
+         Rebinding keeps their saved keys and drafts.</p>
+      <p id="rebindDeviceMeta" class="odapp-card__meta"></p>
+      <div id="rebindList" class="odapp-dialog__list"></div>
+      <div class="odapp-dialog__actions">
+        <button type="button" class="odapp__btn odapp__btn--primary" onclick="this.closest('dialog').close()">Save as new device</button>
+      </div>
+    </dialog>
+
+    <section id="viewComposer" class="odapp__view" hidden>
+      <!-- Layout follows od-app's ComposerView: canvas first, then the always-
+           visible action row, then the tool chips, then the ACTIVE tool's
+           panel. Only one tool's controls are on screen at a time — the old
+           flat toolbar showed all of them at once, which is not how the phone
+           app reads. -->
+      <div id="composerStage" class="composer__stage">
+        <div class="composer__canvaswrap">
+          <canvas id="composerCanvas" class="composer__canvas"></canvas>
+          <!-- Selection outline and resize handles live on a SEPARATE canvas:
+               the render canvas must never contain UI chrome, or it could end
+               up in a sent image. pointer-events:none keeps input on the base. -->
+          <canvas id="composerOverlay" class="composer__overlay" aria-hidden="true"></canvas>
+        </div>
+      </div>
+      <p id="composerPanelInfo" class="composer__panelinfo"></p>
+      <p id="composerWarning" class="composer__warning" role="status" hidden></p>
+
+      <div class="composer__actions">
+        <button id="undoBtn" class="odapp__btn" type="button" disabled>Undo</button>
+        <button id="redoBtn" class="odapp__btn" type="button" disabled>Redo</button>
+        <button id="deleteLayerBtn" class="odapp__btn" type="button" disabled>Delete</button>
+        <button id="clearBtn" class="odapp__btn" type="button" disabled
+                title="Remove everything from the canvas (undoable)">Clear</button>
+        <span class="composer__spacer"></span>
+        <button id="viewRotateLeft" class="odapp__btn" type="button" disabled
+                title="Turn the canvas a quarter turn anticlockwise. This is a viewing preference — it does not change what the display shows.">&#8630;</button>
+        <button id="viewRotateRight" class="odapp__btn" type="button" disabled
+                title="Turn the canvas a quarter turn clockwise. This is a viewing preference — it does not change what the display shows.">&#8631;</button>
+        <button id="connectBtn" class="odapp__btn" type="button" disabled>Connect</button>
+        <button id="sendBtn" class="odapp__btn odapp__btn--primary" type="button" disabled>Send to display</button>
+      </div>
+      <progress id="sendProgress" class="composer__progress" value="0" max="100" hidden></progress>
+
+      <div class="composer__chips" role="tablist" aria-label="Tools">
+        <button id="toolSelect" class="composer__chip composer__chip--active" type="button" role="tab" aria-selected="true" data-panel="panelSelect">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5 12.5 8 8.2 9.1 6.6 13.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Move
+        </button>
+        <button id="toolDraw" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelDraw">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14l1-3.5L10.5 3 13 5.5 5.5 13z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Draw
+        </button>
+        <button id="toolText" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelText">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11M8 3.5v9M5.5 12.5h5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Text
+        </button>
+        <button id="toolQr" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelQr">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h4v4H2zM10 2h4v4h-4zM2 10h4v4H2zM10 10h2v2h-2zM13 13h1v1h-1z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>QR
+        </button>
+        <button id="toolPhoto" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelPhoto">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h13v9h-13zM3 11l3.5-4 2.5 3 2-2 2 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Photo
+        </button>
+        <button id="toolDither" class="composer__chip" type="button" role="tab" aria-selected="false" data-panel="panelDither">
+          <svg class="composer__chipicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM8 2h3v3H8zM5 5h3v3H5zM11 5h3v3h-3zM2 8h3v3H2zM8 8h3v3H8zM5 11h3v3H5zM11 11h3v3h-3z" fill="currentColor"/></svg>Dither
+        </button>
+      </div>
+
+      <div class="composer__panels">
+        <div id="panelSelect" class="composer__panel">
+          <p class="composer__hint">Tap an element to select it, then drag to move it; text and QR
+             codes also resize by pulling a corner. A photo is the canvas background — dragging pans
+             it and the Photo panel's Zoom scales it. Anything past the edge of the canvas is
+             cropped when the image is sent.</p>
+        </div>
+
+        <div id="panelDraw" class="composer__panel" hidden>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="drawInk" class="composer__swatches" role="radiogroup" aria-label="Draw ink"></div>
+          </div>
+          <label class="composer__row">
+            <span class="composer__label">Width</span>
+            <input id="drawWidth" type="range" min="0.002" max="0.06" step="0.002" value="0.012">
+          </label>
+        </div>
+
+        <div id="panelText" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Text</span>
+            <input id="textContent" class="composer__field" type="text" placeholder="Hello" value="Hello">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Size</span>
+            <input id="textSize" type="range" min="0.03" max="0.5" step="0.01" value="0.12">
+          </label>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="textInk" class="composer__swatches" role="radiogroup" aria-label="Text ink"></div>
+          </div>
+          <p class="composer__hint">Tap the canvas to place it, or <button id="addTextBtn" class="odapp__btn odapp__btn--link" type="button">add it in the middle</button>.</p>
+        </div>
+
+        <div id="panelQr" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Content</span>
+            <input id="qrContent" class="composer__field" type="text" placeholder="https://opendisplay.org" value="https://opendisplay.org">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Size</span>
+            <input id="qrSize" type="range" min="0.1" max="1" step="0.05" value="0.3">
+          </label>
+          <label class="composer__row">
+            <span class="composer__label">Error correction</span>
+            <select id="qrEcc" class="composer__field">
+              <option value="L">L — smallest code</option>
+              <option value="M" selected>M</option>
+              <option value="Q">Q</option>
+              <option value="H">H — most robust</option>
+            </select>
+          </label>
+          <div class="composer__row">
+            <span class="composer__label">Ink</span>
+            <div id="qrInk" class="composer__swatches" role="radiogroup" aria-label="QR ink"></div>
+          </div>
+          <p class="composer__hint">Tap the canvas to place it, or <button id="addQrBtn" class="odapp__btn odapp__btn--link" type="button">add it in the middle</button>.</p>
+        </div>
+
+        <div id="panelPhoto" class="composer__panel" hidden>
+          <div class="composer__row">
+            <label class="odapp__btn odapp__filebtn">Choose photo<input id="photoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+          </div>
+          <div id="photoControls" class="composer__photo" hidden>
+            <label class="composer__row">
+              <span class="composer__label">Fit</span>
+              <select id="photoFit" class="composer__field">
+                <option value="cover">Cover — fills the canvas, crops the overflow</option>
+                <option value="contain">Contain — whole photo inside the canvas</option>
+                <option value="none">None — natural pixel size</option>
+              </select>
+            </label>
+            <label class="composer__row">
+              <span class="composer__label">Zoom</span>
+              <input id="photoSize" type="range" min="0.2" max="4" step="0.05" value="1"
+                     title="Zoom on top of the fit mode. Below 1 the photo shrinks inside the canvas; above 1 it is cropped by the canvas edge.">
+            </label>
+            <div class="composer__row">
+              <span class="composer__label">Rotate</span>
+              <button id="photoRotateLeft" class="odapp__btn" type="button"
+                      title="Turn this photo a quarter turn anticlockwise">&#8630; Left</button>
+              <button id="photoRotateRight" class="odapp__btn" type="button"
+                      title="Turn this photo a quarter turn clockwise">&#8631; Right</button>
+            </div>
+            <p class="composer__subhead">Adjustments</p>
+            <label class="composer__row"><span class="composer__label">Exposure</span><input id="adjExposure" type="range" min="0.3" max="2" step="0.05" value="1"></label>
+            <label class="composer__row"><span class="composer__label">Saturation</span><input id="adjSaturation" type="range" min="0" max="2" step="0.05" value="1"></label>
+            <label class="composer__row"><span class="composer__label">Shadows</span><input id="adjShadows" type="range" min="0" max="1" step="0.05" value="0"></label>
+            <label class="composer__row"><span class="composer__label">Highlights</span><input id="adjHighlights" type="range" min="0" max="1" step="0.05" value="0"></label>
+          </div>
+          <p id="photoEmptyHint" class="composer__hint">No photo selected. Choose one, then use Move to position it.</p>
+        </div>
+
+        <div id="panelDither" class="composer__panel" hidden>
+          <label class="composer__row">
+            <span class="composer__label">Algorithm</span>
+            <select id="ditherMode" class="composer__field">
+              <option value="1">Burkes</option>
+              <option value="3">Floyd-Steinberg</option>
+              <option value="4">Atkinson</option>
+              <option value="5">Stucki</option>
+              <option value="6">Sierra</option>
+              <option value="7">Sierra Lite</option>
+              <option value="8">Jarvis-Judice-Ninke</option>
+              <option value="2">Ordered</option>
+              <option value="9">Dizzy</option>
+              <option value="0">None</option>
+            </select>
+          </label>
+          <label class="composer__check"><input id="useMeasured" type="checkbox" checked> Measured palette</label>
+          <label class="composer__check"><input id="showDithered" type="checkbox" checked> Dithered preview</label>
+        </div>
+      </div>
+
+      <p id="composerStatus" class="odapp__status" role="status">
+        Drop or paste an image here.
+      </p>
+    </section>
+
+    <footer class="odapp__footer">
+      <a href="../firmware/display/index.html">BLE Tester</a>
+      <a href="../firmware/toolbox/index.html">Toolbox</a>
+      <a href="../designer/index.html">Visual Designer</a>
+    </footer>
+  </main>
+
+  <!-- Shared classic runtime: js-yaml MUST precede ble-common (schema parser). -->
+  <script src="../js/js-yaml.min.js"></script>
+  <script src="../js/pako.js"></script>
+  <script src="../js/opendisplay-msd.js"></script>
+  <script src="../js/ble-common.js"></script>
+  <!-- App bridge: constructs the per-connection OpenDisplayBLE instance. -->
+  <script src="v1/boot-bridge.js"></script>
+  <!-- Classic script: explains a module-graph failure the modules cannot
+       report themselves (a stale cache leaves the page silently at "Loading…"). -->
+  <script src="v1/boot-watchdog.js"></script>
+  <script type="module" src="v1/js/main.js"></script>
+</body>
+</html>

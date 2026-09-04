@@ -1,0 +1,95 @@
+{
+ "source": "py-opendisplay",
+ "revision": "e0d58654730da46759fb3b8040b88f03a414764a",
+ "generator": "tests/webapp/tools/generate_golden.py",
+ "cases": [
+  {
+   "name": "mono",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 2,
+   "seed": 9001,
+   "bytesHex": "5550aaa85550aaa85550aaa85550"
+  },
+  {
+   "name": "bwr",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 3,
+   "seed": 9002,
+   "bytesHex": "cdb8fc588cf8bbc877b0fdb8766885a824100c58334007a044006648"
+  },
+  {
+   "name": "bwy",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 3,
+   "seed": 9003,
+   "bytesHex": "aa085720343010c08820a4380028500020c088c06a2062d01b805d50"
+  },
+  {
+   "name": "bwry_default",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 4,
+   "seed": 9004,
+   "bytesHex": "e4e4e4c0939393804e4e4e4039393900e4e4e4c0939393804e4e4e40"
+  },
+  {
+   "name": "bwry_0x1d",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 4,
+   "seed": 9005,
+   "bytesHex": "2d2d2d00b4b4b480d2d2d2c04b4b4b402d2d2d00b4b4b480d2d2d2c0"
+  },
+  {
+   "name": "bwry_0x1e",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 4,
+   "seed": 9006,
+   "bytesHex": "4b4b4b402d2d2d00b4b4b480d2d2d2c04b4b4b402d2d2d00b4b4b480"
+  },
+  {
+   "name": "bwgbry",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 6,
+   "seed": 9007,
+   "bytesHex": "06532601062100303062306510300106565353215015321265653230015621515106506530123262321003562651060300"
+  },
+  {
+   "name": "bwgbry_split",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 6,
+   "seed": 9008,
+   "bytesHex": "60623023235315101506015662653201030130106532123060560321501060606026035620351060100606065030653260"
+  },
+  {
+   "name": "gray4_base",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 4,
+   "seed": 9009,
+   "bytesHex": "999833306660ccc8999833306660aaa85550aaa85550aaa85550aaa8"
+  },
+  {
+   "name": "gray4_v2",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 4,
+   "seed": 9010,
+   "bytesHex": "5550aaa85550aaa85550aaa85550ccc8999833306660ccc899983330"
+  },
+  {
+   "name": "gray16",
+   "width": 13,
+   "height": 7,
+   "paletteSize": 16,
+   "seed": 9011,
+   "bytesHex": "6d87a1cbe50f209436d87a1cbe500f29436d87a1c0be50f29436d870a1cbe50f294360d87a1cbe50f290436d87a1cbe500"
+  }
+ ]
+}

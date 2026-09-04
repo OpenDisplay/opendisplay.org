@@ -1,0 +1,188 @@
+// M1 store tests against REAL IndexedDB in real Chromium, driven over CDP
+// (lib/chrome-cdp.mjs) because --dump-dom's virtual time never lets IndexedDB
+// callbacks run. The fixture page is served virtually at /__test__/ (never
+// present in httpdocs, never deployed) and imports the REAL store.js/keys.js.
+//
+// Two sequential Chrome launches share one profile and one server port (same
+// origin), so run 2 proves records and keys persist across a browser restart.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { ChromeCdp } from './lib/chrome-cdp.mjs';
+
+const HTTPDOCS = resolve(dirname(fileURLToPath(import.meta.url)), '../../httpdocs');
+
+const CHROME = ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium']
+  .map((n) => `/usr/bin/${n}`)
+  .find((p) => existsSync(p));
+
+const MIME = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.yaml': 'text/yaml', '.json': 'application/json',
+};
+
+const FIXTURE = `<!DOCTYPE html><html><body><script type="module">
+window.resultPromise = (async () => {
+  const store = await import('/app/v1/js/store.js');
+  const keys = await import('/app/v1/js/keys.js');
+  const phase = new URL(location.href).searchParams.get('phase');
+  const out = { phase, checks: {} };
+  const ok = (name, cond) => { out.checks[name] = !!cond; };
+
+  if (phase === '1') {
+    const a = await store.createDevice({
+      bleId: 'ble-A', name: 'OD-A', width: 800, height: 480,
+      rotationQuarterTurns: 1, colorScheme: 4, resolutionConfirmed: true,
+      authRequired: true,
+    });
+    const b = await store.createDevice({
+      bleId: 'ble-B', name: 'OD-B', width: 122, height: 250, colorScheme: 0,
+      resolutionConfirmed: true,
+    });
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab));
+    ok('created', (await store.listDevices()).length === 2);
+
+    // Failed validation must leave the record untouched (two-phase contract:
+    // nothing is written before commitRebind).
+    const preRebind = await store.getDevice(a.recordId);
+    ok('noWriteBeforeCommit', preRebind.bleId === 'ble-A' && preRebind.name === 'OD-A');
+
+    // Rebind A with a metadata patch: binding + metadata land atomically in
+    // one transaction; the key follows recordId.
+    await store.commitRebind(a.recordId, 'ble-A2', { name: 'OD-A-renamed', firmwareVersion: '9.9' });
+    const a2 = await store.getDevice(a.recordId);
+    ok('rebindAtomic', a2.bleId === 'ble-A2' && a2.name === 'OD-A-renamed' && a2.firmwareVersion === '9.9');
+    const keyAfter = await keys.getKey(a.recordId);
+    ok('keyFollowsRecord', keyAfter && keyAfter[0] === 0xab);
+
+    // exportedAt lifecycle: nag until confirmed delivery; replacing the key
+    // bytes revives the nag.
+    ok('unexportedNag', await keys.hasUnexportedKey(a.recordId));
+    const hex = await keys.exportKeyHex(a.recordId);
+    ok('exportHex', hex === 'ab'.repeat(16));
+    ok('exportNotMarkedYet', await keys.hasUnexportedKey(a.recordId));
+    await keys.markExported(a.recordId);
+    ok('exportedCleared', !(await keys.hasUnexportedKey(a.recordId)));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab)); // same bytes
+    ok('sameBytesKeepExported', !(await keys.hasUnexportedKey(a.recordId)));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xcd)); // rotated
+    ok('newBytesReviveNag', await keys.hasUnexportedKey(a.recordId));
+    await keys.saveKey(a.recordId, new Uint8Array(16).fill(0xab)); // restore for phase 2
+    await keys.markExported(a.recordId);
+
+    const payload = await store.exportDevices();
+    ok('exportStripsBleId', payload.devices.every((d) => d.bleId === undefined));
+
+    // REAL forget cascade: B carries a key and a draft; both must go, A's stay.
+    await keys.saveKey(b.recordId, new Uint8Array(16).fill(0xbb));
+    await store.putDraft({ id: 'draft-B', recordId: b.recordId, layers: [] });
+    await store.forgetDevice(b.recordId);
+    const remaining = await store.listDevices();
+    ok('forgetCascade',
+      remaining.length === 1 && remaining[0].recordId === a.recordId
+      && (await keys.getKey(b.recordId)) === null
+      && (await store.listDraftsFor(b.recordId)).length === 0
+      && (await keys.getKey(a.recordId)) !== null);
+  } else {
+    const devices = await store.listDevices();
+    ok('persistedDevice', devices.length === 1 && devices[0].name === 'OD-A-renamed'
+       && devices[0].bleId === 'ble-A2' && devices[0].rotationQuarterTurns === 1
+       && devices[0].firmwareVersion === '9.9');
+    const key = devices.length ? await keys.getKey(devices[0].recordId) : null;
+    ok('persistedKey', !!key && key.length === 16 && key[5] === 0xab);
+
+    // An import must NEVER rewrite an existing record: a stale export could
+    // otherwise replace freshly-read panel facts on a bound (even connected)
+    // device, and every later send check would validate against the stale ones.
+    const payload = { format: 'od-app-devices', version: 1,
+      devices: [{ ...devices[0], bleId: 'SHOULD-NOT-APPLY', width: 99, colorScheme: 0,
+                  name: 'STALE' }] };
+    const res1 = await store.importDevices(payload);
+    const after = await store.getDevice(devices[0].recordId);
+    ok('importKeepsBinding', after.bleId === 'ble-A2');
+    ok('importNeverOverwrites',
+       after.width === devices[0].width && after.name === devices[0].name
+       && res1.imported === 0 && res1.skipped === 1);
+
+    // A NEW record imports, but is never treated as hardware-confirmed.
+    const res2 = await store.importDevices({ format: 'od-app-devices', version: 1, devices: [{
+      recordId: 'imported-1', name: 'From file', width: 400, height: 300,
+      rotationQuarterTurns: 0, colorScheme: 4, transmissionModes: 0,
+      partialUpdateSupport: 0, panelIcType: 35, resolutionConfirmed: true,
+    }] });
+    const imported = await store.getDevice('imported-1');
+    ok('importAddsNew', res2.imported === 1 && !!imported);
+    ok('importIsUnconfirmed', imported.resolutionConfirmed === false);
+    ok('importDropsBinding', imported.bleId === null);
+
+    // Malformed or out-of-range records are refused outright.
+    const res3 = await store.importDevices({ format: 'od-app-devices', version: 1, devices: [
+      { recordId: 'bad-1', width: 0, height: 300, colorScheme: 4 },
+      { recordId: 'bad-2', width: 400, height: 300, colorScheme: 999,
+        rotationQuarterTurns: 0, transmissionModes: 0, partialUpdateSupport: 0 },
+      { recordId: 'bad-3', width: 400, height: 300, colorScheme: 4,
+        rotationQuarterTurns: 7, transmissionModes: 0, partialUpdateSupport: 0 },
+      { width: 400, height: 300 },
+    ] });
+    ok('importRejectsGarbage',
+       res3.imported === 0 && res3.skipped === 4
+       && !(await store.getDevice('bad-1')) && !(await store.getDevice('bad-2')));
+  }
+  out.ok = Object.values(out.checks).every(Boolean);
+  return out;
+})();
+</script></body></html>`;
+
+function serve() {
+  const server = createServer((req, res) => {
+    const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (path.startsWith('/__test__/store-fixture')) {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(FIXTURE);
+      return;
+    }
+    const file = join(HTTPDOCS, path);
+    if (!file.startsWith(HTTPDOCS) || !existsSync(file)) {
+      res.writeHead(404).end('not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+    res.end(readFileSync(file));
+  });
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, port: server.address().port })));
+}
+
+async function runPhase(profile, url) {
+  const chrome = await ChromeCdp.launch(CHROME, { profileDir: profile });
+  try {
+    // Throws until the module has installed the promise, so evalOnPage polls.
+    return await chrome.evalOnPage(
+      url,
+      "window.resultPromise || (() => { throw new Error('module not ready'); })()",
+    );
+  } finally {
+    await chrome.close();
+  }
+}
+
+test('store + keys against real IndexedDB, incl. restart persistence', async (t) => {
+  if (!CHROME) {
+    if (process.env.OD_REQUIRE_BROWSER_TESTS || process.env.CI) {
+      assert.fail('no Chrome/Chromium binary found and browser tests are required');
+    }
+    t.skip('no Chrome/Chromium binary found');
+    return;
+  }
+  const { server, port } = await serve();
+  t.after(() => server.close());
+  const profile = mkdtempSync(join(tmpdir(), 'od-store-profile-'));
+
+  const r1 = await runPhase(profile, `http://127.0.0.1:${port}/__test__/store-fixture.html?phase=1`);
+  assert.ok(r1?.ok, `phase 1 failed: ${JSON.stringify(r1)}`);
+
+  const r2 = await runPhase(profile, `http://127.0.0.1:${port}/__test__/store-fixture.html?phase=2`);
+  assert.ok(r2?.ok, `phase 2 (restart) failed: ${JSON.stringify(r2)}`);
+});
