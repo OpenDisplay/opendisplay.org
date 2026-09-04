@@ -1,12 +1,13 @@
 # Web OD App — hardware qualification
 
-Plan reference: `DESIGN_WEB_OD_APP_PLAN.md` §10. **No results are recorded
-yet** — the software pipeline is proven byte-identical to py-opendisplay in
-automated tests, but nothing here has touched a physical tag.
+Plan reference: `DESIGN_WEB_OD_APP_PLAN.md` §10. **No results are recorded in
+this table yet.** The software pipeline is proven byte-identical to
+py-opendisplay in automated tests; ad-hoc testing against real displays has
+been done during development, but not against this matrix and not written down.
 
-**M3 is therefore software-complete, not qualified.** Nobody should treat the
-app as release-ready for a panel/transport combination until its row below is
-filled in with a date and a result.
+**Treat any row without a date and a result as unverified**, and do not read an
+empty table as evidence either way — it means nobody has recorded an answer
+here, not that the answer is no.
 
 ## Why automated tests are not enough
 
