@@ -489,6 +489,7 @@
   </div>
 <script src="/js/pako.js"></script>
 <script src="/js/ble-common.js"></script>
+<script type="module" src="/js/dither.js"></script>
 <script>
 let bleLib = null;
 // Live resolve/reject for the current connectToBleDevice() attempt. The persistent
@@ -3581,9 +3582,10 @@ async function uploadTestImageAfterReboot() {
     const testCanvas = createTestImageCanvas(pixelWidth, pixelHeight, colorScheme);
     
     // Apply dithering if needed (for color schemes that support it)
+    let dither = null;
     if (colorScheme > 0 && bleLib && bleLib.applyDithering) {
       const ctx = testCanvas.getContext('2d', { willReadFrequently: true });
-      bleLib.applyDithering(ctx, pixelWidth, pixelHeight, colorScheme, 'floyd-steinberg');
+      dither = await bleLib.applyDithering(ctx, pixelWidth, pixelHeight, colorScheme, 'floyd-steinberg', { panelIcType });
     }
     
     // Upload test image - wrap in promise to wait for completion
@@ -3597,6 +3599,8 @@ async function uploadTestImageAfterReboot() {
         panelIcType: panelIcType,
         transmissionModes: transmissionModes,
         useFastRefresh: false,
+        ditherIndices: dither ? dither.indices : null,
+        ditherWireMap: dither ? dither.wireMap : null,
         onProgress: (current, total) => {
           const progress = Math.floor((current / total) * 100);
           const overallProgress = 96 + Math.floor(progress * 0.03);

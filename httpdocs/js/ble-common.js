@@ -78,6 +78,21 @@ function bluetoothUuidShortLabel(uuid) {
 }
 
 class OpenDisplayBLE {
+  /**
+   * Resolve once /js/dither.js (an ES module) has published window.OpenDisplayDither.
+   * @returns {Promise<object>}
+   */
+  static ditherReady() {
+    if (window.OpenDisplayDither) return Promise.resolve(window.OpenDisplayDither);
+    return new Promise((resolve) => {
+      window.addEventListener(
+        'opendisplay-dither-ready',
+        () => resolve(window.OpenDisplayDither),
+        { once: true }
+      );
+    });
+  }
+
   constructor(options = {}) {
     // Configuration
     this.serviceUUID = normalizeBluetoothUuid(options.serviceUUID || OPENDISPLAY_BLE_SERVICE_UUID);
@@ -3557,118 +3572,108 @@ class OpenDisplayBLE {
   }
 
   /**
-   * Apply dithering to canvas context
+   * Apply dithering to a canvas context using the epaper-dithering WASM core.
    * @param {CanvasRenderingContext2D} ctx - Canvas 2D context
    * @param {number} width - Canvas width
    * @param {number} height - Canvas height
-   * @param {number} colorScheme - Color scheme (0-6)
-   * @param {string} ditheringType - Dithering algorithm ('floyd-steinberg', 'atkinson', 'stucki', 'sierra', 'sierra-lite', 'burkes', 'jarvis-judice-ninke')
+   * @param {number} colorScheme - Color scheme (0-8)
+   * @param {string} ditheringType - Mode value from OpenDisplayDither.MODES, or 'auto'
+   * @param {object} [options] - panelIcType, paletteId, realistic and pre-dither adjustments
+   * @returns {Promise<object>} Dither result including palette indices for encoding
    */
-  applyDithering(ctx, width, height, colorScheme, ditheringType) {
+  async applyDithering(ctx, width, height, colorScheme, ditheringType, options = {}) {
+    const lib = await OpenDisplayBLE.ditherReady();
     const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    const errorsR = new Array(width * height).fill(0);
-    const errorsG = new Array(width * height).fill(0);
-    const errorsB = new Array(width * height).fill(0);
+    const result = lib.dither(imageData, {
+      ...options,
+      scheme: colorScheme,
+      mode: ditheringType,
+    });
+    lib.paint(ctx, width, height, result.indices, result.preview);
+    return result;
+  }
 
-    const clamp = (value) => Math.max(0, Math.min(255, value));
+  /**
+   * Build one wire value per pixel, in canvas order.
+   * Prefers palette indices produced by applyDithering; otherwise matches canvas RGB
+   * the way this encoder always has.
+   * @param {Uint8ClampedArray} pixels - RGBA pixel data
+   * @param {number} count - Pixel count
+   * @param {number} colorScheme - Color scheme (0-8)
+   * @param {number|null} panelIcType - Panel IC type, for the 4-gray LUT
+   * @param {Uint8Array|null} ditherIndices - Palette index per pixel
+   * @param {number[]|null} ditherWireMap - Palette index to wire value
+   * @returns {Uint8Array}
+   */
+  buildWireCodes(pixels, count, colorScheme, panelIcType, ditherIndices, ditherWireMap) {
+    const codes = new Uint8Array(count);
+    if (ditherIndices && ditherWireMap && ditherIndices.length === count) {
+      for (let i = 0; i < count; i++) codes[i] = ditherWireMap[ditherIndices[i]] ?? 0;
+      return codes;
+    }
 
-    const setPixelError = (x, y, errR, errG, errB, factor) => {
-      if (x < 0 || x >= width || y < 0 || y >= height) return;
-      const index = y * width + x;
-      errorsR[index] += errR * factor;
-      errorsG[index] += errG * factor;
-      errorsB[index] += errB * factor;
-    };
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = y * width + x;
-        const dataIndex = index * 4;
-        const oldR = clamp(data[dataIndex] + errorsR[index]);
-        const oldG = clamp(data[dataIndex + 1] + errorsG[index]);
-        const oldB = clamp(data[dataIndex + 2] + errorsB[index]);
-        const [newR, newG, newB] = this.findNearestColor(oldR, oldG, oldB, colorScheme);
-        data[dataIndex] = newR;
-        data[dataIndex + 1] = newG;
-        data[dataIndex + 2] = newB;
-        const errR = oldR - newR;
-        const errG = oldG - newG;
-        const errB = oldB - newB;
-
-        switch (ditheringType) {
-          case 'floyd-steinberg':
-            setPixelError(x + 1, y, errR, errG, errB, 7 / 16);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 3 / 16);
-            setPixelError(x, y + 1, errR, errG, errB, 5 / 16);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 1 / 16);
-            break;
-          case 'atkinson':
-            setPixelError(x + 1, y, errR, errG, errB, 1 / 8);
-            setPixelError(x + 2, y, errR, errG, errB, 1 / 8);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 1 / 8);
-            setPixelError(x, y + 1, errR, errG, errB, 1 / 8);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 1 / 8);
-            setPixelError(x, y + 2, errR, errG, errB, 1 / 8);
-            break;
-          case 'stucki':
-            setPixelError(x + 1, y, errR, errG, errB, 42 / 200);
-            setPixelError(x + 2, y, errR, errG, errB, 26 / 200);
-            setPixelError(x - 2, y + 1, errR, errG, errB, 8 / 200);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 24 / 200);
-            setPixelError(x, y + 1, errR, errG, errB, 30 / 200);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 16 / 200);
-            setPixelError(x + 2, y + 1, errR, errG, errB, 12 / 200);
-            setPixelError(x - 2, y + 2, errR, errG, errB, 2 / 200);
-            setPixelError(x - 1, y + 2, errR, errG, errB, 4 / 200);
-            setPixelError(x, y + 2, errR, errG, errB, 2 / 200);
-            setPixelError(x + 1, y + 2, errR, errG, errB, 4 / 200);
-            setPixelError(x + 2, y + 2, errR, errG, errB, 2 / 200);
-            break;
-          case 'sierra':
-            setPixelError(x + 1, y, errR, errG, errB, 5 / 32);
-            setPixelError(x + 2, y, errR, errG, errB, 3 / 32);
-            setPixelError(x - 2, y + 1, errR, errG, errB, 2 / 32);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 4 / 32);
-            setPixelError(x, y + 1, errR, errG, errB, 3 / 32);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 2 / 32);
-            setPixelError(x + 2, y + 1, errR, errG, errB, 2 / 32);
-            setPixelError(x - 1, y + 2, errR, errG, errB, 2 / 32);
-            setPixelError(x, y + 2, errR, errG, errB, 1 / 32);
-            setPixelError(x + 1, y + 2, errR, errG, errB, 1 / 32);
-            break;
-          case 'sierra-lite':
-            setPixelError(x + 1, y, errR, errG, errB, 2 / 4);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 1 / 4);
-            setPixelError(x, y + 1, errR, errG, errB, 1 / 4);
-            break;
-          case 'burkes':
-            setPixelError(x + 1, y, errR, errG, errB, 32 / 200);
-            setPixelError(x + 2, y, errR, errG, errB, 12 / 200);
-            setPixelError(x - 2, y + 1, errR, errG, errB, 5 / 200);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 12 / 200);
-            setPixelError(x, y + 1, errR, errG, errB, 26 / 200);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 12 / 200);
-            setPixelError(x + 2, y + 1, errR, errG, errB, 5 / 200);
-            break;
-          case 'jarvis-judice-ninke':
-            setPixelError(x + 1, y, errR, errG, errB, 7 / 48);
-            setPixelError(x + 2, y, errR, errG, errB, 5 / 48);
-            setPixelError(x - 2, y + 1, errR, errG, errB, 3 / 48);
-            setPixelError(x - 1, y + 1, errR, errG, errB, 5 / 48);
-            setPixelError(x, y + 1, errR, errG, errB, 7 / 48);
-            setPixelError(x + 1, y + 1, errR, errG, errB, 5 / 48);
-            setPixelError(x + 2, y + 1, errR, errG, errB, 3 / 48);
-            setPixelError(x - 2, y + 2, errR, errG, errB, 1 / 48);
-            setPixelError(x - 1, y + 2, errR, errG, errB, 3 / 48);
-            setPixelError(x, y + 2, errR, errG, errB, 5 / 48);
-            setPixelError(x + 1, y + 2, errR, errG, errB, 3 / 48);
-            setPixelError(x + 2, y + 2, errR, errG, errB, 1 / 48);
-            break;
-        }
+    if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
+      // Schemes 4/8 (Spectra 6) and scheme 7 (ACeP) use different nibble codes for the same
+      // colors, so the table is selected per scheme rather than shared. Scheme 7
+      // keeps Spectra 6's yellow=2/red=3 but moves blue and green down to 4/5 to
+      // free 6 for orange.
+      const nibbleFor = colorScheme === 7
+        ? { black: 0, white: 1, yellow: 2, red: 3, blue: 4, green: 5, orange: 6 }
+        : { black: 0, white: 1, yellow: 2, red: 3, blue: 5, green: 6 };
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        codes[i] = nibbleFor[this.detectColor(pixels[p], pixels[p + 1], pixels[p + 2], colorScheme)] ?? 0;
+      }
+    } else if (colorScheme === 6) {
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        const y = 0.299 * pixels[p] + 0.587 * pixels[p + 1] + 0.114 * pixels[p + 2];
+        codes[i] = Math.min(15, Math.max(0, Math.round((y * 15) / 255)));
+      }
+    } else if (colorScheme === 5) {
+      // Host applies the panel gray LUT (u8Colors_4gray / u8Colors_4gray_v2) so the
+      // stored code can be split into plane bits below.
+      const GRAY4_LUT = [3, 1, 2, 0];
+      const GRAY4_LUT_V2 = [3, 2, 1, 0];
+      const panelId = panelIcType != null ? Number(panelIcType) : NaN;
+      const grayLut = (panelId === 0x28 || panelId === 40 || panelId === 0x48 || panelId === 72)
+        ? GRAY4_LUT_V2
+        : GRAY4_LUT;
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        const gray = (pixels[p] + pixels[p + 1] + pixels[p + 2]) / 3;
+        let level;
+        if (gray < 64) level = 0;
+        else if (gray < 128) level = 1;
+        else if (gray < 192) level = 2;
+        else level = 3;
+        codes[i] = grayLut[level];
+      }
+    } else if (colorScheme === 1 || colorScheme === 2) {
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        const color = this.detectColor(pixels[p], pixels[p + 1], pixels[p + 2], colorScheme);
+        if (color === 'white') codes[i] = 1;
+        else if (color === 'red') codes[i] = 3;
+        else if (color === 'yellow') codes[i] = 2;
+        else codes[i] = 0;
+      }
+    } else if (colorScheme === 3) {
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        const color = this.detectColor(pixels[p], pixels[p + 1], pixels[p + 2], colorScheme);
+        if (color === 'white') codes[i] = 1;
+        else if (color === 'yellow') codes[i] = 2;
+        else if (color === 'red') codes[i] = 3;
+        else codes[i] = 0;
+      }
+    } else {
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        codes[i] = ((pixels[p] + pixels[p + 1] + pixels[p + 2]) / 3) > 128 ? 1 : 0;
       }
     }
-    ctx.putImageData(imageData, 0, 0);
+    return codes;
   }
 
   /**
@@ -3679,24 +3684,33 @@ class OpenDisplayBLE {
    * @param {number} originalWidth - Original width before rotation
    * @param {number} originalHeight - Original height before rotation
    * @param {number|null} panelIcType - Panel IC type for panel-specific 4-gray LUT (optional)
+   * @param {Uint8Array|null} ditherIndices - Palette index per pixel from applyDithering (optional)
+   * @param {number[]|null} ditherWireMap - Palette index to wire value (optional)
    * @returns {Array} Byte array representing the image
    */
-  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null) {
+  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null, ditherIndices = null, ditherWireMap = null) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let pixels = imageData.data;
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let imageWidth = imageData.width;
     let imageHeight = imageData.height;
-    
-    // Handle rotation if needed
+
+    // Resolve every pixel to its wire value first, then rotate one byte per pixel
+    // instead of four.
+    let codes = this.buildWireCodes(
+      imageData.data,
+      imageWidth * imageHeight,
+      colorScheme,
+      panelIcType,
+      ditherIndices,
+      ditherWireMap
+    );
+
     if (rotation === 1 || rotation === 3) {
       const origWidth = originalWidth || imageHeight;
       const origHeight = originalHeight || imageWidth;
-      const rotatedPixels = new Uint8ClampedArray(origWidth * origHeight * 4);
-      
+      const rotated = new Uint8Array(origWidth * origHeight);
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
-          const srcIndex = (y * imageWidth + x) * 4;
           let dstX, dstY;
           if (rotation === 1) {
             dstX = imageHeight - 1 - y;
@@ -3705,65 +3719,44 @@ class OpenDisplayBLE {
             dstX = y;
             dstY = imageWidth - 1 - x;
           }
-          const dstIndex = (dstY * origWidth + dstX) * 4;
-          rotatedPixels[dstIndex] = pixels[srcIndex];
-          rotatedPixels[dstIndex + 1] = pixels[srcIndex + 1];
-          rotatedPixels[dstIndex + 2] = pixels[srcIndex + 2];
-          rotatedPixels[dstIndex + 3] = pixels[srcIndex + 3];
+          rotated[dstY * origWidth + dstX] = codes[y * imageWidth + x];
         }
       }
-      pixels = rotatedPixels;
+      codes = rotated;
       imageWidth = origWidth;
       imageHeight = origHeight;
     } else if (rotation === 2) {
       const origWidth = originalWidth || imageWidth;
       const origHeight = originalHeight || imageHeight;
-      const rotatedPixels = new Uint8ClampedArray(origWidth * origHeight * 4);
-      
+      const rotated = new Uint8Array(origWidth * origHeight);
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
-          const srcIndex = (y * imageWidth + x) * 4;
           const dstX = imageWidth - 1 - x;
           const dstY = imageHeight - 1 - y;
-          const dstIndex = (dstY * origWidth + dstX) * 4;
-          rotatedPixels[dstIndex] = pixels[srcIndex];
-          rotatedPixels[dstIndex + 1] = pixels[srcIndex + 1];
-          rotatedPixels[dstIndex + 2] = pixels[srcIndex + 2];
-          rotatedPixels[dstIndex + 3] = pixels[srcIndex + 3];
+          rotated[dstY * origWidth + dstX] = codes[y * imageWidth + x];
         }
       }
-      pixels = rotatedPixels;
+      codes = rotated;
       imageWidth = origWidth;
       imageHeight = origHeight;
     }
-    
+
     const byteData = [];
-    
-    if (colorScheme === 4 || colorScheme === 7 || colorScheme === 8) {
-      // 6-color and 7-color scheme: 2 pixels per byte (nibbles). Scheme 8 (bwgbry_split) packs
-      // the left half-plane first (all rows' left bytes), then the right half-plane,
+
+    if (colorScheme === 4 || colorScheme === 6 || colorScheme === 7 || colorScheme === 8) {
+      // 4bpp, 2 pixels per byte: even x = high nibble, odd x = low. Scheme 8 (bwgbry_split)
+      // packs the left half-plane first (all rows' left bytes), then the right half-plane,
       // so dual-CS panels can stream CS1 then CS2 with no framebuffer.
       //
-      // Schemes 4/8 (Spectra 6) and scheme 7 (ACeP) use different nibble codes for the same
-      // colors, so the table is selected per scheme rather than shared. Scheme 7
-      // keeps Spectra 6's yellow=2/red=3 but moves blue and green down to 4/5 to
-      // free 6 for orange
-      const sevenColor = colorScheme === 7;
-      const nibbleFor = sevenColor
-        ? { black: 0, white: 1, yellow: 2, red: 3, blue: 4, green: 5, orange: 6 }
-        : { black: 0, white: 1, yellow: 2, red: 3, blue: 5, green: 6 };
+      // Rows are padded to a byte boundary: flush the pending high nibble so each row
+      // starts a new byte. Matches encode_4bpp's per-row padding on the Python sender
+      // and the row-padded firmware. For even widths this is a no-op.
       const packRowMajor = (x0, x1) => {
         let currentByte = 0;
         let nibblePosition = 1;
         for (let y = 0; y < imageHeight; y++) {
           for (let x = x0; x < x1; x++) {
-            const i = (y * imageWidth + x) * 4;
-            const r = pixels[i];
-            const g = pixels[i + 1];
-            const b = pixels[i + 2];
-            const color = this.detectColor(r, g, b, colorScheme);
-            const colorValue = nibbleFor[color] ?? 0;
-
+            const colorValue = codes[y * imageWidth + x];
             if (nibblePosition === 1) {
               currentByte = (colorValue << 4);
               nibblePosition = 0;
@@ -3788,61 +3781,18 @@ class OpenDisplayBLE {
       } else {
         packRowMajor(0, imageWidth);
       }
-    } else if (colorScheme === 6) {
-      // 16 gray (4bpp): same nibble order as 6-color — even x = high nibble, odd x = low; 0=black .. 15=white (Seeed TFT_GRAY_*).
-      let currentByte = 0;
-      let nibblePosition = 1;
-      const grayLevel = (rr, gg, bb) => {
-        const y = 0.299 * rr + 0.587 * gg + 0.114 * bb;
-        return Math.min(15, Math.max(0, Math.round((y * 15) / 255)));
-      };
-      for (let y = 0; y < imageHeight; y++) {
-        for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const level = grayLevel(pixels[i], pixels[i + 1], pixels[i + 2]);
-          if (nibblePosition === 1) {
-            currentByte = (level << 4);
-            nibblePosition = 0;
-          } else {
-            currentByte |= level;
-            byteData.push(currentByte);
-            currentByte = 0;
-            nibblePosition = 1;
-          }
-        }
-        // Row-pad to a byte boundary: flush the pending high nibble so each row
-        // starts a new byte. Matches encode_4bpp's per-row padding on the Python
-        // sender and the row-padded firmware. For even widths this is a no-op.
-        if (nibblePosition === 0) {
-          byteData.push(currentByte);
-          currentByte = 0;
-          nibblePosition = 1;
-        }
-      }
-    } else if (colorScheme === 5) {
-      // bb_epaper 4-gray: two concatenated 1bpp controller planes (plane0 then plane1).
-      // Host applies the panel gray LUT (u8Colors_4gray / u8Colors_4gray_v2), then splits
-      // stored code into bit0->plane0 and bit1->plane1 — matches bbepSetPixel4Gray + streamGray4Bytes.
-      const GRAY4_LUT = [3, 1, 2, 0];
-      const GRAY4_LUT_V2 = [3, 2, 1, 0];
-      const panelId = panelIcType != null ? Number(panelIcType) : NaN;
-      const grayLut = (panelId === 0x28 || panelId === 40 || panelId === 0x48 || panelId === 72)
-        ? GRAY4_LUT_V2
-        : GRAY4_LUT;
+    } else if (colorScheme === 1 || colorScheme === 2 || colorScheme === 5) {
+      // Two concatenated 1bpp planes, MSB-first, each row padded to a byte boundary
+      // (matches np.packbits(axis=1) on the Python sender and the row-padded firmware,
+      // PR #82). Without the padding, panels whose width isn't a multiple of 8
+      // (e.g. 122-wide EP213) would carry pixels of the next row into a shared byte.
+      // Scheme 5 splits the panel's stored 4-gray code the same way (bbepSetPixel4Gray).
       const bytesPerRow = Math.ceil(imageWidth / 8);
       const plane0 = new Uint8Array(bytesPerRow * imageHeight);
       const plane1 = new Uint8Array(bytesPerRow * imageHeight);
-
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
-          let level;
-          if (gray < 64) level = 0;
-          else if (gray < 128) level = 1;
-          else if (gray < 192) level = 2;
-          else level = 3;
-          const stored = grayLut[level];
+          const stored = codes[y * imageWidth + x];
           const byteIdx = y * bytesPerRow + (x >> 3);
           const bitIdx = 7 - (x & 7);
           if (stored & 1) plane0[byteIdx] |= 1 << bitIdx;
@@ -3850,71 +3800,14 @@ class OpenDisplayBLE {
         }
       }
       byteData.push(...plane0, ...plane1);
-    } else if (colorScheme === 1 || colorScheme === 2) {
-      // B/W + Red or B/W + Yellow: 2 bitplanes
-      const byteDataPlane1 = [];
-      const byteDataPlane2 = [];
-      let currentByte1 = 0;
-      let currentByte2 = 0;
-      let bitPosition = 7;
-      
-      for (let y = 0; y < imageHeight; y++) {
-        for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const r = pixels[i];
-          const g = pixels[i + 1];
-          const b = pixels[i + 2];
-          const color = this.detectColor(r, g, b, colorScheme);
-          if (color === 'white') {
-            currentByte1 |= (1 << bitPosition);
-          } else if (color === 'red') {
-            currentByte1 |= (1 << bitPosition);
-            currentByte2 |= (1 << bitPosition);
-          } else if (color === 'yellow') {
-            currentByte2 |= (1 << bitPosition);
-          }
-          bitPosition--;
-          if (bitPosition < 0) {
-            byteDataPlane1.push(currentByte1);
-            byteDataPlane2.push(currentByte2);
-            currentByte1 = 0;
-            currentByte2 = 0;
-            bitPosition = 7;
-          }
-        }
-        // Row-pad each plane to a byte boundary (matches np.packbits(axis=1) on the
-        // Python sender and the firmware's row-padded two-plane BWR/BWY path, PR #82).
-        // Without this, panels whose width isn't a multiple of 8 (e.g. 122-wide EP213)
-        // would carry pixels of the next row into a shared byte (flat packing).
-        if (bitPosition !== 7) {
-          byteDataPlane1.push(currentByte1);
-          byteDataPlane2.push(currentByte2);
-          currentByte1 = 0;
-          currentByte2 = 0;
-          bitPosition = 7;
-        }
-      }
-      byteData.push(...byteDataPlane1);
-      byteData.push(...byteDataPlane2);
     } else if (colorScheme === 3) {
-      // B/W + Red + Yellow: 4 pixels per byte
+      // 2bpp, 4 pixels per byte. Rows are padded to a byte boundary (ceil(w/4) bytes/row),
+      // matching encode_2bpp on the Python sender. No-op for w%4==0.
       let currentByte = 0;
       let pixelInByte = 0;
-      
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const r = pixels[i];
-          const g = pixels[i + 1];
-          const b = pixels[i + 2];
-          const color = this.detectColor(r, g, b, colorScheme);
-          let colorValue = 0;
-          if (color === 'black') colorValue = 0;
-          else if (color === 'white') colorValue = 1;
-          else if (color === 'yellow') colorValue = 2;
-          else if (color === 'red') colorValue = 3;
-          
-          currentByte |= (colorValue << (6 - pixelInByte * 2));
+          currentByte |= (codes[y * imageWidth + x] << (6 - pixelInByte * 2));
           pixelInByte++;
           if (pixelInByte >= 4) {
             byteData.push(currentByte);
@@ -3922,9 +3815,6 @@ class OpenDisplayBLE {
             pixelInByte = 0;
           }
         }
-        // Row-pad to a byte boundary: flush the partially filled byte so each row
-        // starts a new byte (ceil(w/4) bytes/row). Matches encode_2bpp's per-row
-        // padding on the Python sender and the row-padded firmware. No-op for w%4==0.
         if (pixelInByte > 0) {
           byteData.push(currentByte);
           currentByte = 0;
@@ -3932,20 +3822,12 @@ class OpenDisplayBLE {
         }
       }
     } else {
-      // Monochrome: 1 bit per pixel
+      // Monochrome: 1bpp MSB-first, rows padded to a byte boundary (ceil(w/8) bytes/row).
       let currentByte = 0;
       let bitPosition = 7;
-      
       for (let y = 0; y < imageHeight; y++) {
         for (let x = 0; x < imageWidth; x++) {
-          const i = (y * imageWidth + x) * 4;
-          const r = pixels[i];
-          const g = pixels[i + 1];
-          const b = pixels[i + 2];
-          const gray = (r + g + b) / 3;
-          if (gray > 128) {
-            currentByte |= (1 << bitPosition);
-          }
+          if (codes[y * imageWidth + x]) currentByte |= (1 << bitPosition);
           bitPosition--;
           if (bitPosition < 0) {
             byteData.push(currentByte);
@@ -3953,9 +3835,6 @@ class OpenDisplayBLE {
             bitPosition = 7;
           }
         }
-        // Row-pad to a byte boundary: flush the partially filled byte so each row
-        // starts a new byte (ceil(w/8) bytes/row). Matches np.packbits(axis=1) on
-        // the Python sender and the row-padded firmware. No-op for w%8==0.
         if (bitPosition !== 7) {
           byteData.push(currentByte);
           currentByte = 0;
@@ -4368,6 +4247,8 @@ class OpenDisplayBLE {
       partialUpdateSupport = PARTIAL_UPDATE_NONE,
       transmissionModes = null,
       panelIcType = null,
+      ditherIndices = null,
+      ditherWireMap = null,
       onProgress = null,
       onComplete = null,
       onStatusChange = null
@@ -4407,7 +4288,7 @@ class OpenDisplayBLE {
     }
     
     try {
-      const byteData = this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType);
+      const byteData = this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType, ditherIndices, ditherWireMap);
       const uncompressedSize = byteData.length;
       const byteDataUint8 = new Uint8Array(byteData);
       

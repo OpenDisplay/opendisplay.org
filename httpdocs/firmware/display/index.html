@@ -196,6 +196,78 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .canvas-container{
   text-align:center;padding:2px 0 4px;overflow:hidden;-webkit-overflow-scrolling:touch
 }
+/* Image tuning: preview stage, collapsed tuning panel, compare grid */
+/* The stage must match the canvas exactly, otherwise the absolutely positioned
+   original-overlay and split handle drift out of alignment. */
+.canvas-stage{
+  position:relative;display:inline-block;line-height:0;
+  width:min(800px, 100%, calc(44dvh * var(--canvas-ar-w, 800) / var(--canvas-ar-h, 480)))
+}
+.canvas-stage.dragover::after{
+  content:'Drop image';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,191,255,.12);border:2px dashed var(--accent);border-radius:6px;
+  font-family:var(--font-mono);font-size:.9rem;color:var(--foreground);line-height:1
+}
+#originalOverlay{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;display:none}
+.canvas-stage.split #originalOverlay{display:block;clip-path:inset(0 calc(100% - var(--split,50%)) 0 0)}
+.split-handle{
+  position:absolute;top:0;bottom:0;left:var(--split,50%);width:2px;background:var(--accent);
+  transform:translateX(-1px);cursor:ew-resize;display:none;touch-action:none
+}
+.canvas-stage.split .split-handle{display:block}
+.split-handle::after{
+  content:'';position:absolute;top:50%;left:50%;width:22px;height:22px;margin:-11px 0 0 -11px;
+  border-radius:50%;background:var(--accent);box-shadow:0 1px 6px rgba(0,0,0,.35)
+}
+.stage-tools{position:absolute;top:6px;right:6px;display:flex;gap:4px;line-height:1}
+/* .tool-ui prefix: tool-ui.css styles every `button`, so plain class selectors lose. */
+.tool-ui .stage-btn{
+  width:30px;height:30px;padding:0;margin:0;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  background:var(--card-background);border:1px solid var(--border-color);color:var(--foreground);opacity:.85
+}
+.tool-ui .stage-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tool-ui .stage-btn:hover{background:var(--card-background);border-color:var(--accent);transform:none;box-shadow:none;opacity:1}
+.tool-ui .stage-btn.active{background:var(--accent);color:var(--accent-button);border-color:var(--accent)}
+.canvas-stage.zoom1x{width:calc(var(--canvas-ar-w, 800) * 2px);max-width:none}
+.canvas-stage.zoom1x #myCanvas{width:100%;max-width:none;height:auto;image-rendering:pixelated}
+.canvas-container.zoomed{overflow:auto;text-align:left}
+.tuning{margin-top:10px;border:1px solid var(--od-paper-line,var(--border-color));border-radius:10px;background:var(--card-background)}
+.tuning>summary{
+  cursor:pointer;padding:9px 12px;font-family:var(--font-mono);font-size:.9rem;font-weight:600;
+  list-style:none;display:flex;align-items:center;gap:8px;user-select:none
+}
+.tuning>summary::-webkit-details-marker{display:none}
+.tuning>summary::before{content:'▸';color:var(--accent);transition:transform .15s}
+.tuning[open]>summary::before{transform:rotate(90deg)}
+.tuning>summary .draw-hint{margin-left:auto}
+.tuning-body{padding:0 12px 12px;display:flex;flex-direction:column;gap:8px}
+.tuning-body .field-row{margin:0}
+.tuning-sep{border-top:1px solid var(--od-paper-line,var(--border-color));margin:2px 0}
+.preset-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tool-ui .preset-btn{
+  margin:0;padding:6px 14px;font-size:13px;border-radius:999px;background:var(--card-background);
+  border:1px solid var(--border-color);color:var(--foreground)
+}
+.tool-ui .preset-btn:hover{background:var(--card-background);border-color:var(--accent);transform:none;box-shadow:none}
+.tool-ui .preset-btn.active{background:var(--accent);color:var(--accent-button);border-color:var(--accent)}
+.slider-row{display:flex;align-items:center;gap:10px}
+.slider-row label{margin:0;font-size:.9rem;font-weight:500;min-width:96px}
+.slider-row input[type=range]{flex:1;accent-color:var(--accent);min-width:120px}
+.slider-row output{font-family:var(--font-mono);font-size:.8rem;color:var(--muted-foreground);min-width:46px;text-align:right}
+.ink-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;border:1px solid var(--border-color)}
+.ink-bar span{display:block;height:100%}
+.ink-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.78rem;color:var(--muted-foreground);font-family:var(--font-mono)}
+.ink-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;border:1px solid var(--border-color);margin-right:4px}
+.dither-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.dither-card{
+  padding:4px;border:1px solid var(--border-color);border-radius:8px;background:var(--background);
+  cursor:pointer;text-align:center;line-height:1
+}
+.dither-card:hover{border-color:var(--accent)}
+.dither-card.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,191,255,.25)}
+.dither-card canvas{width:100%;height:auto;display:block;border-radius:4px;image-rendering:pixelated}
+.dither-card span{display:block;font-family:var(--font-mono);font-size:.72rem;padding-top:4px;color:var(--muted-foreground)}
+@media (max-width:640px){.slider-row label{min-width:78px}}
 .checkbox-group{
   display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px
 }
@@ -285,7 +357,19 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             <span id="previewLockIcon" class="preview-meta" style="display:none;"></span>
         </div>
         <div class="canvas-container">
-            <canvas id="myCanvas" width="800" height="480"></canvas>
+            <div id="canvasStage" class="canvas-stage">
+                <canvas id="myCanvas" width="800" height="480"></canvas>
+                <canvas id="originalOverlay" width="800" height="480"></canvas>
+                <div id="splitHandle" class="split-handle" role="separator" aria-label="Compare original and dithered"></div>
+                <div class="stage-tools">
+                    <button type="button" id="splitToggle" class="stage-btn" onclick="toggleSplit()" title="Compare original / dithered" aria-label="Compare original and dithered">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
+                    </button>
+                    <button type="button" id="zoomToggle" class="stage-btn" onclick="toggleZoom()" title="Pixel zoom (2x)" aria-label="Pixel zoom">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+                    </button>
+                </div>
+            </div>
         </div>
         <div id="drawTools" class="draw-tools">
             <!-- New tool: add <button class="draw-mode-btn" data-draw-mode="id">…</button> and <div class="draw-mode-panel" data-draw-mode-panel="id">…</div>; setDrawMode only toggles panels that exist. -->
@@ -355,20 +439,14 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         <div id="canvasOptions">
             <div class="field-row">
                 <label for="ditheringSelect" style="margin: 0; min-width: 120px;">Dithering:</label>
-                <select id="ditheringSelect" onchange="getPixelData()" style="flex: 1;">
-                    <option value="none" selected>None</option>
-                    <option value="floyd-steinberg">Floyd-Steinberg</option>
-                    <option value="atkinson">Atkinson</option>
-                    <option value="stucki">Stucki</option>
-                    <option value="sierra">Sierra</option>
-                    <option value="sierra-lite">Sierra Lite</option>
-                    <option value="burkes">Burkes</option>
-                    <option value="jarvis-judice-ninke">Jarvis-Judice-Ninke</option>
+                <select id="ditheringSelect" onchange="onDitherModeChange()" style="flex: 1;">
+                    <option value="auto" selected>Auto</option>
                 </select>
             </div>
             <div class="field-row">
                 <label for="imageUpload" style="margin: 0; min-width: 120px;">Select image:</label>
                 <input type="file" id="imageUpload" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" style="flex: 1;" />
+                <span class="draw-hint">or drop / paste an image</span>
             </div>
             <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 4px;">
                 <label for="usePartialUpload">
@@ -390,6 +468,88 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     <option value="8">6-color split (left half-plane then right; dual-CS)</option>
                 </select>
             </div>
+            <details class="tuning" id="tuningPanel">
+                <summary>Image tuning<span class="draw-hint" id="tuningSummary">Auto</span></summary>
+                <div class="tuning-body">
+                    <div class="preset-row" id="presetRow">
+                        <span class="draw-label">Preset:</span>
+                        <button type="button" class="preset-btn active" data-preset="auto" onclick="applyPreset('auto')">Auto</button>
+                        <button type="button" class="preset-btn" data-preset="photo" onclick="applyPreset('photo')">Photo</button>
+                        <button type="button" class="preset-btn" data-preset="graphics" onclick="applyPreset('graphics')">Graphics</button>
+                        <button type="button" class="preset-btn" data-preset="logo" onclick="applyPreset('logo')">Logo</button>
+                        <button type="button" class="preset-btn" data-preset="poster" onclick="applyPreset('poster')">Poster</button>
+                    </div>
+                    <div class="tuning-sep"></div>
+                    <div class="slider-row">
+                        <label for="tuneExposure">Exposure</label>
+                        <input type="range" id="tuneExposure" min="0.25" max="4" step="0.05" value="1" data-default="1" />
+                        <output for="tuneExposure" id="tuneExposureOut">1.00x</output>
+                    </div>
+                    <div class="slider-row">
+                        <label for="tuneSaturation">Saturation</label>
+                        <input type="range" id="tuneSaturation" min="0" max="2.5" step="0.05" value="1" data-default="1" />
+                        <output for="tuneSaturation" id="tuneSaturationOut">1.00x</output>
+                    </div>
+                    <div class="slider-row">
+                        <label for="tuneShadows">Shadows</label>
+                        <input type="range" id="tuneShadows" min="0" max="1" step="0.02" value="0" data-default="0" />
+                        <output for="tuneShadows" id="tuneShadowsOut">off</output>
+                    </div>
+                    <div class="slider-row">
+                        <label for="tuneHighlights">Highlights</label>
+                        <input type="range" id="tuneHighlights" min="0" max="1" step="0.02" value="0" data-default="0" />
+                        <output for="tuneHighlights" id="tuneHighlightsOut">off</output>
+                    </div>
+                    <div class="slider-row">
+                        <label for="tuneTone">Tone</label>
+                        <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                        <output for="tuneTone" id="tuneToneOut">auto</output>
+                    </div>
+                    <div class="slider-row">
+                        <label for="tuneGamut">Gamut</label>
+                        <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                        <output for="tuneGamut" id="tuneGamutOut">auto</output>
+                    </div>
+                    <span class="draw-hint">Tone and gamut need a measured palette. Double-click a slider to reset it.</span>
+                    <div class="tuning-sep"></div>
+                    <div class="field-row">
+                        <label for="paletteSelect" style="margin:0;min-width:120px;">Palette:</label>
+                        <select id="paletteSelect" style="flex:1;"></select>
+                    </div>
+                    <div class="checkbox-group">
+                        <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label for="tuneRealistic"><input type="checkbox" id="tuneRealistic" /> Preview real panel colors</label>
+                    </div>
+                    <div class="tuning-sep"></div>
+                    <div class="field-row">
+                        <label for="fitMode" style="margin:0;min-width:120px;">Image fit:</label>
+                        <select id="fitMode" style="flex:1;">
+                            <option value="cover" selected>Cover — fill, crop overflow</option>
+                            <option value="contain">Contain — fit whole image</option>
+                            <option value="fill">Fill — stretch to panel</option>
+                        </select>
+                        <button type="button" onclick="rotateSourceImage()" title="Rotate image 90°">Rotate</button>
+                    </div>
+                    <div class="field-row">
+                        <label for="imageUrl" style="margin:0;min-width:120px;">Image URL:</label>
+                        <input type="text" id="imageUrl" placeholder="https://…" style="flex:1;" />
+                        <button type="button" onclick="loadImageFromUrl()">Load</button>
+                    </div>
+                    <div class="tuning-sep"></div>
+                    <div class="field-row">
+                        <button type="button" onclick="toggleCompareGrid()" id="compareBtn">Compare algorithms</button>
+                        <button type="button" onclick="downloadDitheredPng()">Download PNG</button>
+                        <button type="button" onclick="downloadWireBytes()">Export wire bytes</button>
+                        <button type="button" onclick="resetTuning()">Reset</button>
+                    </div>
+                    <div id="compareGrid" class="dither-grid" style="display:none;"></div>
+                    <div class="tuning-sep"></div>
+                    <div class="ink-bar" id="inkBar"></div>
+                    <div class="ink-legend" id="inkLegend"></div>
+                </div>
+            </details>
         </div>
     </div>
     <div id="ledControlPanel" class="col panel" style="display: none;">
@@ -588,6 +748,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
       <script src="/js/js-yaml.min.js"></script>
       <script src="/l/qrcode.js"></script>
       <script src="/js/ble-common.js"></script>
+      <script type="module" src="/js/dither.js"></script>
       <script src="/js/opendisplay-msd.js"></script>
       <script src="/js/opendisplay-battery.js"></script>
     <script>
@@ -1663,7 +1824,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             renderContent();
         }
-        function renderContent() {
+        async function renderContent() {
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -1695,7 +1856,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 drawQRToCanvas(ctx, qr);
             });
             originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            if (typeof getPixelData === 'function') getPixelData();
+            syncOriginalOverlay();
+            // Dither first, then draw selection handles so they stay visible on top.
+            await getPixelData();
             const sel = textObjects.find(t => t.id === selectedTextId);
             if (sel) {
                 ctx.font = sel.fontSize + 'px Arial';
@@ -1993,6 +2156,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (!canvas || !canvas.width || !canvas.height) return;
             canvas.style.setProperty('--canvas-ar-w', String(canvas.width));
             canvas.style.setProperty('--canvas-ar-h', String(canvas.height));
+            const stage = document.getElementById('canvasStage');
+            if (stage) {
+                stage.style.setProperty('--canvas-ar-w', String(canvas.width));
+                stage.style.setProperty('--canvas-ar-h', String(canvas.height));
+            }
         }
         function createCanvas() {
             var width = widthInput;
@@ -2015,6 +2183,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 canvas.height = height;
             }
             syncCanvasPreviewSize(canvas);
+            var overlay = document.getElementById('originalOverlay');
+            if (overlay) {
+                overlay.width = canvas.width;
+                overlay.height = canvas.height;
+            }
             var ctx = canvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -2100,75 +2273,512 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             originalImageData = ctxForSave.getImageData(0, 0, canvas.width, canvas.height);
             getPixelData();
         }
-        function getPixelData() {
+        // ---- image tuning ------------------------------------------------
+        // Defaults are all "auto", so loading an image and uploading needs no
+        // more interaction than before; the tuning panel stays collapsed.
+        const TUNE_IDS = ['Exposure', 'Saturation', 'Shadows', 'Highlights', 'Tone', 'Gamut'];
+        const PRESETS = {
+            auto: { mode: 'auto', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: -0.05, Gamut: -0.05, serpentine: true },
+            photo: { mode: 'burkes', Exposure: 1, Saturation: 1.1, Shadows: 0.25, Highlights: 0.2, Tone: -0.05, Gamut: -0.05, serpentine: true },
+            graphics: { mode: 'ordered', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: 0, Gamut: 0, serpentine: false },
+            logo: { mode: 'none', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: 0, Gamut: 0, serpentine: false },
+            poster: { mode: 'atkinson', Exposure: 1.05, Saturation: 1.35, Shadows: 0.15, Highlights: 0.35, Tone: -0.05, Gamut: -0.05, serpentine: true }
+        };
+        const TUNING_STORE_KEY = 'od.display.tuning';
+        let lastDither = null;
+        let sourceImage = null;
+        let sourceRotation = 0;
+        let ditherRunning = false;
+        let ditherQueued = false;
+        let coarsePreview = false;
+
+        function currentColorScheme() {
+            return parseInt(document.getElementById('colorSchemeSelect').value) || 0;
+        }
+        /** Slider value to library option: negative means 'auto', zero means 'off'. */
+        function toneValue(v) {
+            if (v < 0) return 'auto';
+            if (v === 0) return 'off';
+            return v;
+        }
+        function tuningValues() {
+            const read = (id) => parseFloat(document.getElementById('tune' + id).value);
+            return {
+                exposure: read('Exposure'),
+                saturation: read('Saturation'),
+                shadows: read('Shadows'),
+                highlights: read('Highlights'),
+                tone: toneValue(read('Tone')),
+                gamut: toneValue(read('Gamut')),
+                serpentine: document.getElementById('tuneSerpentine').checked,
+                realistic: document.getElementById('tuneRealistic').checked,
+                paletteId: document.getElementById('paletteSelect').value || 'auto',
+                panelIcType: displayPanelIcType
+            };
+        }
+        function syncTuneOutputs() {
+            for (const id of TUNE_IDS) {
+                const input = document.getElementById('tune' + id);
+                const out = document.getElementById('tune' + id + 'Out');
+                if (!input || !out) continue;
+                const v = parseFloat(input.value);
+                if (id === 'Tone' || id === 'Gamut') out.textContent = v < 0 ? 'auto' : (v === 0 ? 'off' : v.toFixed(2));
+                else if (id === 'Exposure' || id === 'Saturation') out.textContent = v.toFixed(2) + 'x';
+                else out.textContent = v === 0 ? 'off' : v.toFixed(2);
+            }
+        }
+        function populateDitherSelect(lib) {
+            const sel = document.getElementById('ditheringSelect');
+            if (!sel || sel.dataset.filled) return;
+            sel.innerHTML = '';
+            for (const m of lib.MODES) {
+                const opt = document.createElement('option');
+                opt.value = m.value;
+                opt.textContent = m.label;
+                sel.appendChild(opt);
+            }
+            sel.dataset.filled = '1';
+            sel.value = 'auto';
+        }
+        function populatePaletteSelect(lib) {
+            const sel = document.getElementById('paletteSelect');
+            if (!sel) return;
+            const scheme = currentColorScheme();
+            const previous = sel.value;
+            const auto = lib.paletteForPanel(displayPanelIcType, scheme);
+            sel.innerHTML = '';
+            const add = (value, label) => {
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = label;
+                sel.appendChild(opt);
+            };
+            add('auto', auto ? `Auto — ${auto.label} (measured)` : 'Auto — ideal colors');
+            add('ideal', 'Ideal colors');
+            const canonical = lib.canonicalScheme(scheme);
+            for (const m of lib.MEASURED) {
+                if (m.scheme === canonical) add(m.id, `${m.label} (measured)`);
+            }
+            sel.value = [...sel.options].some(o => o.value === previous) ? previous : 'auto';
+        }
+        function syncOriginalOverlay() {
+            const overlay = document.getElementById('originalOverlay');
+            if (!overlay || !originalImageData) return;
+            if (overlay.width !== originalImageData.width) overlay.width = originalImageData.width;
+            if (overlay.height !== originalImageData.height) overlay.height = originalImageData.height;
+            overlay.getContext('2d').putImageData(originalImageData, 0, 0);
+        }
+        /**
+         * Re-dither the composited image onto the canvas.
+         * While a slider is being dragged, a half-resolution proxy keeps it responsive.
+         */
+        async function getPixelData() {
             updatePartialDemoBwNote();
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) {
                 addLog("Cannot get pixel data: Canvas not ready.");
                 return;
             }
-            const ctx = canvas.getContext('2d', {
-                willReadFrequently: true
+            if (ditherRunning) { ditherQueued = true; return; }
+            ditherRunning = true;
+            try {
+                do {
+                    ditherQueued = false;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    if (originalImageData) {
+                        ctx.putImageData(originalImageData, 0, 0);
+                    } else {
+                        originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        syncOriginalOverlay();
+                    }
+                    const lib = await OpenDisplayBLE.ditherReady();
+                    populateDitherSelect(lib);
+                    const options = tuningValues();
+                    const mode = document.getElementById('ditheringSelect').value || 'auto';
+                    const scheme = currentColorScheme();
+                    if (coarsePreview) {
+                        renderCoarsePreview(lib, ctx, canvas, scheme, mode, options);
+                    } else {
+                        // Use the library directly: the preview runs before any BLE connection.
+                        const result = lib.dither(ctx.getImageData(0, 0, canvas.width, canvas.height), { ...options, scheme, mode });
+                        lib.paint(ctx, canvas.width, canvas.height, result.indices, result.preview);
+                        result.scheme = scheme;
+                        lastDither = result;
+                        updateTuningReadout(lib, result, scheme);
+                    }
+                } while (ditherQueued);
+            } finally {
+                ditherRunning = false;
+            }
+        }
+        /** Half-resolution pass used only while dragging a slider. */
+        function renderCoarsePreview(lib, ctx, canvas, scheme, mode, options) {
+            const overlay = document.getElementById('originalOverlay');
+            const w = Math.max(1, canvas.width >> 1);
+            const h = Math.max(1, canvas.height >> 1);
+            const small = document.createElement('canvas');
+            small.width = w;
+            small.height = h;
+            const sctx = small.getContext('2d', { willReadFrequently: true });
+            sctx.drawImage(overlay, 0, 0, w, h);
+            const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode });
+            lib.paint(sctx, w, h, result.indices, result.preview);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = true;
+            updateTuningReadout(lib, result, scheme);
+        }
+        function updateTuningReadout(lib, result, scheme) {
+            const summary = document.getElementById('tuningSummary');
+            if (summary) {
+                const label = (lib.MODES.find(m => m.value === result.modeValue) || {}).label || result.modeValue;
+                const palette = result.measuredId
+                    ? (lib.MEASURED.find(m => m.id === result.measuredId) || {}).label
+                    : 'ideal colors';
+                summary.textContent = `${label} · ${palette} · ${result.ms.toFixed(0)} ms`;
+            }
+            const bar = document.getElementById('inkBar');
+            const legend = document.getElementById('inkLegend');
+            if (!bar || !legend) return;
+            const total = result.indices.length || 1;
+            const swatches = lib.idealPalette(scheme);
+            bar.innerHTML = '';
+            legend.innerHTML = '';
+            result.counts.forEach((count, i) => {
+                if (!count) return;
+                const c = swatches[i] || { r: 0, g: 0, b: 0 };
+                const pct = (count / total) * 100;
+                const seg = document.createElement('span');
+                seg.style.width = pct + '%';
+                seg.style.background = `rgb(${c.r},${c.g},${c.b})`;
+                seg.title = `${result.names[i]}: ${pct.toFixed(1)}%`;
+                bar.appendChild(seg);
+                const item = document.createElement('span');
+                const dot = document.createElement('i');
+                dot.style.background = `rgb(${c.r},${c.g},${c.b})`;
+                item.appendChild(dot);
+                item.appendChild(document.createTextNode(`${result.names[i]} ${pct.toFixed(1)}%`));
+                legend.appendChild(item);
             });
-            const ditheringType = document.getElementById('ditheringSelect').value;
-            if (originalImageData) {
-                ctx.putImageData(originalImageData, 0, 0);
-            } else {
-                originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        }
+        function onDitherModeChange() {
+            markPresetCustom();
+            saveTuning();
+            getPixelData();
+        }
+        function markPresetCustom() {
+            document.querySelectorAll('#presetRow .preset-btn').forEach(b => b.classList.remove('active'));
+        }
+        function applyPreset(name) {
+            const preset = PRESETS[name];
+            if (!preset) return;
+            document.getElementById('ditheringSelect').value = preset.mode;
+            for (const id of TUNE_IDS) document.getElementById('tune' + id).value = preset[id];
+            document.getElementById('tuneSerpentine').checked = preset.serpentine;
+            document.querySelectorAll('#presetRow .preset-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.preset === name);
+            });
+            syncTuneOutputs();
+            saveTuning();
+            getPixelData();
+        }
+        function resetTuning() {
+            document.getElementById('paletteSelect').value = 'auto';
+            document.getElementById('tuneRealistic').checked = false;
+            document.getElementById('fitMode').value = 'cover';
+            sourceRotation = 0;
+            applyPreset('auto');
+            if (sourceImage) drawSourceImage();
+        }
+        function saveTuning() {
+            const state = { mode: document.getElementById('ditheringSelect').value };
+            for (const id of TUNE_IDS) state[id] = document.getElementById('tune' + id).value;
+            state.serpentine = document.getElementById('tuneSerpentine').checked;
+            state.realistic = document.getElementById('tuneRealistic').checked;
+            state.palette = document.getElementById('paletteSelect').value;
+            state.fit = document.getElementById('fitMode').value;
+            try { localStorage.setItem(TUNING_STORE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+            const params = new URLSearchParams();
+            params.set('mode', state.mode);
+            if (state.palette !== 'auto') params.set('palette', state.palette);
+            if (state.fit !== 'cover') params.set('fit', state.fit);
+            for (const id of TUNE_IDS) {
+                const input = document.getElementById('tune' + id);
+                if (input.value !== input.dataset.default) params.set(id.toLowerCase(), input.value);
             }
-            if (ditheringType === 'none') {
-                return;
+            history.replaceState(null, '', '#' + params.toString());
+        }
+        function loadTuning() {
+            let state = null;
+            try { state = JSON.parse(localStorage.getItem(TUNING_STORE_KEY) || 'null'); } catch (e) { state = null; }
+            const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+            const pick = (key, fallback) => hash.get(key) ?? fallback;
+            if (state) {
+                for (const id of TUNE_IDS) if (state[id] != null) document.getElementById('tune' + id).value = state[id];
+                if (state.serpentine != null) document.getElementById('tuneSerpentine').checked = state.serpentine;
+                if (state.realistic != null) document.getElementById('tuneRealistic').checked = state.realistic;
+                if (state.fit) document.getElementById('fitMode').value = state.fit;
             }
-            const colorScheme = parseInt(document.getElementById('colorSchemeSelect').value) || 0;
-            bleLib.applyDithering(ctx, canvas.width, canvas.height, colorScheme, ditheringType);
+            for (const id of TUNE_IDS) {
+                const v = hash.get(id.toLowerCase());
+                if (v != null) document.getElementById('tune' + id).value = v;
+            }
+            document.getElementById('fitMode').value = pick('fit', document.getElementById('fitMode').value);
+            const mode = pick('mode', state ? state.mode : null);
+            if (mode) document.getElementById('ditheringSelect').dataset.pendingMode = mode;
+            const palette = pick('palette', state ? state.palette : null);
+            if (palette) document.getElementById('paletteSelect').dataset.pendingPalette = palette;
+            syncTuneOutputs();
+        }
+        // ---- image source --------------------------------------------------
+        /** Draw the loaded image onto the canvas honouring fit mode and rotation. */
+        function drawSourceImage() {
+            const canvas = document.getElementById('myCanvas');
+            if (!canvas || !sourceImage) return;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const cw = canvas.width;
+            const ch = canvas.height;
+            const swapped = sourceRotation % 2 === 1;
+            const iw = swapped ? sourceImage.height : sourceImage.width;
+            const ih = swapped ? sourceImage.width : sourceImage.height;
+            const fit = document.getElementById('fitMode').value;
+            let scale;
+            if (fit === 'contain') scale = Math.min(cw / iw, ch / ih);
+            else if (fit === 'fill') scale = null;
+            else scale = Math.max(cw / iw, ch / ih);
+            const dw = scale === null ? cw : iw * scale;
+            const dh = scale === null ? ch : ih * scale;
+            ctx.clearRect(0, 0, cw, ch);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, cw, ch);
+            ctx.save();
+            ctx.translate(cw / 2, ch / 2);
+            ctx.rotate(sourceRotation * Math.PI / 2);
+            // After rotating, draw in the image's own orientation.
+            const drawW = swapped ? dh : dw;
+            const drawH = swapped ? dw : dh;
+            ctx.drawImage(sourceImage, -drawW / 2, -drawH / 2, drawW, drawH);
+            ctx.restore();
+            baseImageData = ctx.getImageData(0, 0, cw, ch);
+            renderContent();
+        }
+        function setSourceImage(img) {
+            sourceImage = img;
+            sourceRotation = 0;
+            strokes = [];
+            textObjects = [];
+            qrObjects = [];
+            selectedTextId = null;
+            selectedQRId = null;
+            actionStack = [];
+            drawSourceImage();
+        }
+        function rotateSourceImage() {
+            if (!sourceImage) { addLog("No image loaded to rotate."); return; }
+            sourceRotation = (sourceRotation + 1) % 4;
+            drawSourceImage();
+        }
+        function loadImageFromFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => setSourceImage(img);
+                img.onerror = () => addLog("Error loading image file.");
+                img.src = e.target.result;
+            };
+            reader.onerror = (e) => addLog("Error reading file: " + e);
+            reader.readAsDataURL(file);
         }
         function uploadImage() {
-            const fileInput = document.getElementById('imageUpload');
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) {
                 addLog("Cannot upload image: Canvas not ready.");
                 return;
             }
-            const ctx = canvas.getContext('2d');
-            if (fileInput.files && fileInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = function (e) {
-                    const img = new Image();
-                    img.onload = function () {
-                        const canvasWidth = canvas.width;
-                        const canvasHeight = canvas.height;
-                        const imgWidth = img.width;
-                        const imgHeight = img.height;
-                        const scale = Math.max(canvasWidth / imgWidth, canvasHeight / imgHeight);
-                        const newWidth = imgWidth * scale;
-                        const newHeight = imgHeight * scale;
-                        const offsetX = (canvasWidth - newWidth) / 2;
-                        const offsetY = (canvasHeight - newHeight) / 2;
-                        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-                        ctx.fillStyle = 'white';
-                        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-                        ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight);
-                        baseImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-                        strokes = [];
-                        textObjects = [];
-                        qrObjects = [];
-                        selectedTextId = null;
-                        selectedQRId = null;
-                        actionStack = [];
-                        const ditherSel = document.getElementById('ditheringSelect');
-                        if (ditherSel) ditherSel.value = 'floyd-steinberg';
-                        renderContent();
-                    };
-                    img.onerror = function () {
-                        addLog("Error loading image file.");
+            const fileInput = document.getElementById('imageUpload');
+            if (fileInput.files && fileInput.files[0]) loadImageFromFile(fileInput.files[0]);
+        }
+        function loadImageFromUrl() {
+            const url = document.getElementById('imageUrl').value.trim();
+            if (!url) return;
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => setSourceImage(img);
+            img.onerror = () => addLog("Could not load that image URL (the host may block cross-origin use).", 'error');
+            img.src = url;
+        }
+        // ---- preview stage -------------------------------------------------
+        function toggleSplit() {
+            const stage = document.getElementById('canvasStage');
+            const on = stage.classList.toggle('split');
+            document.getElementById('splitToggle').classList.toggle('active', on);
+            if (on && !stage.style.getPropertyValue('--split')) stage.style.setProperty('--split', '50%');
+        }
+        function toggleZoom() {
+            const stage = document.getElementById('canvasStage');
+            const on = stage.classList.toggle('zoom1x');
+            document.getElementById('zoomToggle').classList.toggle('active', on);
+            stage.parentElement.classList.toggle('zoomed', on);
+        }
+        function setupStageInteractions() {
+            const stage = document.getElementById('canvasStage');
+            const handle = document.getElementById('splitHandle');
+            if (!stage || !handle) return;
+            const moveSplit = (clientX) => {
+                const rect = stage.getBoundingClientRect();
+                const pct = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100));
+                stage.style.setProperty('--split', pct + '%');
+            };
+            handle.addEventListener('pointerdown', (e) => {
+                handle.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+            handle.addEventListener('pointermove', (e) => {
+                if (handle.hasPointerCapture(e.pointerId)) moveSplit(e.clientX);
+            });
+            ['dragenter', 'dragover'].forEach(type => stage.addEventListener(type, (e) => {
+                e.preventDefault();
+                stage.classList.add('dragover');
+            }));
+            ['dragleave', 'drop'].forEach(type => stage.addEventListener(type, (e) => {
+                e.preventDefault();
+                stage.classList.remove('dragover');
+            }));
+            stage.addEventListener('drop', (e) => {
+                const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) loadImageFromFile(file);
+            });
+            document.addEventListener('paste', (e) => {
+                const items = e.clipboardData && e.clipboardData.items;
+                if (!items) return;
+                for (const item of items) {
+                    if (item.type.startsWith('image/')) {
+                        loadImageFromFile(item.getAsFile());
+                        e.preventDefault();
+                        return;
                     }
-                    img.src = e.target.result;
-                };
-                reader.onerror = function (e) {
-                    addLog("Error reading file: " + e);
-                };
-                reader.readAsDataURL(fileInput.files[0]);
+                }
+            });
+        }
+        // ---- compare, export -----------------------------------------------
+        async function toggleCompareGrid() {
+            const grid = document.getElementById('compareGrid');
+            if (grid.style.display !== 'none') {
+                grid.style.display = 'none';
+                return;
             }
+            grid.style.display = 'grid';
+            await buildCompareGrid();
+        }
+        async function buildCompareGrid() {
+            const grid = document.getElementById('compareGrid');
+            const overlay = document.getElementById('originalOverlay');
+            if (!overlay || !overlay.width) return;
+            const lib = await OpenDisplayBLE.ditherReady();
+            const scheme = currentColorScheme();
+            const options = tuningValues();
+            const current = document.getElementById('ditheringSelect').value;
+            const w = Math.min(240, overlay.width);
+            const h = Math.max(1, Math.round(overlay.height * (w / overlay.width)));
+            const proxy = document.createElement('canvas');
+            proxy.width = w;
+            proxy.height = h;
+            const pctx = proxy.getContext('2d', { willReadFrequently: true });
+            pctx.drawImage(overlay, 0, 0, w, h);
+            const source = pctx.getImageData(0, 0, w, h);
+            grid.innerHTML = '';
+            for (const m of lib.MODES) {
+                const card = document.createElement('div');
+                card.className = 'dither-card' + (m.value === current ? ' active' : '');
+                const cv = document.createElement('canvas');
+                cv.width = w;
+                cv.height = h;
+                const cctx = cv.getContext('2d');
+                const result = lib.dither(source, { ...options, scheme, mode: m.value });
+                lib.paint(cctx, w, h, result.indices, result.preview);
+                const label = document.createElement('span');
+                label.textContent = `${m.label} · ${result.ms.toFixed(0)} ms`;
+                card.appendChild(cv);
+                card.appendChild(label);
+                card.onclick = () => {
+                    document.getElementById('ditheringSelect').value = m.value;
+                    markPresetCustom();
+                    saveTuning();
+                    buildCompareGrid();
+                    getPixelData();
+                };
+                grid.appendChild(card);
+            }
+        }
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        function downloadDitheredPng() {
+            const canvas = document.getElementById('myCanvas');
+            if (!canvas) return;
+            canvas.toBlob((blob) => {
+                if (blob) downloadBlob(blob, 'opendisplay-dithered.png');
+            }, 'image/png');
+        }
+        function downloadWireBytes() {
+            const canvas = document.getElementById('myCanvas');
+            if (!canvas) return;
+            if (!bleLib) { addLog("Connect to a display first so the encoder knows the panel format.", 'error'); return; }
+            const scheme = currentColorScheme();
+            const usable = lastDither && lastDither.scheme === scheme ? lastDither : null;
+            const bytes = bleLib.encodeCanvasToByteData(
+                canvas, scheme, displayRotation, widthInput, heightInput, displayPanelIcType,
+                usable ? usable.indices : null,
+                usable ? usable.wireMap : null
+            );
+            downloadBlob(new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }), `opendisplay-${canvas.width}x${canvas.height}-scheme${scheme}.bin`);
+            addLog(`Exported ${bytes.length} bytes for color scheme ${scheme}.`, 'info');
+        }
+        function setupTuningControls() {
+            for (const id of TUNE_IDS) {
+                const input = document.getElementById('tune' + id);
+                if (!input) continue;
+                input.addEventListener('input', () => {
+                    coarsePreview = true;
+                    markPresetCustom();
+                    syncTuneOutputs();
+                    getPixelData();
+                });
+                input.addEventListener('change', () => {
+                    coarsePreview = false;
+                    syncTuneOutputs();
+                    saveTuning();
+                    getPixelData();
+                });
+                input.addEventListener('dblclick', () => {
+                    input.value = input.dataset.default;
+                    coarsePreview = false;
+                    markPresetCustom();
+                    syncTuneOutputs();
+                    saveTuning();
+                    getPixelData();
+                });
+            }
+            for (const id of ['tuneSerpentine', 'tuneRealistic', 'paletteSelect']) {
+                document.getElementById(id).addEventListener('change', () => {
+                    markPresetCustom();
+                    saveTuning();
+                    getPixelData();
+                });
+            }
+            document.getElementById('fitMode').addEventListener('change', () => {
+                saveTuning();
+                if (sourceImage) drawSourceImage();
+            });
+            document.getElementById('imageUrl').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); loadImageFromUrl(); }
+            });
         }
         function resetVariables() {
             bleLib.resetDFUState();
@@ -2199,7 +2809,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             setStatus("Connection failed", false, true);
             setConnectedUI(false);
         }
-        function sendDirectWriteAuto(extraOptions) {
+        async function sendDirectWriteAuto(extraOptions) {
             extraOptions = extraOptions || {};
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) {
@@ -2230,16 +2840,19 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 if (extraOptions.onComplete) extraOptions.onComplete(false, new Error('Transfer in progress'));
                 return;
             }
+            const colorScheme = currentColorScheme();
+            // Always re-dither at full resolution so the upload never inherits a
+            // half-res preview pass, and hand the palette indices to the encoder.
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             const ditheringType = document.getElementById('ditheringSelect').value;
             if (originalImageData) {
                 ctx.putImageData(originalImageData, 0, 0);
             }
-            if (ditheringType !== 'none') {
-                const colorScheme = parseInt(document.getElementById('colorSchemeSelect').value) || 0;
-                bleLib.applyDithering(ctx, canvas.width, canvas.height, colorScheme, ditheringType);
-            }
-            const colorScheme = parseInt(document.getElementById('colorSchemeSelect').value) || 0;
+            const dither = await bleLib.applyDithering(
+                ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
+            );
+            lastDither = dither;
+            lastDither.scheme = colorScheme;
             const useDemoCallbacks = !!(extraOptions.onComplete || extraOptions.onProgress || extraOptions.onStatusChange);
             // Demo always uses the device capability; manual uploads honor the checkbox.
             const partialSupport = (extraOptions.forcePartial || wantsPartialUpload())
@@ -2252,6 +2865,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 partialUpdateSupport: partialSupport,
                 transmissionModes: transmissionModes,
                 panelIcType: displayPanelIcType,
+                ditherIndices: dither.indices,
+                ditherWireMap: dither.wireMap,
                 onProgress: extraOptions.onProgress || ((current, total) => {
                     const progress = Math.floor((current / total) * 100);
                     setProgressBar(true, progress);
@@ -2538,6 +3153,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     updateDrawPalette();
                     updateTextColorSwatches();
                     updateQRColorSwatches();
+                    // Measured palettes depend on both the panel and the scheme.
+                    OpenDisplayBLE.ditherReady().then(populatePaletteSelect);
                     doAll();
                     if (deviceDisplayConfigReady) {
                         addLog(`Canvas size set from device: ${widthInput}x${heightInput}`, 'success');
@@ -2604,7 +3221,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         function doAll() {
             createCanvas();
-            getPixelData();
+            // The device may have resized the canvas, so re-fit any loaded image.
+            if (sourceImage) drawSourceImage();
+            else getPixelData();
         }
         function getUrlParameter(name) {
             const urlParams = new URLSearchParams(window.location.search);
@@ -2759,6 +3378,27 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             updateQRColorSwatches();
             setupCanvasDrawing();
             initDrawModeBar();
+            loadTuning();
+            setupTuningControls();
+            setupStageInteractions();
+            OpenDisplayBLE.ditherReady().then(lib => {
+                populateDitherSelect(lib);
+                populatePaletteSelect(lib);
+                const ditherSel = document.getElementById('ditheringSelect');
+                const paletteSel = document.getElementById('paletteSelect');
+                if (ditherSel.dataset.pendingMode) {
+                    ditherSel.value = ditherSel.dataset.pendingMode;
+                    delete ditherSel.dataset.pendingMode;
+                }
+                if (paletteSel.dataset.pendingPalette) {
+                    if ([...paletteSel.options].some(o => o.value === paletteSel.dataset.pendingPalette)) {
+                        paletteSel.value = paletteSel.dataset.pendingPalette;
+                    }
+                    delete paletteSel.dataset.pendingPalette;
+                }
+                if (ditherSel.value !== 'auto') markPresetCustom();
+                getPixelData();
+            });
             if (setUrlFilter()) {
                 const filterParam = getUrlParameter('filter') || getUrlParameter('device') || getUrlParameter('prefix');
                 addLog(`Device filter set from URL: ${filterParam}`, 'info');
