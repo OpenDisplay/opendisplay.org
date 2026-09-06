@@ -578,3 +578,140 @@ test('sendCanvas refuses when not connected', async () => {
     /Not connected/,
   );
 });
+
+// --- upload deadlines: a stall budget, and a fuse that cannot outlive its op ---
+
+const SEND_OPTS = {
+  rotationQuarterTurns: 0, originalWidth: 8, originalHeight: 4,
+  transmissionModes: 0x13, partialUpdateSupport: 0, panelIcType: 35,
+};
+
+test('progress RESTARTS the upload clock: slow is not stalled', async () => {
+  // A transfer that keeps acking must never expire, however long it takes.
+  let cb = null;
+  installBridge({
+    sendCanvasToDisplay: async (_c, _s, opts) => { cb = opts; },
+  });
+  await adapter.connectViaChooser('OD');
+  adapter.DEADLINES.sendStall = 120;
+  try {
+    const p = adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS);
+    // Six ticks at 60 ms: well past the 120 ms budget in total, but never
+    // 120 ms without progress.
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 60));
+      cb.onProgress(i + 1, 6);
+    }
+    cb.onComplete(true);
+    const res = await p;
+    assert.deepEqual(res, { skipped: false, refreshed: true });
+  } finally {
+    adapter.DEADLINES.sendStall = 45000;
+  }
+});
+
+test('the refresh phase gets its own budget, not the transfer leftovers', async () => {
+  let cb = null;
+  installBridge({
+    sendCanvasToDisplay: async (_c, _s, opts) => { cb = opts; },
+  });
+  await adapter.connectViaChooser('OD');
+  adapter.DEADLINES.sendStall = 100;
+  adapter.DEADLINES.refresh = 700;
+  try {
+    const p = adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS);
+    // The library announces the data-phase boundary; the panel then takes far
+    // longer than the STALL budget to refresh, with no further progress.
+    cb.onStatusChange('Upload complete (1.20s), refreshing display...');
+    await new Promise((r) => setTimeout(r, 350));
+    cb.onComplete(true);
+    assert.deepEqual(await p, { skipped: false, refreshed: true });
+  } finally {
+    adapter.DEADLINES.sendStall = 45000;
+    adapter.DEADLINES.refresh = 180000;
+  }
+});
+
+test('a stalled upload still times out and tears down', async () => {
+  installBridge({ sendCanvasToDisplay: async () => {} }); // never calls back
+  await adapter.connectViaChooser('OD');
+  const before = current();
+  adapter.DEADLINES.sendStall = 60;
+  try {
+    await assert.rejects(
+      adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS),
+      /timed out/i,
+    );
+  } finally {
+    adapter.DEADLINES.sendStall = 45000;
+  }
+  assert.equal(adapter.getState(), 'idle');
+  assert.notEqual(current(), before, 'renewed after the timeout');
+});
+
+test('a fuse from an ABANDONED upload cannot disconnect a later one', async () => {
+  // The bug this exists for: an upload can be abandoned without its promise
+  // ever settling — disconnect() swallows GATT teardown races and renews the
+  // instance regardless, so a library upload whose abort path never ran leaves
+  // a promise nobody settles. Its timer kept burning and, minutes later, force
+  // -disconnected whatever connection existed by then. The panel had displayed
+  // the image; the app reported a timeout, because a previous send's fuse had
+  // cut the link.
+  installBridge({
+    sendCanvasToDisplay: async () => {},          // never calls back
+    disconnect: async () => { throw new Error('GATT teardown race'); },
+  });
+  await adapter.connectViaChooser('OD');
+  adapter.DEADLINES.sendStall = 120;
+  try {
+    const orphan = adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS);
+    orphan.catch(() => {});                       // abandoned, never settles cleanly
+    // The user disconnects; the teardown throws and the instance is renewed.
+    await adapter.disconnect().catch(() => {});
+    assert.equal(adapter.getState(), 'idle');
+
+    // A fresh connection and a healthy upload.
+    let cb = null;
+    installBridge({ sendCanvasToDisplay: async (_c, _s, opts) => { cb = opts; } });
+    await adapter.connectViaChooser('OD');
+    const live = current();
+    const p = adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS);
+    cb.onComplete(true);
+    assert.deepEqual(await p, { skipped: false, refreshed: true });
+
+    // Now let the ORPHAN's fuse burn down. It must do nothing at all.
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(adapter.getState(), 'connected', 'the stale fuse did not disconnect us');
+    assert.equal(current(), live, 'and did not renew the instance underneath us');
+  } finally {
+    adapter.DEADLINES.sendStall = 45000;
+  }
+});
+
+test('an abandoned operation does not wedge the adapter for good', async () => {
+  // The lock is released by withOp's finally, which needs the promise to
+  // settle. An upload abandoned by a renewed instance never settles, so the
+  // lock was held forever and every later operation was refused with
+  // "Another operation is in progress" — on a connection that was perfectly
+  // healthy.
+  installBridge({
+    sendCanvasToDisplay: async () => {},                       // never calls back
+    disconnect: async () => { throw new Error('GATT teardown race'); },
+  });
+  await adapter.connectViaChooser('OD');
+  adapter.DEADLINES.sendStall = 5000;                          // long enough not to fire
+  try {
+    adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS).catch(() => {});
+    await adapter.disconnect().catch(() => {});
+
+    let cb = null;
+    installBridge({ sendCanvasToDisplay: async (_c, _s, opts) => { cb = opts; } });
+    await adapter.connectViaChooser('OD');
+    const p = adapter.sendCanvas(fakeCanvas(8, 4), 4, SEND_OPTS);
+    assert.ok(cb, 'the new upload was allowed to start');
+    cb.onComplete(true);
+    assert.deepEqual(await p, { skipped: false, refreshed: true });
+  } finally {
+    adapter.DEADLINES.sendStall = 45000;
+  }
+});

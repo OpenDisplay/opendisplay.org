@@ -22,10 +22,17 @@ export const DEADLINES = {
   auth: 12000,
   firmware: 8000,
   config: 15000,
-  // An upload plus the panel refresh: the library settles onComplete only
-  // after refresh-complete (0x73), and a large slow panel can take tens of
-  // seconds to refresh. This only bounds a total stall.
-  send: 240000,
+  // Upload is bounded by a STALL, not a total: as long as chunk acks keep
+  // arriving the link is alive, and a big panel on a poor MTU is slow rather
+  // than broken. A flat total also had to cover the encode, a possible
+  // PIPE->legacy fallback (which re-sends every byte inside the same call) and
+  // the refresh, so it punished exactly the transfers least able to afford it.
+  sendStall: 45000,
+  // Once the data phase is done the library waits for refresh-complete (0x73),
+  // which it does not bound at all — the firmware's own 0x74 refresh timeout
+  // does. A large slow panel can take tens of seconds, so this phase gets its
+  // own budget rather than whatever the transfer left over.
+  refresh: 180000,
 };
 
 /** Colour schemes this app will send. Scheme 7 is deliberately absent: the
@@ -142,6 +149,8 @@ let state = 'idle'; // idle | connecting | connected | disconnecting
 // invalidates results, but not state ownership).
 let stateLease = 0;
 let opInFlight = false;
+/** Generation that took `opInFlight`; a lock from an older one is not binding. */
+let opGeneration = -1;
 let adapterInitiatedDisconnect = false;
 let keyProvider = null; // async ({name, reason}) => Uint8Array(16) | null
 let unexpectedDisconnectListener = null;
@@ -159,35 +168,86 @@ export function setUnexpectedDisconnectListener(fn) {
   unexpectedDisconnectListener = fn;
 }
 
+/**
+ * A deadline that only tears down a connection it STILL OWNS.
+ *
+ * The ownership check is the important part. An operation can be abandoned
+ * without its promise ever settling — disconnect() swallows GATT teardown
+ * races and renews the instance regardless, so a library upload whose abort
+ * path never ran leaves a promise nobody will settle. Its timer kept burning,
+ * and minutes later fired forceDisconnect() on whatever connection existed by
+ * then: a later, healthy upload would complete on the panel and be reported as
+ * a timeout, because a fuse from a previous one had cut the link. Capturing
+ * the generation and lease makes a stale fuse inert.
+ *
+ * The clock is also restartable, because a transfer that is making progress is
+ * not stalled however long it takes.
+ */
+function makeDeadline(label, ms) {
+  const gen = generation;
+  const lease = stateLease;
+  let settled = false;
+  let timer = null;
+  let budget = ms;
+  let rejectExpired;
+  const expired = new Promise((_, reject) => { rejectExpired = reject; });
+  // Nobody consumes `expired` until race() is called; without this a rejection
+  // in that window would surface as an unhandledrejection.
+  expired.catch(() => {});
+
+  const fire = () => {
+    if (settled) return;
+    settled = true;
+    // Reject FIRST so a result racing the teardown can never win, then tear
+    // down in the background — but ONLY if this deadline is still the one
+    // governing the live connection.
+    rejectExpired(new TimeoutError(label, budget));
+    if (generation === gen && stateLease === lease) forceDisconnect().catch(() => {});
+  };
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(fire, budget);
+  };
+  arm();
+
+  return {
+    /** Progress: the link is alive, so restart the clock. */
+    bump() { if (!settled) arm(); },
+    /** Move to a different phase, with its own budget. */
+    rebudget(next) { if (!settled) { budget = next; arm(); } },
+    stop() { settled = true; clearTimeout(timer); },
+    race(promise) {
+      return Promise.race([promise, expired]).finally(() => { this.stop(); });
+    },
+  };
+}
+
 function withDeadline(promise, ms, label) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      // Reject FIRST so a result racing the teardown can never win, then tear
-      // down in the background (disconnect bumps the generation, so any late
-      // completion is invalidated anyway).
-      reject(new TimeoutError(label, ms));
-      forceDisconnect().catch(() => {});
-    }, ms);
-    promise.then(
-      (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
-      (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } },
-    );
-  });
+  const dl = makeDeadline(label, ms);
+  return dl.race(promise);
 }
 
 async function withOp(fn) {
-  if (opInFlight) throw new Error('Another operation is in progress');
+  // A lock held from an EARLIER generation belongs to an operation that can no
+  // longer affect this connection: the instance it was talking to has been
+  // discarded. It may never settle — disconnect() swallows GATT teardown races
+  // and renews regardless, so a library upload whose abort path never ran
+  // leaves a promise nobody will settle — and holding the lock for it wedges
+  // the adapter permanently, refusing every later operation.
+  if (opInFlight && opGeneration === generation) {
+    throw new Error('Another operation is in progress');
+  }
   opInFlight = true;
+  opGeneration = generation;
   const gen = generation;
   try {
     const result = await fn();
     if (generation !== gen) throw new StaleInstanceError();
     return result;
   } finally {
-    opInFlight = false;
+    // Only release a lock we still hold: a newer operation may have taken it
+    // after a generation bump, and this one must not free it underneath.
+    if (opGeneration === gen) opInFlight = false;
   }
 }
 
@@ -491,6 +551,7 @@ export async function sendCanvas(canvas, colorScheme, {
     // and calls onComplete(true) immediately. Claiming "the panel refreshed"
     // there would be a lie.
     let skipped = false;
+    const deadline = makeDeadline('Image upload', DEADLINES.sendStall);
     const done = new Promise((resolve, reject) => {
       inst.sendCanvasToDisplay(canvas, colorScheme, {
         rotation: rotationQuarterTurns,
@@ -501,6 +562,8 @@ export async function sendCanvas(canvas, colorScheme, {
         panelIcType,
         onProgress: (sent, total) => {
           if (generation !== gen) return;
+          // Acks are still flowing, so the transfer is slow, not stalled.
+          deadline.bump();
           onProgress?.(sent, total);
         },
         onStatusChange: (message) => {
@@ -514,6 +577,9 @@ export async function sendCanvas(canvas, colorScheme, {
           // the data-phase boundary; that is the only public signal for it.
           if (!transferAnnounced && /refreshing display/i.test(text)) {
             transferAnnounced = true;
+            // The bytes are on the device; what remains is the panel refresh,
+            // which the library does not bound. Give it its own budget.
+            deadline.rebudget(DEADLINES.refresh);
             onTransferComplete?.();
           }
         },
@@ -523,7 +589,7 @@ export async function sendCanvas(canvas, colorScheme, {
         },
       }).catch(reject);
     });
-    await withDeadline(done, DEADLINES.send, 'Image upload');
+    await deadline.race(done);
     if (generation !== gen) throw new StaleInstanceError();
     return skipped ? { skipped: true, refreshed: false } : { skipped: false, refreshed: true };
   });
