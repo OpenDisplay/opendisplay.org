@@ -2158,6 +2158,89 @@
          "defaultPower": "battery-2000",
          "transmission_modes": "25",
          "index": 23
+      },
+      {
+         "id": "m5-papers3",
+         "name": "M5Stack PaperS3",
+         "connectorPins": [
+            1047
+         ],
+         "systemConfig": {
+            "ic_type": "2",
+            "communication_modes": "0x1",
+            "device_flags": "0x0",
+            "pwr_pin": "0xff",
+            "pwr_pin_2": "0xff",
+            "pwr_pin_3": "0xff",
+            "reserved": "0x0"
+         },
+         "manufacturerData": {
+            "manufacturer_id": "0",
+            "board_type": "0",
+            "board_revision": "0x0",
+            "reserved": "0x0"
+         },
+         "displayPins": {
+            "reset": "0xff",
+            "busy": "0xff",
+            "dc": "0xff",
+            "cs": "0xff",
+            "data": "0xff",
+            "clk": "0xff",
+            "cs2": "0xff"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "3",
+            "battery_sense_enable_pin": "0xff",
+            "voltage_scaling_factor": "0xa1",
+            "deep_sleep_current_ua": "0",
+            "capacity_estimator": "1"
+         },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "42",
+            "pin_2": "41",
+            "pin_3": "0xff",
+            "pin_4": "0xff",
+            "pin_5": "0xff",
+            "pin_6": "0xff",
+            "pin_7": "0xff",
+            "bus_speed_hz": "0x61a80",
+            "bus_flags": "0x0",
+            "pullups": "0x0",
+            "pulldowns": "0x0"
+         },
+         "touchController": {
+            "instance_number": "0x0",
+            "touch_ic_type": "1",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0xff",
+            "int_pin": "48",
+            "rst_pin": "0xff",
+            "display_instance": "0x0",
+            "flags": "0x6",
+            "poll_interval_ms": "0",
+            "touch_data_start_byte": "0",
+            "enable_pin": "0xff"
+         },
+         "buzzerConfig": {
+            "instance_number": "0x0",
+            "drive_pin": "21",
+            "enable_pin": "0xff",
+            "flags": "0x0",
+            "duty_percent": "0"
+         },
+         "defaultDisplay": "m5-papers3-960x540-4gray",
+         "defaultPower": "usb",
+         "installConfig": {
+            "type": "esp32",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
+            "firmwareLetter": "O",
+            "githubRepo": "https://github.com/OpenDisplay/Firmware"
+         },
+         "transmission_modes": "0x1b",
+         "index": 31
       }
    ],
    "displays": [
@@ -2944,6 +3027,44 @@
             "transmission_modes": "0x3"
          },
          "index": 39
+      },
+      {
+         "id": "m5-papers3-960x540",
+         "name": "4.7\" M5Stack PaperS3 Monochrome (960×540)",
+         "connectorPins": [
+            1047
+         ],
+         "panelIcType": "3004",
+         "config": {
+            "pixel_width": "0x3c0",
+            "pixel_height": "0x21c",
+            "active_width_mm": "0x0",
+            "active_height_mm": "0x0",
+            "partial_update_support": "0",
+            "color_scheme": "0",
+            "full_update_mC": "0x0",
+            "transmission_modes": "0x1b"
+         },
+         "index": 44
+      },
+      {
+         "id": "m5-papers3-960x540-4gray",
+         "name": "4.7\" M5Stack PaperS3 4bpp gray (960×540)",
+         "connectorPins": [
+            1047
+         ],
+         "panelIcType": "3004",
+         "config": {
+            "pixel_width": "0x3c0",
+            "pixel_height": "0x21c",
+            "active_width_mm": "0x0",
+            "active_height_mm": "0x0",
+            "partial_update_support": "0",
+            "color_scheme": "6",
+            "full_update_mC": "0x0",
+            "transmission_modes": "0x1b"
+         },
+         "index": 45
       }
    ],
    "powerOptions": [

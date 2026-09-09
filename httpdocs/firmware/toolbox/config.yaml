@@ -20,7 +20,7 @@ ble_proto:
 
         '
   version: 1
-  minor_version: 4
+  minor_version: 5
   packet_structure:
     description: 'outer_packet wraps the overall transfer and contains a sequence of single_packet entries. single_packet
       defines the structure of each entry contained in the packets field of outer_packet.
@@ -798,6 +798,9 @@ ble_proto:
           3003:
             name: inkplate10_1200x825
             description: Soldered Inkplate 10 (ED097TC2, 1200x825; FastEPD native parallel path)
+          3004:
+            name: m5papers3_960x540
+            description: M5Stack PaperS3 (ED047TC1-class, 960x540, 16-gray capable; FastEPD native parallel path)
       - name: pixel_width
         size: 2
         description: Pixel width of panel

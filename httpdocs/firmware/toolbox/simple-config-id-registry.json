@@ -30,7 +30,8 @@
     "inkplate-10": 27,
     "nrf54l15-xiao": 28,
     "ee02": 29,
-    "good-display-133c02": 30
+    "good-display-133c02": 30,
+    "m5-papers3": 31
   },
   "displays": {
     "ep154-200x200": 1,
@@ -75,7 +76,9 @@
     "ep397-800x480": 40,
     "ep426-800x480-4g": 41,
     "ep709-spectra-1200x1600": 42,
-    "ep215yr-160x296": 43
+    "ep215yr-160x296": 43,
+    "m5-papers3-960x540": 44,
+    "m5-papers3-960x540-4gray": 45
   },
   "powerOptions": {
     "usb": 1,
