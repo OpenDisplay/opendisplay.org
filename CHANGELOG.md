@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.3...1.16.0) (2026-09-12)
+
+
+### Features
+
+* add M5Stack PaperS3 simple-config preset (panel-IC 3004) ([7f845d9](https://github.com/OpenDisplay/opendisplay.org/commit/7f845d9604a92174228f91f39c62eb5d455be68e))
+* add M5Stack PaperS3 simple-config preset (panel-IC 3004) ([5667ac2](https://github.com/OpenDisplay/opendisplay.org/commit/5667ac2acc7cde1d937136c6d8a2bdbfb5a17593))
+
+
+### Bug Fixes
+
+* sync firmware binaries to OpenDisplay/Firmware v2.26.5 ([d8d5384](https://github.com/OpenDisplay/opendisplay.org/commit/d8d538477332a5f18a27b07e2953d4351398c50a))
+* sync firmware binaries to OpenDisplay/Firmware v2.26.5 ([7633cf4](https://github.com/OpenDisplay/opendisplay.org/commit/7633cf42938e4c87254835ed02bf048ba02a8ff8))
+
 ## [1.15.3](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.2...1.15.3) (2026-09-02)
 
 
