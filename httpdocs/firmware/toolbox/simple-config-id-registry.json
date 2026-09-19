@@ -78,7 +78,8 @@
     "ep709-spectra-1200x1600": 42,
     "ep215yr-160x296": 43,
     "m5-papers3-960x540": 44,
-    "m5-papers3-960x540-4gray": 45
+    "m5-papers3-960x540-4gray": 45,
+    "ep37yr-240x416": 46
   },
   "powerOptions": {
     "usb": 1,
