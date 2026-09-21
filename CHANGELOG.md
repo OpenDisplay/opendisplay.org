@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.17.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.16.0...1.17.0) (2026-09-21)
+
+
+### Features
+
+* add GDEM037F51 3.7" BWRY (240x416) display preset ([f346034](https://github.com/OpenDisplay/opendisplay.org/commit/f3460349ac8e1ae74acf4f662dad42f6db8565d9))
+* add GDEM037F51 3.7" BWRY (240x416) display preset ([dffa616](https://github.com/OpenDisplay/opendisplay.org/commit/dffa616af98de470f385b427b93b9e4cdef55200))
+* list EL016F6W4A 1.6" BWRY as compatible ([ef0f294](https://github.com/OpenDisplay/opendisplay.org/commit/ef0f2942164bc5beea7213c75c7ecf2ec52d8be4))
+* list EL016F6W4A as compatible, add FCC IDs ([b7d52e7](https://github.com/OpenDisplay/opendisplay.org/commit/b7d52e713ec1068d7ed8e3919947fa753d0e863e))
+
+
+### Bug Fixes
+
+* add FCC ID for EL022F6W4A ([6509126](https://github.com/OpenDisplay/opendisplay.org/commit/650912623e7127c8bcbb8a339df790b7bd0825b9))
+* sync firmware binaries to OpenDisplay/Firmware v2.26.7 ([bde76f8](https://github.com/OpenDisplay/opendisplay.org/commit/bde76f8ad0396e543e3dd48cdfda8fd712b9f3dd))
+* sync firmware binaries to OpenDisplay/Firmware v2.26.7 ([aa60214](https://github.com/OpenDisplay/opendisplay.org/commit/aa60214f737e3375bbc12fc01dcf11943f2edddf))
+
 ## [1.16.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.15.3...1.16.0) (2026-09-12)
 
 
