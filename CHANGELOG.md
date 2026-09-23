@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.17.0...1.18.0) (2026-09-23)
+
+
+### Features
+
+* **ble-tester:** add button to rotate the canvas ([68205e5](https://github.com/OpenDisplay/opendisplay.org/commit/68205e5ce5d1c59d44eb430d129b4b51172e2237))
+
 ## [1.17.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.16.0...1.17.0) (2026-09-21)
 
 
