@@ -83,6 +83,19 @@
   text-underline-offset: 3px;
 }
 
+/* The site footer sits on the dark bezel; keep the doc link/paragraph colors above out of it. */
+.page-inner.doc-page .site-footer a.od-foot-link {
+  color: #E6EAEE;
+}
+
+.page-inner.doc-page .site-footer a.od-foot-link:hover {
+  color: var(--od-blue);
+}
+
+.page-inner.doc-page .site-footer .site-footer__lead {
+  color: #9aa3ad;
+}
+
 .page-inner.doc-page .tool-link {
   display: inline-flex;
   align-items: center;
