@@ -311,6 +311,283 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .log-display{word-break:break-word;overflow-wrap:anywhere}
 .status-display{min-width:0;overflow-wrap:break-word}
 /* Link styles use design tokens from doc.css */
+
+/* Showcase layout: a hero, a connection bar, one card per device capability, developer tools last.
+   Everything is prefixed with .tool-ui / .page-inner so it beats tool-ui.css, which styles every button. */
+.page-inner.tool-ui .tool-page > .container{max-width:760px}
+.page-inner.tool-ui .tool-page > .container > .col,
+.page-inner.tool-ui .bt-layout .col{margin-bottom:14px}
+/* Wide screens, once connected: the Display card on the left, the other features stacked on the
+   right, so the whole device fits on screen. Phones and portrait tablets keep one column. */
+@media (min-width:1024px){
+  .page-inner.tool-ui .tool-page > .container{max-width:1180px}
+  .bt-layout:has(> #displayPanel.visible){display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:16px;align-items:start}
+  .bt-layout:has(> #displayPanel.visible) .bt-side .bt-presets--3 .bt-btn{padding:0 6px}
+  .bt-layout:has(> #displayPanel.visible) .bt-side .bt-presets:not(.bt-presets--3){grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.bt-hero{margin:0 0 16px}
+.page-inner.tool-ui .bt-hero h1{font-family:var(--font-sans);font-size:2rem;font-weight:600;letter-spacing:-.02em;line-height:1.15;margin:0 0 6px}
+.bt-lead{margin:0;max-width:46ch;color:var(--fg2);font-family:var(--font-sans);font-size:1.02rem;line-height:1.45}
+.bt-notice{margin:0 0 12px;padding:12px 14px;border-left:3px solid var(--od-warn);border-radius:0 10px 10px 0;background:var(--od-paper-2);font-family:var(--font-sans);font-size:.95rem;line-height:1.45}
+.bt-notice p{margin:0 0 8px}
+.bt-notice p:last-child{margin-bottom:0}
+.bt-notice a{color:var(--od-blue-ink)}
+.bt-notice__title{font-weight:600}
+
+.page-inner.tool-ui .tool-page .bt-conn{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
+/* Once connected, the device bar stays in view while scrolling through the feature cards,
+   so its state ("Refreshing screen…") and Disconnect are always visible. */
+.page-inner.tool-ui .tool-page .bt-conn:has(.bt-conn__name:not(:empty)){
+  position:sticky;top:8px;z-index:20;padding:10px 14px;
+  background:color-mix(in srgb,var(--od-paper) 97%,transparent);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  box-shadow:0 6px 20px -10px rgba(11,15,18,.35)
+}
+.bt-conn__row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bt-conn__row:not(:has(.bt-conn__name:not(:empty), .preview-battery:not([hidden]), .visible)){display:none}
+/* While connected the second line under the name shows firmware + battery, or, when something
+   is happening, the activity instead (amber pulsing dot) or an error (red dot). */
+.bt-conn__meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-family:var(--font-sans);font-size:.85rem;color:var(--fg3)}
+.bt-conn__meta .preview-battery{display:inline-flex;align-items:center;gap:4px;margin:0;font-size:.85rem;line-height:1}
+.bt-conn__meta .preview-battery-icon{display:block;width:18px;height:18px}
+.preview-battery .battery-fill{fill:currentColor;stroke:none}
+.preview-battery .battery-bolt{fill:var(--od-paper);stroke:none}
+.preview-battery.is-low{color:var(--od-error)}
+.bt-conn__detail:not(:empty) + .preview-battery:not([hidden])::before{content:'·';margin-right:6px}
+.bt-conn__status{font-family:var(--font-sans);font-size:.85rem;color:var(--fg2);padding-left:16px}
+.bt-conn__status:empty{display:none}
+.bt-conn__status.error{color:var(--od-error)}
+.bt-conn__id:has(.bt-conn__status:not(:empty)) .bt-conn__meta{display:none}
+.bt-conn:has(.bt-conn__status.busy:not(:empty)) .bt-conn__name::before{background:var(--od-warn);animation:bt-busy-dot 1.2s ease-in-out infinite}
+.bt-conn:has(.bt-conn__status.error:not(:empty)) .bt-conn__name::before{background:var(--od-error)}
+@keyframes bt-busy-dot{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.bt-conn .bt-conn__name::before{animation:none!important}}
+.bt-conn__id{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bt-conn__name{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:1.05rem;font-weight:600;color:var(--fg1)}
+.bt-conn__name::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--od-ok);flex-shrink:0}
+.bt-conn__name:empty{display:none}
+.bt-conn__line{display:flex;align-items:center;gap:6px;min-width:0}
+.bt-conn__line:not(:has(.bt-conn__name:not(:empty))){display:none}
+.bt-conn__lock{display:inline-flex;color:var(--fg3)}
+.bt-conn__lock svg{width:15px;height:15px}
+.bt-conn__detail{font-family:var(--font-sans);font-size:.85rem;color:var(--fg3)}
+/* Line up with the device name, which sits after the 8px status dot and 8px gap. */
+.bt-conn__line:has(.bt-conn__name:not(:empty)) ~ .bt-conn__meta{padding-left:16px}
+.bt-conn__detail:empty{display:none}
+.bt-conn__meta:not(:has(.bt-conn__detail:not(:empty), .preview-battery:not([hidden]))){display:none}
+.bt-conn .status-text.is-idle{display:none}
+.page-inner.tool-ui .bt-conn .status-text{margin:0;text-align:left;font-family:var(--font-sans);font-size:.9rem;font-weight:400;color:var(--fg2);line-height:1.4}
+.page-inner.tool-ui .bt-conn .status-text.error{color:var(--od-error)}
+/* Before connecting there is nothing to frame: just the button and a hint. */
+.page-inner.tool-ui .tool-page .bt-conn:not(:has(.bt-conn__name:not(:empty))){background:none;border:none;padding:0}
+.bt-connect-hint{margin:0;color:var(--fg3);font-family:var(--font-sans);font-size:.9rem;line-height:1.45}
+#connectbutton[style*="none"] ~ .bt-connect-hint{display:none}
+/* Before connecting, messages like "No device selected" belong under the button, next to the hint. */
+.page-inner.tool-ui .bt-conn:not(:has(.bt-conn__name:not(:empty))) > .status-text{order:2}
+.bt-conn #connectbutton{order:1}
+.bt-conn .bt-connect-hint{order:3}
+@media (min-width:641px){.tool-ui #connectbutton.bt-btn--block{width:auto;min-width:280px;align-self:flex-start;padding:0 28px}}
+.bt-conn .status-text:empty{display:none}
+.bt-conn .preview-battery{font-family:var(--font-sans);font-size:.9rem;color:var(--fg3)}
+.tool-ui .bt-btn.connected-only:not(.visible){display:none}
+.page-inner.tool-ui .bt-conn .upload-progress-wrap{margin:0}
+.upload-progress-wrap[hidden]{display:none}
+.tool-ui #connectbutton[hidden],.bt-connect-hint[hidden]{display:none}
+
+.tool-ui .bt-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;
+  min-height:44px;padding:0 16px;margin:0;border-radius:10px;
+  font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.2;text-align:center;
+  cursor:pointer;box-shadow:none;transform:none
+}
+.tool-ui .bt-btn:hover,.tool-ui .bt-btn:active{transform:none;box-shadow:none}
+.tool-ui .bt-btn--primary{background:var(--od-blue);border:1.5px solid var(--od-blue);color:var(--od-bezel)}
+.tool-ui .bt-btn--primary:hover{background:#33ccff;border-color:#33ccff}
+.tool-ui .bt-btn--outline{background:transparent;border:1.5px solid var(--od-ink-line);color:var(--fg1)}
+.tool-ui .bt-btn--outline:hover{background:var(--od-paper-2);border-color:var(--fg1)}
+.tool-ui .bt-btn--quiet{background:transparent;border:1.5px solid transparent;color:var(--fg3)}
+.tool-ui .bt-btn--quiet:hover{background:var(--od-paper-2);color:var(--fg1)}
+.tool-ui .bt-btn--danger{background:transparent;border:1.5px solid color-mix(in srgb,var(--od-error) 45%,transparent);color:var(--od-error)}
+.tool-ui .bt-btn--danger:hover{background:color-mix(in srgb,var(--od-error) 8%,transparent);border-color:var(--od-error)}
+.tool-ui .bt-btn--block{width:100%}
+.bt-btn > svg{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tool-ui .bt-btn.is-busy{cursor:progress;opacity:.75}
+/* Send button doubles as the progress indicator. */
+.tool-ui #uploadButton.is-busy{opacity:1;color:var(--od-bezel);border-color:var(--od-blue);
+  background:linear-gradient(to right,var(--od-blue) var(--progress,0%),color-mix(in srgb,var(--od-blue) 22%,var(--od-paper)) var(--progress,0%))}
+.tool-ui #uploadButton.is-refreshing{background:color-mix(in srgb,var(--od-blue) 35%,var(--od-paper));animation:bt-refresh 1.6s ease-in-out infinite}
+@keyframes bt-refresh{50%{background:color-mix(in srgb,var(--od-blue) 65%,var(--od-paper))}}
+@media (prefers-reduced-motion:reduce){.tool-ui #uploadButton.is-refreshing{animation:none}}
+.page-inner.tool-ui .bt-conn .upload-progress-wrap{display:none}
+.tool-ui .bt-btn.is-done{background:var(--od-ok);border-color:var(--od-ok);color:#fff}
+.tool-ui .bt-btn.is-failed{background:transparent;border-color:var(--od-error);color:var(--od-error)}
+.tool-ui button.bt-btn:disabled{background:var(--od-paper-2);border-color:var(--od-paper-line);color:var(--fg4)}
+.tool-ui label.bt-btn{display:inline-flex;margin:0;font-size:15px}
+.tool-ui .bt-btn:focus-visible,.bt-file:focus-visible + .bt-btn{outline:none;box-shadow:var(--shadow-focus)}
+.bt-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+
+.page-inner.tool-ui .tool-page .bt-card{padding:16px}
+.bt-card__head{display:grid;grid-template-columns:36px 1fr;column-gap:12px;align-items:center;margin:0 0 14px}
+.bt-card__head > h2{grid-column:2;grid-row:1}
+.bt-card__head > p{grid-column:1 / -1}
+.page-inner.tool-ui .bt-card__head h2{margin:0}
+.bt-card__head > p:first-of-type{margin-top:10px}
+.bt-card__icon{grid-row:1;grid-column:1;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--od-blue) 12%,transparent);color:var(--od-blue-ink)}
+.bt-card__icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.page-inner.tool-ui .bt-card__head h2{margin:0 0 4px;font-family:var(--font-sans);font-size:1.25rem;font-weight:600;letter-spacing:-.01em}
+.bt-card__head p{margin:0;color:var(--fg2);font-family:var(--font-sans);font-size:.95rem;line-height:1.45}
+.bt-card__head .bt-card__meta{margin-top:4px;color:var(--fg3);font-size:.85rem}
+.bt-card__meta:not(:has(:not(:empty))){display:none}
+.bt-card__meta .preview-meta{margin:0}
+.page-inner.tool-ui .bt-sub{margin:16px 0 8px;font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)}
+.bt-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.bt-actions > :only-child{grid-column:1 / -1}
+.bt-presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}
+.bt-presets--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tool-ui .bt-presets--3 .bt-btn{padding:0 8px}
+.bt-hint{margin:8px 0 0;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem}
+.bt-hint--warn{color:var(--od-warn);text-align:left;margin:0 0 8px}
+.bt-card .led-viz{margin-bottom:12px;padding:10px 12px}
+.bt-card .led-viz-lamp-wrap{flex-direction:row;justify-content:center;gap:12px;margin:0}
+.bt-card .led-viz-lamp{width:36px;height:36px}
+.bt-card .led-viz-lamp-wrap #ledVizPhase{display:none}
+.bt-card .led-viz{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--od-paper-2);border-color:var(--od-paper-line)}
+.bt-card .led-viz::after{content:'Preview';font-family:var(--font-sans);font-size:.85rem;color:var(--fg3)}
+.bt-led-timeline .led-viz-timeline{margin-bottom:6px}
+.bt-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;pointer-events:none;
+  font-family:var(--font-sans);font-size:.95rem;line-height:1.4;color:var(--fg3);text-align:center;
+  margin:1px;border-radius:7px;background:var(--od-paper)}
+.bt-empty[hidden]{display:none}
+.partial-demo-stats:empty{display:none}
+.bt-readings{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.bt-reading{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;background:var(--od-paper-2);border:1px solid var(--od-paper-line);transition:background .6s ease,border-color .6s ease}
+.bt-reading[hidden]{display:none}
+.bt-reading--wide{grid-column:1 / -1}
+.bt-reading__label{font-family:var(--font-sans);font-size:.8rem;color:var(--fg3)}
+.bt-reading__value{font-family:var(--font-sans);font-size:1.15rem;font-weight:600;color:var(--fg1)}
+.bt-reading--wide .bt-reading__value{font-size:1rem}
+.bt-reading.is-flash{background:color-mix(in srgb,var(--od-blue) 18%,var(--od-paper));border-color:var(--od-blue);transition:none}
+@media (prefers-reduced-motion:reduce){.bt-reading{transition:none}}
+.page-inner.tool-ui .tool-page .bt-dev{background:none;border:none;border-top:1px solid var(--od-paper-line);border-radius:0;padding:0;margin-top:8px}
+
+/* Draw tools read as secondary: outline buttons, not the accent fill tool-ui.css gives every button. */
+.tool-ui .bt-card .draw-mode-btn{background:transparent;border:1.5px solid var(--od-ink-line);color:var(--fg1)}
+.tool-ui .bt-card .draw-mode-btn.active{border-color:var(--od-blue);background:color-mix(in srgb,var(--od-blue) 10%,transparent);color:var(--od-blue-ink);box-shadow:none}
+.tool-ui .bt-card .draw-mode-btn:hover{border-color:var(--fg1);color:var(--fg1);transform:none}
+.tool-ui .bt-card .draw-mode-bar__edit button{background:transparent;border:1.5px solid var(--od-ink-line)!important;color:var(--fg1);font-family:var(--font-sans);font-weight:600}
+.tool-ui .bt-card .draw-mode-bar__edit button:hover{border-color:var(--fg1)!important;background:var(--od-paper-2);transform:none}
+.bt-card .draw-mode-bar{justify-content:flex-start;flex-wrap:nowrap;gap:8px}
+.tool-ui .bt-card .draw-mode-bar__edit button{padding:0 12px!important}
+.bt-card .draw-tools .color-row,.bt-card .color-swatches{justify-content:flex-start}
+/* Image tuning reads like the other "customize" folds instead of a boxed mono widget. */
+.bt-card .tuning{margin-top:12px;border:none;border-top:1px solid var(--od-paper-line);border-radius:0;background:none}
+.bt-card .tuning>summary{min-height:44px;padding:0;font-family:var(--font-sans);font-size:.95rem;color:var(--fg1);white-space:nowrap}
+.bt-card .tuning>summary::before{display:none}
+.bt-card .tuning>summary .draw-hint{font-family:var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bt-card .tuning>summary::after{
+  content:'';flex-shrink:0;width:8px;height:8px;border-right:2px solid var(--fg3);border-bottom:2px solid var(--fg3);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .15s;margin-left:4px
+}
+.bt-card .tuning[open]>summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.bt-card .tuning-body{padding:4px 0 4px;gap:12px}
+/* Everything inside the cards uses the page's sans font and left-aligned labels. */
+.page-inner.tool-ui .bt-card input[type=text],.page-inner.tool-ui .bt-card select,.page-inner.tool-ui .bt-card textarea{font-family:var(--font-sans)!important;font-size:15px!important}
+.bt-card select{width:100%;max-width:100%;box-sizing:border-box}
+.bt-hint--flush{margin:0}
+.bt-tool-actions{display:flex;flex-wrap:wrap;gap:8px}
+.bt-card .preset-row .draw-label{font-family:var(--font-sans);font-weight:600;margin-right:4px}
+.tool-ui .bt-card .preset-btn{font-family:var(--font-sans);min-height:36px}
+.page-inner.tool-ui .bt-card .slider-row label{font-family:var(--font-sans);font-weight:600;font-size:.9rem;min-width:88px}
+.bt-card .slider-row output{cursor:pointer;border-radius:4px;padding:2px 4px;text-decoration:underline dotted;text-underline-offset:3px}
+.bt-card .slider-row output:hover,.bt-card .slider-row output:focus-visible{background:var(--od-paper-2);outline:none}
+.bt-card .checkbox-group{margin:0}
+.page-inner.tool-ui .bt-card .checkbox-group label{font-family:var(--font-sans);font-size:.95rem}
+#tuningAdvanced{margin-top:4px}
+.bt-link-load{margin-top:12px}
+/* Draw / Text / QR code tools carry a visible label. */
+.tool-ui .bt-card .draw-mode-btn{width:auto;padding:0 12px;gap:6px;font-family:var(--font-sans);font-size:14px;font-weight:600}
+.tool-ui .bt-card .draw-mode-btn svg{width:18px;height:18px}
+.bt-card .draw-mode-bar{flex-direction:column;align-items:stretch;gap:6px}
+.bt-card .draw-mode-bar__tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.tool-ui .bt-card .draw-mode-bar__tools .draw-mode-btn{padding:0 6px}
+.bt-sub-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0 8px}
+.page-inner.tool-ui .bt-sub-row .bt-sub{margin:0}
+.bt-card .bt-sub-row .draw-mode-bar__edit{display:flex;gap:2px}
+.tool-ui .bt-card .bt-sub-row .draw-mode-bar__edit button{display:inline-flex;align-items:center;gap:5px;height:32px!important;min-height:32px!important;padding:0 8px!important;margin:0!important;
+  border:none!important;border-radius:8px!important;background:transparent;color:var(--fg3);font-family:var(--font-sans);font-size:13px;font-weight:600;box-shadow:none}
+.tool-ui .bt-card .bt-sub-row .draw-mode-bar__edit button:hover{background:var(--od-paper-2);color:var(--fg1);transform:none}
+.bt-sub-row .draw-mode-bar__edit svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bt-sub-row .draw-mode-bar__edit button{white-space:nowrap}
+/* On phones the heading needs the room: Undo / Clear all become icon buttons (label kept for screen readers). */
+@media (max-width:520px){
+  .tool-ui .bt-card .bt-sub-row .draw-mode-bar__edit button{width:36px;justify-content:center;padding:0!important}
+  .bt-sub-row .draw-mode-bar__edit button span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .bt-sub-row .draw-mode-bar__edit svg{width:18px;height:18px}
+}
+.bt-card .draw-mode-panel .bt-inline{margin-top:10px}
+.bt-card .draw-mode-panel .bt-inline .bt-btn{flex-shrink:0}
+.bt-card .draw-mode-panel .bt-hint{margin-top:6px}
+.bt-card .selected-text-wrap{flex-direction:row;align-items:center;gap:8px 10px;margin-top:10px;font-family:var(--font-sans)}
+.page-inner.tool-ui .bt-card .selected-text-wrap label,.bt-card .selected-text-wrap .draw-label{margin:0;font-family:var(--font-sans);font-size:.9rem;font-weight:600}
+.bt-card .selected-text-wrap .draw-label:first-child{flex-basis:100%}
+.bt-card .selected-text-wrap input[type=number]{width:72px!important;flex:0 0 auto!important}
+.bt-card .selected-text-wrap .bt-btn{margin-left:auto}
+
+.bt-slider{display:flex;align-items:center;gap:12px;margin-top:12px;font-family:var(--font-sans)}
+.page-inner.tool-ui .bt-slider label{margin:0;font-size:.95rem;font-weight:600;font-family:var(--font-sans)}
+.bt-slider input[type=range]{flex:1;min-width:0;accent-color:var(--od-blue)}
+.bt-slider span{min-width:2ch;text-align:right;font-family:var(--font-mono);color:var(--fg3)}
+
+.bt-more{margin-top:12px;border-top:1px solid var(--od-paper-line)}
+.bt-more > summary,.bt-dev > summary{
+  display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;list-style:none;
+  font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)
+}
+.bt-more > summary::-webkit-details-marker,.bt-dev > summary::-webkit-details-marker{display:none}
+.bt-more > summary::after,.bt-dev > summary::after{
+  content:'';margin-left:auto;width:8px;height:8px;border-right:2px solid var(--fg3);border-bottom:2px solid var(--fg3);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .15s
+}
+.bt-more[open] > summary::after,.bt-dev[open] > summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.bt-more__body{display:flex;flex-direction:column;gap:12px;padding:4px 0 4px}
+.bt-more__body .bt-actions{margin-top:0}
+.bt-more__body .draw-hint{margin:0}
+
+.bt-field{display:flex;flex-direction:column;gap:6px}
+.page-inner.tool-ui .bt-field label,.page-inner.tool-ui .bt-inline label{margin:0;font-family:var(--font-sans);font-size:.9rem;font-weight:600}
+.bt-field textarea,.bt-field input,.bt-field select{width:100%;box-sizing:border-box}
+.bt-card .bt-field + .bt-field{margin-top:4px}
+#partialDemoPanel .bt-field{margin-bottom:8px}
+.bt-inline{display:flex;align-items:center;gap:10px}
+.bt-inline--grow input{flex:1;min-width:0}
+.bt-inline input[type=number]{width:96px}
+.bt-grid{display:grid;gap:6px 8px;align-items:center}
+.bt-grid--led{grid-template-columns:56px repeat(3,minmax(0,1fr))}
+.bt-grid--buzzer{grid-template-columns:40px repeat(2,minmax(0,1fr))}
+.bt-grid__h{font-family:var(--font-sans);font-size:.8rem;color:var(--fg3)}
+.bt-grid__n{font-family:var(--font-mono);color:var(--fg3);text-align:center}
+.bt-grid input,.bt-inline input[type=number]{
+  min-width:0;min-height:40px;box-sizing:border-box;padding:6px 10px;border:1.5px solid var(--border-color);border-radius:6px;
+  background:var(--card-background);color:var(--foreground);font-family:var(--font-mono);font-size:14px
+}
+.bt-grid input[type=color]{width:56px;padding:2px 4px;cursor:pointer}
+
+.bt-dev__body{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}
+.bt-dev__body .bt-sub{margin:0 0 6px}
+.page-inner.tool-ui .bt-dev a.bt-toolbox{display:block;padding:12px 14px;border:1.5px solid var(--od-ink-line);border-radius:10px;text-decoration:none;color:var(--fg1);font-family:var(--font-sans)}
+.page-inner.tool-ui .bt-dev a.bt-toolbox:hover{border-color:var(--fg1);background:var(--od-paper-2)}
+.bt-toolbox__title{display:block;font-weight:600;margin-bottom:2px}
+.bt-toolbox__desc{display:block;font-size:.85rem;color:var(--fg3);line-height:1.4}
+.bt-dev .bt-pre{min-height:48px;max-height:260px;overflow:auto;white-space:pre-wrap;margin:0 0 8px;padding:10px;font-size:12px;
+  border:1px solid var(--od-paper-line);border-radius:8px;background:var(--od-paper-2);box-sizing:border-box}
+.bt-dev .bt-pre:empty::before{content:'Nothing read yet.';font-family:var(--font-sans);color:var(--fg4)}
+.bt-dev .status-display{padding:0;margin:0}
+.bt-dev #logDisplay{max-height:260px;padding:10px;border:1px solid var(--od-paper-line);border-radius:8px;background:var(--od-paper-2)}
+.tool-ui .bt-dev .device-control-wrap{margin:0}
+@media (max-width:640px){
+  .page-inner.tool-ui .bt-hero h1{font-size:1.7rem}
+  .bt-actions:not(.bt-actions--pair){grid-template-columns:1fr}
+}
         </style>
 </head>
 <body class="page-inner tool-ui">
@@ -336,415 +613,476 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 
   <main id="main-content" class="tool-page">
     <div class="container">
-<div class="col panel">
-        <div id="connectionPanel" class="connection-panel">
-            <div id="statusText" class="status-text">Not connected</div>
-            <div id="uploadProgressWrap" class="upload-progress-wrap"><div id="uploadProgressBar" class="upload-progress-fill"></div></div>
-            <div class="connection-actions">
-                <button id="connectbutton" type="button" onclick="preConnect();">Connect</button>
-                <button id="uploadButton" type="button" onclick="sendDirectWriteAuto();" class="connected-only">Upload image</button>
-                <button id="disconnectbutton" type="button" onclick="preConnect();" class="connected-only">Disconnect</button>
-            </div>
-        </div>
+<div class="bt-hero">
+        <h1>BLE Tester</h1>
+        <p class="bt-lead">Connect to your device over Bluetooth to send it images and try its light, sound and NFC.</p>
     </div>
-    <div id="displayPanel" class="col panel display-container connected-only">
-        <div class="preview-header">
-            <span id="previewBatterySoc" class="preview-meta preview-battery" hidden>
-                <svg class="preview-battery-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M20 10v4"/><path d="M6 11v2" opacity=".45"/></svg>
-                <span id="previewBatterySocText"></span>
-            </span>
-            <span id="previewMeta" class="preview-meta"></span>
-            <span id="previewLockIcon" class="preview-meta" style="display:none;"></span>
+    <div id="btUnsupported" class="bt-notice" role="alert" hidden></div>
+
+    <section id="connectionPanel" class="col panel bt-conn" aria-label="Connection">
+        <div class="bt-conn__row">
+            <div class="bt-conn__id">
+                <span class="bt-conn__line"><span class="bt-conn__name" id="connName"></span><span id="previewLockIcon" class="bt-conn__lock" style="display:none;"></span></span>
+                <span class="bt-conn__meta">
+                    <span class="bt-conn__detail" id="connDetail"></span>
+                    <span id="previewBatterySoc" class="preview-meta preview-battery" hidden>
+                        <svg class="preview-battery-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M20 10v4"/><rect id="previewBatteryFill" class="battery-fill" x="4" y="9" width="0" height="6" rx="1"/><path id="previewBatteryBolt" class="battery-bolt" d="M11 8.5 8 12.5h3l-1 3 3-4h-3z" hidden/></svg>
+                        <span id="previewBatterySocText"></span>
+                    </span>
+                </span>
+                <span class="bt-conn__status" id="connStatus" role="status"></span>
+            </div>
+            <button id="disconnectbutton" type="button" onclick="preConnect();" class="connected-only bt-btn bt-btn--outline">Disconnect</button>
         </div>
-        <div class="canvas-container">
-            <div id="canvasStage" class="canvas-stage">
-                <canvas id="myCanvas" width="800" height="480"></canvas>
-                <canvas id="originalOverlay" width="800" height="480"></canvas>
-                <div id="splitHandle" class="split-handle" role="separator" aria-label="Compare original and dithered"></div>
-                <div class="stage-tools">
-                    <button type="button" id="splitToggle" class="stage-btn" onclick="toggleSplit()" title="Compare original / dithered" aria-label="Compare original and dithered">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
-                    </button>
-                    <button type="button" id="rotateCanvasBtn" class="stage-btn" onclick="rotateCanvas()" title="Rotate canvas 90° (currently 0°)" aria-label="Rotate canvas 90 degrees">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                    </button>
-                    <button type="button" id="zoomToggle" class="stage-btn" onclick="toggleZoom()" title="Pixel zoom (2x)" aria-label="Pixel zoom">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
-                    </button>
+        <div id="statusText" class="status-text" role="status"></div>
+        <button id="connectbutton" type="button" onclick="preConnect();" class="bt-btn bt-btn--primary bt-btn--block">Connect</button>
+        <p class="bt-connect-hint" id="connectHint">Your browser will list nearby Bluetooth devices. Pick the one whose name starts with <strong>OD</strong>.</p>
+        <div id="uploadProgressWrap" class="upload-progress-wrap" hidden><div id="uploadProgressBar" class="upload-progress-fill"></div></div>
+    </section>
+
+    <div class="bt-layout">
+        <section id="displayPanel" class="col panel bt-card display-container connected-only" aria-labelledby="displayTitle">
+            <div class="bt-card__head">
+                <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg></span>
+                <h2 id="displayTitle">Display</h2>
+                <p>Put a photo, drawing, text or QR code on the e-paper screen.</p>
+                <p class="bt-card__meta"><span id="previewMeta" class="preview-meta"></span></p>
+            </div>
+            <div class="canvas-container">
+                <div id="canvasStage" class="canvas-stage">
+                    <canvas id="myCanvas" width="800" height="480"></canvas>
+                    <canvas id="originalOverlay" width="800" height="480"></canvas>
+                    <div class="bt-empty" id="canvasEmptyHint" aria-hidden="true">Choose a photo, drop or paste one here, or draw</div>
+                    <div id="splitHandle" class="split-handle" role="separator" aria-label="Compare original and dithered"></div>
+                    <div class="stage-tools">
+                        <button type="button" id="splitToggle" class="stage-btn" onclick="toggleSplit()" title="Compare original / dithered" aria-label="Compare original and dithered">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
+                        </button>
+                        <button type="button" id="rotateCanvasBtn" class="stage-btn" onclick="rotateCanvas()" title="Rotate screen orientation 90° (currently 0°)" aria-label="Rotate screen orientation 90 degrees">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                        </button>
+                        <button type="button" id="zoomToggle" class="stage-btn" onclick="toggleZoom()" title="Pixel zoom (2x)" aria-label="Pixel zoom">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div id="drawTools" class="draw-tools">
-            <!-- New tool: add <button class="draw-mode-btn" data-draw-mode="id">…</button> and <div class="draw-mode-panel" data-draw-mode-panel="id">…</div>; setDrawMode only toggles panels that exist. -->
-            <div class="draw-mode-bar" role="tablist" aria-label="Canvas tools">
-                <div class="draw-mode-bar__tools">
-                    <button type="button" class="draw-mode-btn active" data-draw-mode="draw" role="tab" aria-selected="true" title="Draw" aria-label="Draw">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                    </button>
-                    <button type="button" class="draw-mode-btn" data-draw-mode="text" role="tab" aria-selected="false" title="Text" aria-label="Text">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-                    </button>
-                    <button type="button" class="draw-mode-btn" data-draw-mode="qr" role="tab" aria-selected="false" title="QR code" aria-label="QR code">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2h4v4H5zm9-2h8v8h-8zm2 2h4v4h-4zM3 14h8v8H3zm2 2h4v4H5zm9-2h2v2h-2v2h2v2h-2m2-6h2v2h2v2h-2v2h2m-6 2h2v2m4 0h2v2h2v2h-2v2"/></svg>
-                    </button>
-                </div>
-                <div class="draw-mode-bar__edit">
-                    <button type="button" id="clearCanvasBtn" onclick="clearDrawingCanvas()">Clear</button>
-                    <button type="button" id="undoBtn" onclick="undoLast()">Undo</button>
-                </div>
+            <div class="bt-actions">
+                <label for="imageUpload" class="bt-btn bt-btn--outline"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Choose photo</label>
+                <input type="file" id="imageUpload" class="bt-file" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" />
+                <button id="uploadButton" type="button" onclick="sendDirectWriteAuto();" class="bt-btn bt-btn--primary" data-device-cmd><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>Send to device</button>
             </div>
-            <div id="drawModePanelDraw" class="draw-mode-panel active" data-draw-mode-panel="draw">
-                <div class="color-row">
-                    <div id="drawColorSwatches" class="color-swatches"></div>
-                </div>
-            </div>
-            <div id="drawModePanelText" class="draw-mode-panel" data-draw-mode-panel="text">
-                <div class="color-row">
-                    <div id="textColorSwatches" class="color-swatches"></div>
-                </div>
-                <div class="field-row">
-                    <label for="drawTextInput" style="margin: 0; min-width: 80px;">Text:</label>
-                    <input type="text" id="drawTextInput" placeholder="Type then Add" style="flex: 1;" />
-                    <button type="button" id="addTextBtn" onclick="addUserText()">Add text</button>
-                    <span class="draw-hint">Tap canvas to set position</span>
-                </div>
-                <div id="selectedTextWrap" class="field-row selected-text-wrap" style="display: none;">
-                    <span class="draw-label">Selected:</span>
-                    <span class="draw-label" style="margin-left:8px">Color</span>
-                    <div id="selectedTextColorSwatches" class="color-swatches"></div>
-                    <label for="selectedTextSize" style="margin: 0;">Size</label>
-                    <input type="number" id="selectedTextSize" min="8" max="200" value="24" style="width: 60px;" />
-                    <button type="button" onclick="deselectText();">Deselect</button>
-                    <span class="draw-hint">Drag to move</span>
-                </div>
-            </div>
-            <div id="drawModePanelQr" class="draw-mode-panel" data-draw-mode-panel="qr">
-                <div class="color-row">
-                    <div id="qrColorSwatches" class="color-swatches"></div>
-                </div>
-                <div class="field-row">
-                    <label for="qrDataInput" style="margin: 0; min-width: 80px;">QR code:</label>
-                    <input type="text" id="qrDataInput" placeholder="URL or text" style="flex: 1;" />
-                    <button type="button" id="addQRBtn" onclick="addUserQR()">Add QR</button>
-                    <span class="draw-hint">Tap canvas to set position</span>
-                </div>
-                <div id="selectedQRWrap" class="field-row selected-text-wrap" style="display: none;">
-                    <span class="draw-label">Selected QR:</span>
-                    <span class="draw-label" style="margin-left:8px">Color</span>
-                    <div id="selectedQRColorSwatches" class="color-swatches"></div>
-                    <label for="selectedQRSize" style="margin: 0;">Size</label>
-                    <input type="number" id="selectedQRSize" min="32" max="400" value="80" style="width: 60px;" />
-                    <button type="button" onclick="deselectQR();">Deselect</button>
-                    <span class="draw-hint">Drag to move</span>
-                </div>
-            </div>
-        </div>
-        <div id="canvasOptions">
-            <div class="field-row">
-                <label for="ditheringSelect" style="margin: 0; min-width: 120px;">Dithering:</label>
-                <select id="ditheringSelect" onchange="onDitherModeChange()" style="flex: 1;">
-                    <option value="auto" selected>Auto</option>
-                </select>
-            </div>
-            <div class="field-row">
-                <label for="imageUpload" style="margin: 0; min-width: 120px;">Select image:</label>
-                <input type="file" id="imageUpload" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" style="flex: 1;" />
-                <span class="draw-hint">or drop / paste an image</span>
-            </div>
-            <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 4px;">
-                <label for="usePartialUpload">
-                    <input type="checkbox" id="usePartialUpload" checked onchange="onUsePartialUploadChange();" />
-                    Use partial refresh when possible
-                </label>
-            </div>
-            <div class="field-row" style="margin-top: 12px;display:none">
-                <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
-                <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
-                    <option value="0">Monochrome (B/W)</option>
-                    <option value="1">B/W + Red</option>
-                    <option value="2">B/W + Yellow</option>
-                    <option value="3">B/W + Red + Yellow</option>
-                    <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
-                    <option value="5">4 Grayscale</option>
-                    <option value="6">16 Grayscale (4bpp)</option>
-                    <option value="7">B/W + Green + Blue + Red + Yellow + Orange (7-color)</option>
-                    <option value="8">6-color split (left half-plane then right; dual-CS)</option>
-                </select>
-            </div>
-            <details class="tuning" id="tuningPanel">
-                <summary>Image tuning<span class="draw-hint" id="tuningSummary">Auto</span></summary>
-                <div class="tuning-body">
-                    <div class="preset-row" id="presetRow">
-                        <span class="draw-label">Preset:</span>
-                        <button type="button" class="preset-btn active" data-preset="auto" onclick="applyPreset('auto')">Auto</button>
-                        <button type="button" class="preset-btn" data-preset="photo" onclick="applyPreset('photo')">Photo</button>
-                        <button type="button" class="preset-btn" data-preset="graphics" onclick="applyPreset('graphics')">Graphics</button>
-                        <button type="button" class="preset-btn" data-preset="logo" onclick="applyPreset('logo')">Logo</button>
-                        <button type="button" class="preset-btn" data-preset="poster" onclick="applyPreset('poster')">Poster</button>
+            <details class="bt-more bt-link-load">
+                <summary>Load an image from a link</summary>
+                <div class="bt-more__body">
+                    <div class="bt-inline bt-inline--grow">
+                        <input type="text" id="imageUrl" placeholder="https://…" aria-label="Image link" />
+                        <button type="button" class="bt-btn bt-btn--outline" onclick="loadImageFromUrl()">Load</button>
                     </div>
-                    <div class="tuning-sep"></div>
-                    <div class="slider-row">
-                        <label for="tuneExposure">Exposure</label>
-                        <input type="range" id="tuneExposure" min="0.25" max="4" step="0.05" value="1" data-default="1" />
-                        <output for="tuneExposure" id="tuneExposureOut">1.00x</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneSaturation">Saturation</label>
-                        <input type="range" id="tuneSaturation" min="0" max="2.5" step="0.05" value="1" data-default="1" />
-                        <output for="tuneSaturation" id="tuneSaturationOut">1.00x</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneShadows">Shadows</label>
-                        <input type="range" id="tuneShadows" min="0" max="1" step="0.02" value="0" data-default="0" />
-                        <output for="tuneShadows" id="tuneShadowsOut">off</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneHighlights">Highlights</label>
-                        <input type="range" id="tuneHighlights" min="0" max="1" step="0.02" value="0" data-default="0" />
-                        <output for="tuneHighlights" id="tuneHighlightsOut">off</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneTone">Tone</label>
-                        <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                        <output for="tuneTone" id="tuneToneOut">auto</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneGamut">Gamut</label>
-                        <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                        <output for="tuneGamut" id="tuneGamutOut">auto</output>
-                    </div>
-                    <span class="draw-hint">Tone and gamut need a measured palette. Double-click a slider to reset it.</span>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <label for="paletteSelect" style="margin:0;min-width:120px;">Palette:</label>
-                        <select id="paletteSelect" style="flex:1;"></select>
-                    </div>
-                    <div class="checkbox-group">
-                        <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <label for="tuneRealistic"><input type="checkbox" id="tuneRealistic" /> Preview real panel colors</label>
-                    </div>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <label for="fitMode" style="margin:0;min-width:120px;">Image fit:</label>
-                        <select id="fitMode" style="flex:1;">
-                            <option value="cover" selected>Cover — fill, crop overflow</option>
-                            <option value="contain">Contain — fit whole image</option>
-                            <option value="fill">Fill — stretch to panel</option>
-                        </select>
-                        <button type="button" onclick="rotateSourceImage()" title="Rotate image 90°">Rotate</button>
-                    </div>
-                    <div class="field-row">
-                        <label for="imageUrl" style="margin:0;min-width:120px;">Image URL:</label>
-                        <input type="text" id="imageUrl" placeholder="https://…" style="flex:1;" />
-                        <button type="button" onclick="loadImageFromUrl()">Load</button>
-                    </div>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <button type="button" onclick="toggleCompareGrid()" id="compareBtn">Compare algorithms</button>
-                        <button type="button" onclick="downloadDitheredPng()">Download PNG</button>
-                        <button type="button" onclick="downloadWireBytes()">Export wire bytes</button>
-                        <button type="button" onclick="resetTuning()">Reset</button>
-                    </div>
-                    <div id="compareGrid" class="dither-grid" style="display:none;"></div>
-                    <div class="tuning-sep"></div>
-                    <div class="ink-bar" id="inkBar"></div>
-                    <div class="ink-legend" id="inkLegend"></div>
                 </div>
             </details>
-        </div>
-    </div>
-    <div id="ledControlPanel" class="col panel" style="display: none;">
-        <label>LED</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div id="ledInstanceRow" class="field-row led-instance-row" style="display: none; align-items: center;">
-                <span id="ledInstanceLabel" class="draw-label" style="min-width: 88px;">Instance</span>
-                <select id="ledInstanceSelect" style="flex: 1; min-width: 0;"></select>
-            </div>
-            <div class="led-viz">
-                <div class="led-viz-lamp-wrap">
-                    <div id="ledVizLamp" class="led-viz-lamp" aria-hidden="true"></div>
-                    <span id="ledVizPhase" class="draw-hint">Pattern preview</span>
-                </div>
-                <div id="ledVizTimeline" class="led-viz-timeline" role="img" aria-label="LED pattern timeline"></div>
-                <div class="led-viz-meta">
-                    <span><span class="led-viz-key">■</span> flash</span>
-                    <span><span class="led-viz-key led-viz-key--pause">▨</span> pause (on)</span>
-                    <span><span class="led-viz-key led-viz-key--gap">▥</span> gap</span>
-                    <span id="ledVizRepeatLabel">Repeats: 1×</span>
-                </div>
-                <p class="draw-hint led-viz-help">Each color blinks × count, waits <strong>on</strong> ms between blinks, then <strong>gap</strong> ms before the next color. The whole sequence repeats.</p>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Brightness</span>
-                <input id="ledBrightness" type="range" min="1" max="16" value="12" oninput="syncLedBrightnessLabel();" style="flex: 1; min-width: 0; accent-color: var(--accent);" />
-                <span id="ledBrightnessVal" class="draw-label" style="min-width: 24px;">12</span>
-                <span class="draw-label" style="min-width: 70px;">Repeats</span>
-                <input id="ledRepeats" type="number" min="1" max="254" value="1" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 1</span>
-                <input id="ledColor1" type="color" value="#ff0000" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount1" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn1" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap1" type="number" min="0" max="25500" value="80" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 2</span>
-                <input id="ledColor2" type="color" value="#00ff00" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount2" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn2" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap2" type="number" min="0" max="25500" value="80" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 3</span>
-                <input id="ledColor3" type="color" value="#0000ff" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount3" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn3" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap3" type="number" min="0" max="25500" value="200" style="width: 92px;" />
-            </div>
-            <div class="led-actions">
-                <button type="button" id="ledStartBtn" onclick="sendLedPattern();">Start</button>
-                <button type="button" id="ledStopBtn" class="led-stop-btn" onclick="sendLedStop();">Stop</button>
-            </div>
-        </div>
-    </div>
-    <div id="buzzerControlPanel" class="col panel" style="display: none;">
-        <label>Buzzer</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div class="field-row" style="align-items: center;">
-                <span id="buzzerInstanceLabel" style="display: none; margin-right: 8px;">Instance:</span>
-                <select id="buzzerInstanceSelect" style="display: none; min-width: 80px;"></select>
-                <button type="button" onclick="applyBuzzerPreset('single');">Single</button>
-                <button type="button" onclick="applyBuzzerPreset('double');">Double</button>
-                <button type="button" onclick="applyBuzzerPreset('alarm');">Alarm</button>
-                <button type="button" id="buzzerSendBtn" onclick="sendBuzzerPattern();">Send</button>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Outer repeats</span>
-                <input id="buzzerOuterRepeats" type="number" min="1" max="255" value="1" style="width: 92px;" />
-                <span class="draw-hint">Frequency indices map linearly to the device min–max Hz from config</span>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 1</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz1" type="number" min="0" max="20000" value="2000" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs1" type="number" min="0" max="65535" value="120" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 2</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz2" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs2" type="number" min="0" max="65535" value="80" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 3</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz3" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs3" type="number" min="0" max="65535" value="0" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 4</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz4" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs4" type="number" min="0" max="65535" value="0" style="width: 88px;" />
-            </div>
-        </div>
-    </div>
-    <div id="nfcPanelWrap" class="col panel connected-only">
-        <label>NFC</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div class="field-row">
-                <label for="nfcTypeSelect" style="margin: 0; min-width: 120px;">NFC type:</label>
-                <select id="nfcTypeSelect" style="flex: 1;" onchange="onNfcTypeChanged();">
-                    <option value="uri" selected>URI</option>
-                    <option value="text">Text</option>
-                    <option value="mime">MIME (e.g. vCard)</option>
-                    <option value="rawndef">Raw NDEF (hex)</option>
-                    <option value="wellknown">Well-known (raw)</option>
-                </select>
-            </div>
-            <div class="field-row" id="nfcMimeTypeRow" style="display: none;">
-                <label for="nfcMimeTypeInput" style="margin: 0; min-width: 120px;">MIME type:</label>
-                <input type="text" id="nfcMimeTypeInput" value="text/vcard" style="flex: 1;" />
-            </div>
-            <div class="field-row" id="nfcWellKnownTypeRow" style="display: none;">
-                <label for="nfcWellKnownTypeInput" style="margin: 0; min-width: 120px;">Type (ASCII):</label>
-                <input type="text" id="nfcWellKnownTypeInput" placeholder="Sp, ac, Hr, Hs, ..." style="flex: 1;" />
-            </div>
-            <div class="field-row">
-                <label for="nfcContentInput" style="margin: 0; min-width: 120px;">NFC content:</label>
-                <textarea id="nfcContentInput" rows="1" placeholder="https://opendisplay.org" style="flex: 1; width: 100%; box-sizing: border-box;">https://opendisplay.org</textarea>
-            </div>
-            <div class="field-row nfc-actions">
-                <button type="button" class="nfc-write-btn" onclick="writeNfcOverBle();">Write NFC</button>
-            </div>
-        </div>
-    </div>
-    <div id="advertisingPanelWrap" class="col panel connected-only">
-        <label>Advertising data</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <pre id="advertisingDecodeOut" class="log-display" style="min-height: 72px; max-height: 260px; overflow: auto; white-space: pre-wrap; margin: 0 0 6px; width: 100%; box-sizing: border-box; font-size: 12px;"></pre>
-            <div class="field-row" style="margin-bottom: 0;">
-                <button type="button" id="advertisingReadBtn" class="advertising-read-btn" onclick="readAdvertisingData();">Read advertising data</button>
-            </div>
-        </div>
-    </div>
-    <div id="partialDemoPanel" class="col panel" style="display: none;">
-        <label>Partial refresh demo</label>
-        <p class="draw-hint" style="margin-top: 4px;">Stress-test partial updates on the panel. The first frame is a full refresh; later frames send only the changed region.</p>
-        <p id="partialDemoBwNote" class="draw-hint" style="display: none; color: #f85149;">Requires monochrome (B/W) color scheme.</p>
-        <div class="field-row" style="margin-top: 8px; align-items: center;">
-            <span class="draw-label" style="min-width: 88px;">Mode</span>
-            <select id="partialDemoMode" style="flex: 1; min-width: 0;">
-                <option value="counter" selected>Fast counter</option>
-                <option value="clock">Clock (1 s)</option>
-            </select>
-        </div>
-        <div id="partialDemoStats" class="partial-demo-stats">—</div>
-        <div class="partial-demo-actions">
-            <button type="button" id="partialDemoStartBtn" onclick="startPartialDemo();">Start</button>
-            <button type="button" id="partialDemoStopBtn" class="partial-demo-stop-btn" onclick="stopPartialDemo();">Stop</button>
-        </div>
-    </div>
-    <div class="col panel">
-        <label>Device filter &amp; log</label>
-        <div class="ble-controls">
-            <div class="ble-input-group">
-                <label for="namePrefix">OD Device filter:</label>
-                <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" />
-            </div>
-            <div class="field-row debug-cmd-row">
-                <label for="cmdTXT" style="margin: 0; min-width: 120px;">Debug CMD (Hex):</label>
-                <input type="text" id="cmdTXT" value="0001" style="flex: 1;" />
-                <button type="button" onclick="if(bleLib)bleLib.sendHexCommand(document.getElementById('cmdTXT').value).catch(e=>addLog('Error: '+e.message,'error'));">Send</button>
-            </div>
-            <div class="status-display" style="margin-top: 12px;">
-                <div id="logDisplay" class="log-display"></div>
-            </div>
-            <div id="deviceControlWrap" class="connected-only device-control-wrap">
-                <div class="device-actions">
-                    <button type="button" onclick="deviceReboot();">Reboot</button>
-                    <button type="button" onclick="deviceClearConfig();">Clear config</button>
-                    <button type="button" onclick="deviceDeepSleep();">Deep sleep</button>
-                    <button type="button" onclick="devicePowerOff();" title="Cut power via D-FF latch (ESP32 boards with power latch only)">Power latch off</button>
-                    <button type="button" onclick="deviceRebootBootloader();">Bootloader</button>
+            <div class="bt-sub-row">
+                <h3 class="bt-sub">Draw, add text or a QR code</h3>
+                <div class="draw-mode-bar__edit">
+                    <button type="button" id="undoBtn" onclick="undoLast()" title="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span>Undo</span></button>
+                    <button type="button" id="clearCanvasBtn" onclick="clearDrawingCanvas()" title="Clear all"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span>Clear all</span></button>
                 </div>
             </div>
+            <div id="drawTools" class="draw-tools">
+                <!-- New tool: add <button class="draw-mode-btn" data-draw-mode="id">…</button> and <div class="draw-mode-panel" data-draw-mode-panel="id">…</div>; setDrawMode only toggles panels that exist. -->
+                <div class="draw-mode-bar" role="tablist" aria-label="Canvas tools">
+                    <div class="draw-mode-bar__tools">
+                        <button type="button" class="draw-mode-btn active" data-draw-mode="draw" role="tab" aria-selected="true" title="Draw">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg><span>Draw</span>
+                        </button>
+                        <button type="button" class="draw-mode-btn" data-draw-mode="text" role="tab" aria-selected="false" title="Text">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M9 20h6"/><path d="M12 4v16"/></svg><span>Text</span>
+                        </button>
+                        <button type="button" class="draw-mode-btn" data-draw-mode="qr" role="tab" aria-selected="false" title="QR code">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2h4v4H5zm9-2h8v8h-8zm2 2h4v4h-4zM3 14h8v8H3zm2 2h4v4H5zm9-2h2v2h-2v2h2v2h-2m2-6h2v2h2v2h-2v2h2m-6 2h2v2m4 0h2v2h2v2h-2v2"/></svg><span>QR code</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="drawModePanelDraw" class="draw-mode-panel active" data-draw-mode-panel="draw">
+                    <div class="color-row">
+                        <div id="drawColorSwatches" class="color-swatches"></div>
+                    </div>
+                </div>
+                <div id="drawModePanelText" class="draw-mode-panel" data-draw-mode-panel="text">
+                    <div class="color-row">
+                        <div id="textColorSwatches" class="color-swatches"></div>
+                    </div>
+                    <div class="bt-inline bt-inline--grow">
+                        <input type="text" id="drawTextInput" placeholder="Your text" aria-label="Text to add" />
+                        <button type="button" id="addTextBtn" class="bt-btn bt-btn--outline" onclick="addUserText()">Add</button>
+                    </div>
+                    <p class="bt-hint">Tap the preview to choose where it goes. Drag it afterwards to move it.</p>
+                    <div id="selectedTextWrap" class="field-row selected-text-wrap" style="display: none;">
+                        <span class="draw-label">Selected text</span>
+                        <div id="selectedTextColorSwatches" class="color-swatches"></div>
+                        <label for="selectedTextSize" style="margin: 0;">Size</label>
+                        <input type="number" id="selectedTextSize" min="8" max="200" value="24" style="width: 60px;" />
+                        <button type="button" class="bt-btn bt-btn--outline" onclick="deselectText();">Done</button>
+                    </div>
+                </div>
+                <div id="drawModePanelQr" class="draw-mode-panel" data-draw-mode-panel="qr">
+                    <div class="color-row">
+                        <div id="qrColorSwatches" class="color-swatches"></div>
+                    </div>
+                    <div class="bt-inline bt-inline--grow">
+                        <input type="text" id="qrDataInput" placeholder="Link or text" aria-label="QR code content" />
+                        <button type="button" id="addQRBtn" class="bt-btn bt-btn--outline" onclick="addUserQR()">Add</button>
+                    </div>
+                    <p class="bt-hint">Tap the preview to choose where it goes. Drag it afterwards to move it.</p>
+                    <div id="selectedQRWrap" class="field-row selected-text-wrap" style="display: none;">
+                        <span class="draw-label">Selected QR code</span>
+                        <div id="selectedQRColorSwatches" class="color-swatches"></div>
+                        <label for="selectedQRSize" style="margin: 0;">Size</label>
+                        <input type="number" id="selectedQRSize" min="32" max="400" value="80" style="width: 60px;" />
+                        <button type="button" class="bt-btn bt-btn--outline" onclick="deselectQR();">Done</button>
+                    </div>
+                </div>
+            </div>
+            <div id="canvasOptions">
+                <div class="field-row" style="margin-top: 12px;display:none">
+                    <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
+                    <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
+                        <option value="0">Monochrome (B/W)</option>
+                        <option value="1">B/W + Red</option>
+                        <option value="2">B/W + Yellow</option>
+                        <option value="3">B/W + Red + Yellow</option>
+                        <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
+                        <option value="5">4 Grayscale</option>
+                        <option value="6">16 Grayscale (4bpp)</option>
+                        <option value="7">B/W + Green + Blue + Red + Yellow + Orange (7-color)</option>
+                        <option value="8">6-color split (left half-plane then right; dual-CS)</option>
+                    </select>
+                </div>
+                <details class="tuning" id="tuningPanel">
+                    <summary>Image tuning<span class="draw-hint" id="tuningSummary">Auto</span></summary>
+                    <div class="tuning-body">
+                        <div class="preset-row" id="presetRow" role="group" aria-label="Image style">
+                            <span class="draw-label">Style</span>
+                            <button type="button" class="preset-btn active" data-preset="auto" onclick="applyPreset('auto')">Auto</button>
+                            <button type="button" class="preset-btn" data-preset="photo" onclick="applyPreset('photo')">Photo</button>
+                            <button type="button" class="preset-btn" data-preset="graphics" onclick="applyPreset('graphics')">Graphics</button>
+                            <button type="button" class="preset-btn" data-preset="logo" onclick="applyPreset('logo')">Logo</button>
+                            <button type="button" class="preset-btn" data-preset="poster" onclick="applyPreset('poster')">Poster</button>
+                        </div>
+                        <div class="slider-row">
+                            <label for="tuneExposure">Exposure</label>
+                            <input type="range" id="tuneExposure" min="0.25" max="4" step="0.05" value="1" data-default="1" />
+                            <output for="tuneExposure" id="tuneExposureOut">1.00x</output>
+                        </div>
+                        <div class="slider-row">
+                            <label for="tuneSaturation">Saturation</label>
+                            <input type="range" id="tuneSaturation" min="0" max="2.5" step="0.05" value="1" data-default="1" />
+                            <output for="tuneSaturation" id="tuneSaturationOut">1.00x</output>
+                        </div>
+                        <div class="slider-row">
+                            <label for="tuneShadows">Shadows</label>
+                            <input type="range" id="tuneShadows" min="0" max="1" step="0.02" value="0" data-default="0" />
+                            <output for="tuneShadows" id="tuneShadowsOut">off</output>
+                        </div>
+                        <div class="slider-row">
+                            <label for="tuneHighlights">Highlights</label>
+                            <input type="range" id="tuneHighlights" min="0" max="1" step="0.02" value="0" data-default="0" />
+                            <output for="tuneHighlights" id="tuneHighlightsOut">off</output>
+                        </div>
+                        <p class="bt-hint bt-hint--flush">Tap a value to reset that slider.</p>
+                        <div class="bt-field">
+                            <label for="fitMode">Fit</label>
+                            <select id="fitMode">
+                                <option value="cover" selected>Cover: fill the screen, crop the edges</option>
+                                <option value="contain">Contain: show the whole image</option>
+                                <option value="fill">Stretch to the screen</option>
+                            </select>
+                        </div>
+                        <div class="checkbox-group">
+                            <label for="tuneRealistic"><input type="checkbox" id="tuneRealistic" /> Preview the screen&rsquo;s real colors</label>
+                        </div>
+                        <div class="bt-tool-actions">
+                            <button type="button" class="bt-btn bt-btn--outline" onclick="rotateSourceImage()" title="Rotate the photo 90° inside the frame">Rotate photo</button>
+                            <button type="button" class="bt-btn bt-btn--outline" onclick="downloadDitheredPng()">Download PNG</button>
+                            <button type="button" class="bt-btn bt-btn--quiet" onclick="resetTuning()">Reset all</button>
+                        </div>
+                        <details class="bt-more" id="tuningAdvanced">
+                            <summary>Advanced</summary>
+                            <div class="bt-more__body">
+                                <div class="bt-field">
+                                    <label for="ditheringSelect">Dithering</label>
+                                    <select id="ditheringSelect" onchange="onDitherModeChange()">
+                                        <option value="auto" selected>Auto</option>
+                                    </select>
+                                </div>
+                                <div class="bt-field">
+                                    <label for="paletteSelect">Palette</label>
+                                    <select id="paletteSelect"></select>
+                                </div>
+                                <div class="slider-row">
+                                    <label for="tuneTone">Tone</label>
+                                    <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                                    <output for="tuneTone" id="tuneToneOut">auto</output>
+                                </div>
+                                <div class="slider-row">
+                                    <label for="tuneGamut">Gamut</label>
+                                    <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                                    <output for="tuneGamut" id="tuneGamutOut">auto</output>
+                                </div>
+                                <p class="bt-hint bt-hint--flush">Tone and gamut need a measured palette.</p>
+                                <div class="checkbox-group">
+                                    <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
+                                </div>
+                                <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 0;">
+                                    <label for="usePartialUpload">
+                                        <input type="checkbox" id="usePartialUpload" checked onchange="onUsePartialUploadChange();" />
+                                        Use partial refresh when possible
+                                    </label>
+                                </div>
+                                <div class="bt-tool-actions">
+                                    <button type="button" class="bt-btn bt-btn--outline" onclick="toggleCompareGrid()" id="compareBtn">Compare algorithms</button>
+                                    <button type="button" class="bt-btn bt-btn--outline" onclick="downloadWireBytes()">Export wire bytes</button>
+                                </div>
+                                <div id="compareGrid" class="dither-grid" style="display:none;"></div>
+                                <div class="ink-bar" id="inkBar"></div>
+                                <div class="ink-legend" id="inkLegend"></div>
+                            </div>
+                        </details>
+                    </div>
+                </details>
+            </div>
+        </section>
+        <div class="bt-side">
+            <section id="sensorPanel" class="col panel bt-card" style="display: none;" aria-labelledby="sensorTitle">
+                <div class="bt-card__head">
+                    <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></span>
+                    <h2 id="sensorTitle">Sensors</h2>
+                    <p>Live readings from the device.</p>
+                </div>
+                <div class="bt-readings" aria-live="polite">
+                    <div class="bt-reading" id="sensorTempTile" hidden><span class="bt-reading__label">Temperature</span><span class="bt-reading__value" id="sensorTemp">…</span></div>
+                    <div class="bt-reading" id="sensorHumidityTile" hidden><span class="bt-reading__label">Humidity</span><span class="bt-reading__value" id="sensorHumidity">…</span></div>
+                    <div class="bt-reading bt-reading--wide" id="sensorButtonTile" hidden><span class="bt-reading__label">Buttons</span><span class="bt-reading__value" id="sensorButton">Press a button on the device</span></div>
+                    <div class="bt-reading bt-reading--wide" id="sensorTouchTile" hidden><span class="bt-reading__label">Touch</span><span class="bt-reading__value" id="sensorTouch">Touch the screen</span></div>
+                </div>
+                <p class="bt-hint">Updates every 2 seconds.</p>
+            </section>
+
+            <section id="ledControlPanel" class="col panel bt-card" style="display: none;" aria-labelledby="ledTitle">
+                <div class="bt-card__head">
+                    <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span>
+                    <h2 id="ledTitle">Light</h2>
+                    <p>The device has an RGB LED that can blink in color patterns.</p>
+                </div>
+                <div class="ble-controls">
+                    <div id="ledInstanceRow" class="field-row led-instance-row" style="display: none; align-items: center;">
+                        <span id="ledInstanceLabel" class="draw-label" style="min-width: 88px;">LED</span>
+                        <select id="ledInstanceSelect" style="flex: 1; min-width: 0;"></select>
+                    </div>
+                    <div class="led-viz">
+                        <div class="led-viz-lamp-wrap">
+                            <div id="ledVizLamp" class="led-viz-lamp" aria-hidden="true"></div>
+                            <span id="ledVizPhase" class="draw-hint">Pattern preview</span>
+                        </div>
+                    </div>
+                    <div class="bt-presets">
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playLedPreset('blink'), 'Blinking');">Blink</button>
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playLedPreset('traffic'), 'Playing');">Traffic light</button>
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playLedPreset('cycle'), 'Playing');">Color cycle</button>
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, sendLedStop, 'Stopped');">Stop</button>
+                    </div>
+                    <div class="bt-slider">
+                        <label for="ledBrightness">Brightness</label>
+                        <input id="ledBrightness" type="range" min="1" max="16" value="12" oninput="syncLedBrightnessLabel();" />
+                        <span id="ledBrightnessVal">12</span>
+                    </div>
+                    <details class="bt-more">
+                        <summary>Customize the pattern</summary>
+                        <div class="bt-more__body">
+                            <div class="bt-led-timeline">
+                            <div id="ledVizTimeline" class="led-viz-timeline" role="img" aria-label="LED pattern timeline"></div>
+                            <div class="led-viz-meta">
+                                <span><span class="led-viz-key">■</span> flash</span>
+                                <span><span class="led-viz-key led-viz-key--pause">▨</span> pause (on)</span>
+                                <span><span class="led-viz-key led-viz-key--gap">▥</span> gap</span>
+                                <span id="ledVizRepeatLabel">Repeats: 1×</span>
+                            </div>
+                            </div>
+                            <p class="draw-hint led-viz-help">Each color blinks &times; count, waits <strong>on</strong> ms between blinks, then <strong>gap</strong> ms before the next color. The whole sequence repeats.</p>
+                            <div class="bt-grid bt-grid--led" role="group" aria-label="LED pattern steps">
+                                <span class="bt-grid__h">Color</span><span class="bt-grid__h">&times;</span><span class="bt-grid__h">On ms</span><span class="bt-grid__h">Gap ms</span>
+                                <input id="ledColor1" type="color" value="#ff0000" aria-label="Color 1" />
+                                <input id="ledCount1" type="number" min="0" max="15" value="1" aria-label="Color 1 blinks" />
+                                <input id="ledOn1" type="number" min="0" max="1500" value="150" aria-label="Color 1 on time" />
+                                <input id="ledGap1" type="number" min="0" max="25500" value="80" aria-label="Color 1 gap" />
+                                <input id="ledColor2" type="color" value="#00ff00" aria-label="Color 2" />
+                                <input id="ledCount2" type="number" min="0" max="15" value="1" aria-label="Color 2 blinks" />
+                                <input id="ledOn2" type="number" min="0" max="1500" value="150" aria-label="Color 2 on time" />
+                                <input id="ledGap2" type="number" min="0" max="25500" value="80" aria-label="Color 2 gap" />
+                                <input id="ledColor3" type="color" value="#0000ff" aria-label="Color 3" />
+                                <input id="ledCount3" type="number" min="0" max="15" value="1" aria-label="Color 3 blinks" />
+                                <input id="ledOn3" type="number" min="0" max="1500" value="150" aria-label="Color 3 on time" />
+                                <input id="ledGap3" type="number" min="0" max="25500" value="200" aria-label="Color 3 gap" />
+                            </div>
+                            <div class="bt-inline">
+                                <label for="ledRepeats">Repeats</label>
+                                <input id="ledRepeats" type="number" min="1" max="254" value="1" />
+                            </div>
+                            <div class="bt-actions">
+                                <button data-device-cmd type="button" id="ledStartBtn" class="bt-btn bt-btn--primary" onclick="runWithFeedback(this, sendLedPattern, 'Playing');">Play pattern</button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <section id="buzzerControlPanel" class="col panel bt-card" style="display: none;" aria-labelledby="buzzerTitle">
+                <div class="bt-card__head">
+                    <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg></span>
+                    <h2 id="buzzerTitle">Sound</h2>
+                    <p>A small buzzer for beeps and alarms.</p>
+                </div>
+                <div class="ble-controls">
+                    <div class="field-row" style="align-items: center;">
+                        <span id="buzzerInstanceLabel" class="draw-label" style="display: none;">Buzzer</span>
+                        <select id="buzzerInstanceSelect" style="display: none; min-width: 80px;"></select>
+                    </div>
+                    <div class="bt-presets bt-presets--3">
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playBuzzerPreset('single'), 'Beeped');">Beep</button>
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playBuzzerPreset('double'), 'Beeped');">Beep twice</button>
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="runWithFeedback(this, () => playBuzzerPreset('alarm'), 'Played');">Alarm</button>
+                    </div>
+                    <details class="bt-more">
+                        <summary>Customize the sound</summary>
+                        <div class="bt-more__body">
+                            <p class="draw-hint">Up to four steps, each a tone (Hz) held for a time (ms). Use 0 Hz for a pause. Tones are mapped to the range the device supports.</p>
+                            <div class="bt-grid bt-grid--buzzer" role="group" aria-label="Sound steps">
+                                <span class="bt-grid__h">Step</span><span class="bt-grid__h">Hz</span><span class="bt-grid__h">ms</span>
+                                <span class="bt-grid__n">1</span>
+                                <input id="buzzerHz1" type="number" min="0" max="20000" value="2000" aria-label="Step 1 frequency" />
+                                <input id="buzzerMs1" type="number" min="0" max="65535" value="120" aria-label="Step 1 duration" />
+                                <span class="bt-grid__n">2</span>
+                                <input id="buzzerHz2" type="number" min="0" max="20000" value="0" aria-label="Step 2 frequency" />
+                                <input id="buzzerMs2" type="number" min="0" max="65535" value="80" aria-label="Step 2 duration" />
+                                <span class="bt-grid__n">3</span>
+                                <input id="buzzerHz3" type="number" min="0" max="20000" value="0" aria-label="Step 3 frequency" />
+                                <input id="buzzerMs3" type="number" min="0" max="65535" value="0" aria-label="Step 3 duration" />
+                                <span class="bt-grid__n">4</span>
+                                <input id="buzzerHz4" type="number" min="0" max="20000" value="0" aria-label="Step 4 frequency" />
+                                <input id="buzzerMs4" type="number" min="0" max="65535" value="0" aria-label="Step 4 duration" />
+                            </div>
+                            <div class="bt-inline">
+                                <label for="buzzerOuterRepeats">Repeats</label>
+                                <input id="buzzerOuterRepeats" type="number" min="1" max="255" value="1" />
+                            </div>
+                            <div class="bt-actions">
+                                <button data-device-cmd type="button" id="buzzerSendBtn" class="bt-btn bt-btn--primary" onclick="runWithFeedback(this, sendBuzzerPattern, 'Played');">Play sound</button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <section id="nfcPanelWrap" class="col panel bt-card connected-only" aria-labelledby="nfcTitle">
+                <div class="bt-card__head">
+                    <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 8.3a6 6 0 0 1 0 7.4"/><path d="M10 5a11 11 0 0 1 0 14"/><path d="M14 2.5a15 15 0 0 1 0 19"/></svg></span>
+                    <h2 id="nfcTitle">NFC</h2>
+                    <p>Store a link on the device&rsquo;s NFC tag. Tap a phone on the device to open it.</p>
+                </div>
+                <div class="ble-controls">
+                    <div class="bt-field">
+                        <label for="nfcContentInput">What to store</label>
+                        <textarea id="nfcContentInput" rows="1" placeholder="https://opendisplay.org">https://opendisplay.org</textarea>
+                    </div>
+                    <div class="bt-actions">
+                        <button data-device-cmd type="button" class="bt-btn bt-btn--primary nfc-write-btn" onclick="runWithFeedback(this, writeNfcOverBle, 'Written to NFC');">Write to NFC</button>
+                    </div>
+                    <details class="bt-more">
+                        <summary>Other content types</summary>
+                        <div class="bt-more__body">
+                            <div class="bt-field">
+                                <label for="nfcTypeSelect">Type</label>
+                                <select id="nfcTypeSelect" onchange="onNfcTypeChanged();">
+                                    <option value="uri" selected>Link (URI)</option>
+                                    <option value="text">Text</option>
+                                    <option value="mime">MIME (e.g. vCard)</option>
+                                    <option value="rawndef">Raw NDEF (hex)</option>
+                                    <option value="wellknown">Well-known (raw)</option>
+                                </select>
+                            </div>
+                            <div class="bt-field" id="nfcMimeTypeRow" style="display: none;">
+                                <label for="nfcMimeTypeInput">MIME type</label>
+                                <input type="text" id="nfcMimeTypeInput" value="text/vcard" />
+                            </div>
+                            <div class="bt-field" id="nfcWellKnownTypeRow" style="display: none;">
+                                <label for="nfcWellKnownTypeInput">Type (ASCII)</label>
+                                <input type="text" id="nfcWellKnownTypeInput" placeholder="Sp, ac, Hr, Hs, ..." />
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <section id="partialDemoPanel" class="col panel bt-card" style="display: none;" aria-labelledby="partialTitle">
+                <div class="bt-card__head">
+                    <span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
+                    <h2 id="partialTitle">Fast updates</h2>
+                    <p>This screen can refresh just the part that changed, without the full black-and-white flash. The demo redraws a counter or clock as fast as it can.</p>
+                </div>
+                <p id="partialDemoBwNote" class="bt-hint bt-hint--warn" style="display: none;">Only works with black-and-white screens.</p>
+                <div class="bt-field">
+                    <label for="partialDemoMode">Demo</label>
+                    <select id="partialDemoMode">
+                        <option value="counter" selected>Fast counter</option>
+                        <option value="clock">Clock (every second)</option>
+                    </select>
+                </div>
+                <div id="partialDemoStats" class="partial-demo-stats"></div>
+                <div class="bt-actions bt-actions--pair">
+                    <button data-device-cmd type="button" id="partialDemoStartBtn" class="bt-btn bt-btn--primary" onclick="startPartialDemo();">Start demo</button>
+                    <button type="button" id="partialDemoStopBtn" class="bt-btn bt-btn--outline" onclick="stopPartialDemo();">Stop</button>
+                </div>
+            </section>
+
+            <details class="col panel bt-dev" id="devTools">
+                <summary>Developer tools</summary>
+                <div class="bt-dev__body">
+            <a id="toolboxLink" class="bt-toolbox" href="../toolbox/index.html">
+                <span class="bt-toolbox__title">Open in the configuration Toolbox</span>
+                <span class="bt-toolbox__desc">Change the device&rsquo;s hardware configuration. Takes this device and its key along. Wrong settings can stop the device from working.</span>
+            </a>
+                    <div class="bt-field">
+                        <label for="namePrefix">Device name filter</label>
+                        <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" oninput="updateToolboxLink();" />
+                    </div>
+                    <div id="advertisingPanelWrap" class="connected-only">
+                        <h3 class="bt-sub">Advertising data</h3>
+                        <pre id="advertisingDecodeOut" class="log-display bt-pre"></pre>
+                        <button data-device-cmd type="button" id="advertisingReadBtn" class="bt-btn bt-btn--outline" onclick="readAdvertisingData();">Read advertising data</button>
+                    </div>
+                    <div class="bt-field">
+                        <label for="cmdTXT">Raw command (hex)</label>
+                        <div class="bt-inline bt-inline--grow">
+                            <input type="text" id="cmdTXT" value="0001" />
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="if(bleLib)bleLib.sendHexCommand(document.getElementById('cmdTXT').value).catch(e=>addLog('Error: '+e.message,'error'));">Send</button>
+                        </div>
+                    </div>
+                    <h3 class="bt-sub">Log</h3>
+                    <div class="status-display">
+                        <div id="logDisplay" class="log-display"></div>
+                    </div>
+                    <div id="deviceControlWrap" class="connected-only device-control-wrap">
+                        <h3 class="bt-sub">Device</h3>
+                        <div class="bt-presets">
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="deviceReboot();">Reboot</button>
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--outline" onclick="deviceDeepSleep();">Deep sleep</button>
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--danger" onclick="deviceClearConfig();">Clear config</button>
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--danger" onclick="devicePowerOff();" title="Cut power via D-FF latch (ESP32 boards with power latch only)">Power latch off</button>
+                            <button data-device-cmd type="button" class="bt-btn bt-btn--danger" onclick="deviceRebootBootloader();">Bootloader</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
     </div>
       <script src="/js/pako.js"></script>
@@ -847,6 +1185,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         const SCHEME_SHORT = {
             0: 'BW', 1: 'BWR', 2: 'BWY', 3: 'BWRY', 4: '6C', 5: '4G', 6: '16G', 7: '7C', 8: '6Cs'
         };
+        // What the screen can show, in words people use (SCHEME_SHORT stays for logs).
+        const SCHEME_FRIENDLY = {
+            0: 'black & white', 1: 'black, white & red', 2: 'black, white & yellow', 3: 'black, white, red & yellow',
+            4: '6 colors', 5: '4 shades of gray', 6: '16 shades of gray', 7: '7 colors', 8: '6 colors'
+        };
         const SCHEME_NAMES = {
             0: 'Monochrome (B/W)',
             1: 'B/W + Red',
@@ -880,6 +1223,18 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (advertisingPanelWrap) advertisingPanelWrap.classList.toggle('visible', connected);
             if (nfcPanelWrap) nfcPanelWrap.classList.toggle('visible', connected && deviceHasNfcConfig);
             if (!connected) {
+                const connName = document.getElementById('connName');
+                if (connName) connName.textContent = '';
+                setDeviceBusy(null, true);
+                const connDetail = document.getElementById('connDetail');
+                if (connDetail) connDetail.textContent = '';
+                const connStatus = document.getElementById('connStatus');
+                if (connStatus) connStatus.textContent = '';
+                stopSensorPolling();
+                const sensorPanel = document.getElementById('sensorPanel');
+                if (sensorPanel) sensorPanel.style.display = 'none';
+                const lock = document.getElementById('previewLockIcon');
+                if (lock) lock.style.display = 'none';
                 const advertisingOut = document.getElementById('advertisingDecodeOut');
                 if (advertisingOut) advertisingOut.textContent = '';
                 clearPreviewBatterySoc();
@@ -984,7 +1339,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         function updatePartialDemoStats(msg) {
             const el = document.getElementById('partialDemoStats');
-            if (el) el.textContent = msg || '—';
+            if (el) el.textContent = msg || '';
         }
         function partialDemoClockText() {
             const d = new Date();
@@ -1086,6 +1441,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 updatePartialDemoStats('Starting counter…');
                 sendPartialDemoUpload('0');
             }
+            setDeviceBusy('fast update demo running');
             addLog('Partial demo started (' + partialDemo.mode + ')', 'info');
         }
         function stopPartialDemo() {
@@ -1095,6 +1451,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             const wasRunning = partialDemo.running;
             partialDemo.running = false;
+            if (wasRunning) setDeviceBusy(null);
             partialDemo.pending = false;
             partialDemo.textId = null;
             const uploadBtn = document.getElementById('uploadButton');
@@ -1113,7 +1470,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 partialDemo.savedState = null;
                 renderContent();
             }
-            updatePartialDemoStats('—');
+            updatePartialDemoStats('');
             updatePartialDemoBwNote();
             if (wasRunning) addLog('Partial demo stopped', 'info');
         }
@@ -1131,13 +1488,25 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (text) text.textContent = '';
             if (wrap) wrap.hidden = true;
         }
+        // Draw the battery icon's fill to match the charge; red when low, bolt when charging.
+        function setBatteryIcon(percent, charging) {
+            const fill = document.getElementById('previewBatteryFill');
+            const bolt = document.getElementById('previewBatteryBolt');
+            const wrap = document.getElementById('previewBatterySoc');
+            const p = Math.max(0, Math.min(100, Number(percent) || 0));
+            if (fill) fill.setAttribute('width', (12 * p / 100).toFixed(2));
+            if (bolt) bolt.toggleAttribute('hidden', !charging);
+            if (wrap) wrap.classList.toggle('is-low', p < 20 && !charging);
+        }
         function updateBatterySocDisplay(decoded) {
             const wrap = document.getElementById('previewBatterySoc');
             const text = document.getElementById('previewBatterySocText');
             const B = typeof OpenDisplayBattery !== 'undefined' ? OpenDisplayBattery : null;
             if (!wrap || !text) return;
+            wrap.title = decoded && decoded.batteryVoltage10mV > 0 ? decoded.batteryVoltageV.toFixed(2) + ' V' : '';
             if (decoded && decoded.bq27220Packed && decoded.bq27220Packed.valid) {
                 text.textContent = decoded.bq27220Packed.percent + '%';
+                setBatteryIcon(decoded.bq27220Packed.percent, decoded.bq27220Packed.charging);
                 wrap.hidden = false;
                 return;
             }
@@ -1154,7 +1523,140 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 return;
             }
             text.textContent = soc + '%';
+            setBatteryIcon(soc, false);
             wrap.hidden = false;
+        }
+        // Sensors card: the device reports its sensor readings in its 16-byte manufacturer data
+        // (read over the connection with 0x0044). Poll it while connected, but never during an
+        // image transfer (the firmware handles one thing at a time) or while the tab is hidden.
+        const SENSOR_POLL_MS = 2000;
+        let sensorOpts = null;
+        let sensorTimer = null;
+        let sensorPollInFlight = false;
+        let sensorPollQuiet = false;
+        let sensorButtonState = null;
+        let sensorButtonIdleTimer = null;
+        function setupSensorCard() {
+            const M = typeof OpenDisplayMsd !== 'undefined' ? OpenDisplayMsd : null;
+            const panel = document.getElementById('sensorPanel');
+            stopSensorPolling();
+            sensorButtonState = null;
+            clearTimeout(sensorButtonIdleTimer);
+            sensorOpts = M && typeof M.extractMsdOptsFromParsedConfig === 'function'
+                ? M.extractMsdOptsFromParsedConfig(lastDeviceParsedConfigForMsd) : null;
+            const hasClimate = !!sensorOpts && sensorOpts.sht40StartByte != null;
+            const hasButtons = !!sensorOpts && sensorOpts.buttonDataByteIndex != null;
+            const hasTouch = !!sensorOpts && sensorOpts.touchDataStartByte != null;
+            document.getElementById('sensorTempTile').hidden = !hasClimate;
+            document.getElementById('sensorHumidityTile').hidden = !hasClimate;
+            document.getElementById('sensorButtonTile').hidden = !hasButtons;
+            document.getElementById('sensorTouchTile').hidden = !hasTouch;
+            document.getElementById('sensorButton').textContent = 'Press a button on the device';
+            document.getElementById('sensorTouch').textContent = 'Touch the screen';
+            const show = hasClimate || hasButtons || hasTouch;
+            if (panel) panel.style.display = (show && bleLib && bleLib.isConnected) ? 'block' : 'none';
+            // Start after the connect-time config/advertising reads have settled. Devices without
+            // sensors still get a slow poll so the battery level in the device bar stays current.
+            sensorTimer = setInterval(pollSensors, show ? SENSOR_POLL_MS : 30000);
+        }
+        function stopSensorPolling() {
+            if (sensorTimer) clearInterval(sensorTimer);
+            sensorTimer = null;
+        }
+        async function pollSensors() {
+            if (!bleLib || !bleLib.isConnected || sensorPollInFlight || deviceBusyReason || document.hidden) return;
+            if (bleLib.msdReadState && bleLib.msdReadState.active) return;
+            sensorPollInFlight = true;
+            sensorPollQuiet = true;
+            try {
+                // The library tracks one MSD read at a time; if another read (e.g. the connect-time
+                // advertising read) starts meanwhile, this promise is orphaned and never settles.
+                // Bound it so a lost reply can't stall polling for good.
+                const d = await Promise.race([
+                    OpenDisplayMsd.readAndDecodeFromBle(bleLib, sensorOpts),
+                    new Promise(function(_, reject) { setTimeout(function() { reject(new Error('sensor read timeout')); }, 5000); })
+                ]);
+                renderSensors(d);
+                updateBatterySocDisplay(d);
+            } catch (e) {
+                // A missed reading is harmless; the next poll tries again.
+            } finally {
+                sensorPollQuiet = false;
+                sensorPollInFlight = false;
+            }
+        }
+        function flashReading(el) {
+            const tile = el.closest('.bt-reading');
+            tile.classList.remove('is-flash');
+            void tile.offsetWidth;
+            tile.classList.add('is-flash');
+            clearTimeout(tile._flashTimer);
+            tile._flashTimer = setTimeout(function() { tile.classList.remove('is-flash'); }, 700);
+        }
+        function renderSensors(d) {
+            if (!d || d.error) return;
+            if (d.sht40At7 && d.sht40At7.valid) {
+                document.getElementById('sensorTemp').textContent = d.sht40At7.tempC.toFixed(1) + ' °C';
+                document.getElementById('sensorHumidity').textContent = Math.round(d.sht40At7.rhPercent) + ' %';
+            }
+            if (d.buttonBlock) {
+                // The byte holds the last-pressed button and THAT button's own 4-bit press_count
+                // (device_control.cpp publishButtonMsd). Counters are per button and, depending on
+                // the button type, either never reset (GPIO buttons, e.g. reTerminal) or restart after
+                // 5 s without presses (ADC ladders). So the page keeps each button's last counter and
+                // counts bursts itself: same button, less than 5 s apart, adds up.
+                const BURST_MS = 5000;
+                const b = d.buttonBlock;
+                const el = document.getElementById('sensorButton');
+                const now = Date.now();
+                const st = sensorButtonState;
+                if (!st) {
+                    sensorButtonState = { counts: { [b.buttonId]: b.pressCount }, lastId: b.buttonId, pressed: b.pressed, burst: 0, lastPress: 0 };
+                    return renderTouch(d);
+                }
+                const known = Object.prototype.hasOwnProperty.call(st.counts, b.buttonId);
+                const prevCount = known ? st.counts[b.buttonId] : null;
+                let newPresses = known ? (b.pressCount - prevCount + 16) % 16 : 1;
+                const switched = b.buttonId !== st.lastId;
+                if (switched && newPresses === 0) newPresses = 1;
+                st.counts[b.buttonId] = b.pressCount;
+                const wasPressed = st.pressed;
+                st.pressed = b.pressed;
+                if (newPresses === 0 && !switched && wasPressed === b.pressed) return renderTouch(d);
+                if (newPresses > 0) {
+                    const continues = !switched && now - st.lastPress < BURST_MS;
+                    // A counter that restarted (ladder) reads lower than before: its value is the new burst.
+                    const fresh = known && b.pressCount < prevCount ? b.pressCount : newPresses;
+                    st.burst = continues ? st.burst + newPresses : fresh;
+                    st.lastPress = now;
+                    st.lastId = b.buttonId;
+                }
+                if (b.pressed) {
+                    clearTimeout(sensorButtonIdleTimer);
+                    el.textContent = 'Button ' + (b.buttonId + 1) + ' is held down';
+                    if (!wasPressed) flashReading(el);
+                } else {
+                    el.textContent = 'Button ' + (b.buttonId + 1) + ' pressed' + (st.burst > 1 ? ' · ' + st.burst + '× in a row' : '');
+                    if (!wasPressed) flashReading(el);
+                    // After the burst window the tile invites the next press again.
+                    clearTimeout(sensorButtonIdleTimer);
+                    sensorButtonIdleTimer = setTimeout(function() {
+                        el.textContent = 'Press a button on the device';
+                    }, BURST_MS);
+                }
+            }
+            renderTouch(d);
+        }
+        function renderTouch(d) {
+            if (d.touchBlock) {
+                const t = d.touchBlock;
+                const el = document.getElementById('sensorTouch');
+                const text = t.contact === 'none' ? null : 'Touched at ' + t.x + ', ' + t.y;
+                if (text && text !== el.textContent) {
+                    el.textContent = text;
+                    flashReading(el);
+                }
+            }
         }
         function readAdvertisingData(autoRead) {
             const out = document.getElementById('advertisingDecodeOut');
@@ -1266,7 +1768,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function sendBuzzerPattern() {
             if (!bleLib || !bleLib.isConnected) {
                 addLog("Not connected", 'error');
-                return;
+                return false;
             }
             const sel = document.getElementById('buzzerInstanceSelect');
             const instance = (sel && sel.style.display !== 'none') ? (parseInt(sel.value, 10) || 0) : 0;
@@ -1276,7 +1778,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const patternCount = 1;
             const payloadHex = hexByte(instance) + hexByte(outer) + hexByte(patternCount) + hexByte(nsteps) + body.map(hexByte).join('');
             const cmdHex = '0077' + payloadHex;
-            bleLib.sendHexCommand(cmdHex).catch(function(e) { addLog('Buzzer command error: ' + e.message, 'error'); });
+            return bleLib.sendHexCommand(cmdHex).then(function() { return true; }, function(e) { addLog('Buzzer command error: ' + e.message, 'error'); return false; });
         }
         let ledVizAnimToken = 0;
         const LED_FLASH_US_PER_BRIGHTNESS = 700;
@@ -1407,9 +1909,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             });
             timeline.setAttribute('aria-label', 'LED pattern timeline, one cycle ~' + Math.round(totalMs) + ' ms, repeats ' + repeats + ' times');
         }
+        let ledVizArmed = false;
         function updateLedVisualization() {
             renderLedTimeline();
-            playLedVizAnimation();
+            if (ledVizArmed) playLedVizAnimation();
         }
         function initLedVizListeners() {
             if (window._ledVizListeners) return;
@@ -1419,6 +1922,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             panel.addEventListener('input', function(e) {
                 const id = e.target && e.target.id;
                 if (!id || !/^led(Brightness|Repeats|Color[123]|Count[123]|On[123]|Gap[123])$/.test(id)) return;
+                ledVizArmed = true;
                 updateLedVisualization();
             });
         }
@@ -1485,10 +1989,30 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 addLog('NFC read error: ' + e.message, 'error');
             }
         }
+        // Resolves true on the device's write ack (00 83 81), false on an error (FF 83 …) or no
+        // reply. Some firmware doesn't implement NFC and never answers, hence the timeout.
+        let nfcAckWaiter = null;
+        function waitForNfcAck(timeoutMs) {
+            return new Promise(function(resolve) {
+                nfcAckWaiter = resolve;
+                setTimeout(function() {
+                    if (nfcAckWaiter !== resolve) return;
+                    nfcAckWaiter = null;
+                    addLog('No NFC reply from the device (its firmware may not support NFC writes)', 'error');
+                    resolve(false);
+                }, timeoutMs);
+            });
+        }
+        function settleNfcAck(ok) {
+            if (!nfcAckWaiter) return;
+            const resolve = nfcAckWaiter;
+            nfcAckWaiter = null;
+            resolve(ok);
+        }
         async function writeNfcOverBle() {
             if (!bleLib || !bleLib.isConnected) {
                 addLog('Not connected', 'error');
-                return;
+                return false;
             }
             const typeEl = document.getElementById('nfcTypeSelect');
             const contentEl = document.getElementById('nfcContentInput');
@@ -1506,7 +2030,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 let hex = (content || '').replace(/\s+/g, '');
                 if (hex.length % 2 !== 0) {
                     addLog('Raw NDEF: even number of hex digits required', 'error');
-                    return;
+                    return false;
                 }
                 payloadHex = hex.toUpperCase();
             } else {
@@ -1518,7 +2042,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const wkTypeLen = wkTypeHex.length / 2;
                 if (wkTypeLen <= 0 || wkTypeLen > 255) {
                     addLog('Well-known type must be 1..255 ASCII bytes', 'error');
-                    return;
+                    return false;
                 }
                 payloadHex = hexByte(wkTypeLen) + wkTypeHex + payloadHex;
             }
@@ -1528,14 +2052,14 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const mtLen = mimeTypeHex.length / 2;
                 if (mtLen <= 0 || mtLen > 255) {
                     addLog('MIME type must be 1..255 UTF-8 bytes', 'error');
-                    return;
+                    return false;
                 }
                 payloadHex = hexByte(mtLen) + mimeTypeHex + payloadHex;
             }
             const payloadLen = payloadHex.length / 2;
             if (payloadLen > 65535) {
                 addLog('NFC content too long (max 65535 bytes UTF-8)', 'error');
-                return;
+                return false;
             }
             const lenHi = (payloadLen >> 8) & 0xFF;
             const lenLo = payloadLen & 0xFF;
@@ -1546,17 +2070,22 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const MAX_NFC_CHUNK = 120;
                 if (payloadLen <= MAX_NFC_CHUNK) {
                     const cmdHex = '008301' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo) + payloadHex;
+                    const ack = waitForNfcAck(6000);
                     await bleLib.sendHexCommand(cmdHex);
-                    return;
+                    return await ack;
                 }
                 await bleLib.sendHexCommand('008310' + hexByte(typeValue) + hexByte(lenHi) + hexByte(lenLo));
                 for (let i = 0; i < payloadHex.length; i += (MAX_NFC_CHUNK * 2)) {
                     const chunkHex = payloadHex.slice(i, i + (MAX_NFC_CHUNK * 2));
                     await bleLib.sendHexCommand('008311' + chunkHex);
                 }
+                const ack = waitForNfcAck(6000);
                 await bleLib.sendHexCommand('008312');
+                return await ack;
             } catch (e) {
+                settleNfcAck(false);
                 addLog('NFC write error: ' + e.message, 'error');
+                return false;
             }
         }
         function onNfcTypeChanged() {
@@ -1628,7 +2157,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function sendLedPattern() {
             if (!bleLib || !bleLib.isConnected) {
                 addLog("Not connected", 'error');
-                return;
+                return false;
             }
             const sel = document.getElementById('ledInstanceSelect');
             const instance = (sel && document.getElementById('ledInstanceRow')?.style.display !== 'none')
@@ -1636,20 +2165,82 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const cfg = buildLedPatternBytes();
             const payloadHex = hexByte(instance) + cfg.map(hexByte).join('');
             const cmdHex = '0073' + payloadHex;
-            bleLib.sendHexCommand(cmdHex).catch(function(e) { addLog('LED command error: ' + e.message, 'error'); });
+            return bleLib.sendHexCommand(cmdHex).then(function() { return true; }, function(e) { addLog('LED command error: ' + e.message, 'error'); return false; });
         }
         function sendLedStop() {
             if (!bleLib || !bleLib.isConnected) {
                 addLog("Not connected", 'error');
-                return;
+                return false;
             }
             const sel = document.getElementById('ledInstanceSelect');
             let cmdHex = '0075';
             if (sel && document.getElementById('ledInstanceRow')?.style.display !== 'none') {
                 cmdHex += hexByte(parseInt(sel.value, 10) || 0);
             }
-            bleLib.sendHexCommand(cmdHex).catch(function(e) { addLog('LED stop error: ' + e.message, 'error'); });
             stopLedVizAnimation();
+            return bleLib.sendHexCommand(cmdHex).then(function() { return true; }, function(e) { addLog('LED stop error: ' + e.message, 'error'); return false; });
+        }
+        // The firmware handles one thing at a time: during an image transfer its receive queue is
+        // full of image data (other commands get dropped) and the screen refresh blocks its main
+        // loop. So while an upload or the fast-update demo runs, every other device button waits.
+        let deviceBusyReason = '';
+        function setDeviceBusy(reason, quiet) {
+            deviceBusyReason = reason || '';
+            document.querySelectorAll('[data-device-cmd]').forEach(function(btn) {
+                // The Send button shows its own progress while it is the one running.
+                if (btn.id === 'uploadButton' && btn.classList.contains('is-busy')) return;
+                btn.disabled = !!deviceBusyReason;
+            });
+            if (!deviceBusyReason && typeof updatePartialDemoBwNote === 'function') updatePartialDemoBwNote();
+            if (!quiet && bleLib && bleLib.isConnected) setStatus(deviceBusyReason || 'Connected', true);
+        }
+        // Button feedback for device commands: "Sending…", then a short confirmation or "Failed".
+        // `action` returns (a promise of) true on success and false on failure.
+        function runWithFeedback(btn, action, doneLabel) {
+            if (!btn || btn.dataset.busy || deviceBusyReason) return;
+            const label = btn.dataset.label || btn.textContent.trim();
+            btn.dataset.label = label;
+            btn.dataset.busy = '1';
+            btn.classList.remove('is-done', 'is-failed');
+            btn.classList.add('is-busy');
+            btn.setAttribute('aria-busy', 'true');
+            btn.textContent = 'Sending…';
+            Promise.resolve().then(action).then(function(ok) { return ok !== false; }, function() { return false; }).then(function(ok) {
+                btn.classList.remove('is-busy');
+                btn.removeAttribute('aria-busy');
+                btn.classList.add(ok ? 'is-done' : 'is-failed');
+                btn.textContent = ok ? (doneLabel || 'Sent') : (bleLib && bleLib.isConnected ? 'Failed' : 'Not connected');
+                setTimeout(function() {
+                    btn.classList.remove('is-done', 'is-failed');
+                    btn.textContent = label;
+                    delete btn.dataset.busy;
+                }, 1800);
+            });
+        }
+        // One-tap patterns for the Light card: fill the pattern fields, preview, and play.
+        const LED_PRESETS = {
+            blink:   { repeats: 2, steps: [['#00a6ff', 3, 150, 400], ['#000000', 0, 0, 0], ['#000000', 0, 0, 0]] },
+            traffic: { repeats: 2, steps: [['#ff0000', 1, 600, 150], ['#ffff00', 1, 600, 150], ['#00ff00', 1, 600, 400]] },
+            cycle:   { repeats: 3, steps: [['#ff0000', 2, 150, 120], ['#00ff00', 2, 150, 120], ['#0000ff', 2, 150, 300]] }
+        };
+        function playLedPreset(name) {
+            const preset = LED_PRESETS[name];
+            if (!preset) return false;
+            preset.steps.forEach(function(step, i) {
+                const n = i + 1;
+                document.getElementById('ledColor' + n).value = step[0];
+                document.getElementById('ledCount' + n).value = step[1];
+                document.getElementById('ledOn' + n).value = step[2];
+                document.getElementById('ledGap' + n).value = step[3];
+            });
+            document.getElementById('ledRepeats').value = preset.repeats;
+            ledVizArmed = true;
+            updateLedVisualization();
+            return sendLedPattern();
+        }
+        function playBuzzerPreset(name) {
+            applyBuzzerPreset(name);
+            return sendBuzzerPattern();
         }
         function deviceReboot() {
             if (!bleLib || !bleLib.isConnected) return;
@@ -1728,6 +2319,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 addLog('Not connected', 'error');
                 return;
             }
+            if (!confirm('Reboot into the bootloader? The device disconnects and stays there until you flash firmware or power-cycle it.')) return;
             addLog('Reboot to bootloader (0x0051) — device will disconnect; use OTA/DFU to reconnect.', 'info');
             try {
                 await bleLib.rebootToBootloader();
@@ -1738,6 +2330,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function setProgressBar(_show, value) {
             const bar = document.getElementById('uploadProgressBar');
             if (bar) bar.style.width = (value == null ? 0 : value) + '%';
+            // Only show the bar while something is actually being sent.
+            const wrap = document.getElementById('uploadProgressWrap');
+            if (wrap) wrap.hidden = !value;
         }
         function getScheme() {
             return clampScheme(document.getElementById('colorSchemeSelect')?.value || '0');
@@ -1809,6 +2404,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             });
         }
         function clearDrawingCanvas() {
+            // "Clear all" means everything, including a loaded photo; otherwise the next redraw
+            // (e.g. rotating) would paint the photo back.
+            sourceImage = null;
+            sourceRotation = 0;
             createCanvas();
             actionStack = [];
             if (typeof getPixelData === 'function') getPixelData();
@@ -1833,12 +2432,53 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (baseImageData) {
-                ctx.putImageData(baseImageData, 0, 0);
-            } else {
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Compare-original overlay: undithered photo + ink.
+            ctx.putImageData(getBaseImageData(canvas.width, canvas.height), 0, 0);
+            drawInkLayer(ctx);
+            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            syncOriginalOverlay();
+            // Dither the photo only, then stamp the ink in exact screen colors; selection handles go on top.
+            await getPixelData();
+            const sel = textObjects.find(t => t.id === selectedTextId);
+            if (sel) {
+                ctx.font = sel.fontSize + 'px Arial';
+                const w = ctx.measureText(sel.text).width;
+                const h = sel.fontSize * 1.2;
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
+                ctx.setLineDash([]);
             }
+            const selQR = qrObjects.find(q => q.id === selectedQRId);
+            if (selQR) {
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
+                ctx.setLineDash([]);
+            }
+        }
+        // Two layers, dithered separately (same approach as #142): the photo ("base") goes
+        // through dithering, the ink (strokes, text, QR codes) is drawn on a transparent layer
+        // and mapped straight to the nearest screen color. Drawn colors stay exact, empty areas
+        // stay clean, and anti-aliased text edges keep their own color instead of stray ones.
+        function hasInkContent() {
+            return strokes.length > 0 || textObjects.length > 0 || qrObjects.length > 0;
+        }
+        function getBaseImageData(width, height) {
+            if (baseImageData && baseImageData.width === width && baseImageData.height === height) {
+                return baseImageData;
+            }
+            const c = document.createElement('canvas');
+            c.width = width;
+            c.height = height;
+            const cctx = c.getContext('2d', { willReadFrequently: true });
+            cctx.fillStyle = 'white';
+            cctx.fillRect(0, 0, width, height);
+            return cctx.getImageData(0, 0, width, height);
+        }
+        function drawInkLayer(ctx) {
             strokes.forEach(s => {
                 if (s.points.length < 2) return;
                 ctx.strokeStyle = s.color;
@@ -1860,29 +2500,56 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             qrObjects.forEach(qr => {
                 drawQRToCanvas(ctx, qr);
             });
-            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            syncOriginalOverlay();
-            // Dither first, then draw selection handles so they stay visible on top.
-            await getPixelData();
-            const sel = textObjects.find(t => t.id === selectedTextId);
-            if (sel) {
-                ctx.font = sel.fontSize + 'px Arial';
-                const w = ctx.measureText(sel.text).width;
-                const h = sel.fontSize * 1.2;
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
-                ctx.setLineDash([]);
+        }
+        function nearestPaletteIndex(r, g, b, preview) {
+            let best = 0;
+            let bestD = Infinity;
+            for (let i = 0; i < preview.length; i++) {
+                const c = preview[i];
+                if (!c) continue;
+                const dr = r - c.r, dg = g - c.g, db = b - c.b;
+                const d = dr * dr + dg * dg + db * db;
+                if (d < bestD) { bestD = d; best = i; }
             }
-            const selQR = qrObjects.find(q => q.id === selectedQRId);
-            if (selQR) {
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
-                ctx.setLineDash([]);
+            return best;
+        }
+        /** Stamp strokes/text/QR onto palette indices after the photo was dithered. */
+        function compositeInkOntoIndices(indices, width, height, preview) {
+            if (!hasInkContent() || !indices || !preview || !preview.length) return false;
+            const ink = document.createElement('canvas');
+            ink.width = width;
+            ink.height = height;
+            const ictx = ink.getContext('2d', { willReadFrequently: true });
+            drawInkLayer(ictx);
+            const data = ictx.getImageData(0, 0, width, height).data;
+            for (let i = 0, n = width * height; i < n; i++) {
+                const p = i * 4;
+                if (data[p + 3] < 128) continue;
+                indices[i] = nearestPaletteIndex(data[p], data[p + 1], data[p + 2], preview);
             }
+            return true;
+        }
+        function recountDitherCounts(result) {
+            if (!result || !result.indices || !result.preview) return;
+            const counts = new Uint32Array(result.preview.length);
+            for (let i = 0; i < result.indices.length; i++) {
+                const idx = result.indices[i];
+                if (idx < counts.length) counts[idx]++;
+            }
+            result.counts = counts;
+        }
+        /** Shared by preview and upload, so what you see is what gets sent. */
+        function ditherBaseAndCompositeInk(lib, ctx, width, height, scheme, mode, options) {
+            // Without a photo the base is plain white: nothing to dither, so map it directly
+            // (a measured palette's "white" would otherwise sprinkle colored specks over it).
+            const plain = !sourceImage || !baseImageData;
+            const result = lib.dither(getBaseImageData(width, height), plain
+                ? { ...options, scheme, mode: 'none', paletteId: 'ideal' }
+                : { ...options, scheme, mode });
+            if (compositeInkOntoIndices(result.indices, width, height, result.preview)) recountDitherCounts(result);
+            result.scheme = scheme;
+            lib.paint(ctx, width, height, result.indices, result.preview);
+            return result;
         }
         function drawQRToCanvas(ctx, qr) {
             if (typeof QRCode === 'undefined' || !qr.data) return;
@@ -2405,16 +3072,22 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                         renderCoarsePreview(lib, ctx, canvas, scheme, mode, options);
                     } else {
                         // Use the library directly: the preview runs before any BLE connection.
-                        const result = lib.dither(ctx.getImageData(0, 0, canvas.width, canvas.height), { ...options, scheme, mode });
-                        lib.paint(ctx, canvas.width, canvas.height, result.indices, result.preview);
-                        result.scheme = scheme;
+                        const result = ditherBaseAndCompositeInk(lib, ctx, canvas.width, canvas.height, scheme, mode, options);
                         lastDither = result;
                         updateTuningReadout(lib, result, scheme);
+                        updateCanvasEmptyHint();
                     }
                 } while (ditherQueued);
             } finally {
                 ditherRunning = false;
             }
+        }
+        // Show a hint on the preview until there's something on it.
+        function updateCanvasEmptyHint() {
+            const hint = document.getElementById('canvasEmptyHint');
+            if (!hint) return;
+            const empty = !sourceImage && !strokes.length && !textObjects.length && !qrObjects.length;
+            hint.hidden = !empty;
         }
         /** Half-resolution pass used only while dragging a slider. */
         function renderCoarsePreview(lib, ctx, canvas, scheme, mode, options) {
@@ -2425,12 +3098,17 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             small.width = w;
             small.height = h;
             const sctx = small.getContext('2d', { willReadFrequently: true });
-            sctx.drawImage(overlay, 0, 0, w, h);
+            const base = document.createElement('canvas');
+            base.width = canvas.width;
+            base.height = canvas.height;
+            base.getContext('2d').putImageData(getBaseImageData(canvas.width, canvas.height), 0, 0);
+            sctx.drawImage(base, 0, 0, w, h);
             const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode });
             lib.paint(sctx, w, h, result.indices, result.preview);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
             ctx.imageSmoothingEnabled = true;
+            drawInkLayer(ctx);
             updateTuningReadout(lib, result, scheme);
         }
         function updateTuningReadout(lib, result, scheme) {
@@ -2440,7 +3118,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const palette = result.measuredId
                     ? (lib.MEASURED.find(m => m.id === result.measuredId) || {}).label
                     : 'ideal colors';
-                summary.textContent = `${label} · ${palette} · ${result.ms.toFixed(0)} ms`;
+                // Without a photo nothing is dithered; don't make it look like the chosen setting was ignored.
+                summary.textContent = sourceImage
+                    ? `${label} · ${palette} · ${result.ms.toFixed(0)} ms`
+                    : 'Applies to photos';
             }
             const bar = document.getElementById('inkBar');
             const legend = document.getElementById('inkLegend');
@@ -2622,14 +3303,32 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         /** Rotate the canvas orientation by 90° on top of the device's own rotation. */
         function rotateCanvas() {
+            // Keep drawings, text and QR codes across the orientation change (the canvas rebuild
+            // clears them): remember them and map their positions into the new frame.
+            const canvas = document.getElementById('myCanvas');
+            const oldW = canvas.width, oldH = canvas.height;
+            const kept = { strokes: strokes, textObjects: textObjects, qrObjects: qrObjects, actionStack: actionStack };
             canvasRotation = (canvasRotation + 1) % 4;
             displayRotation = (deviceRotation + canvasRotation) % 4;
             const btn = document.getElementById('rotateCanvasBtn');
             if (btn) {
                 btn.classList.toggle('active', canvasRotation !== 0);
-                btn.title = `Rotate canvas 90° (currently ${canvasRotation * 90}°)`;
+                btn.title = `Rotate screen orientation 90° (currently ${canvasRotation * 90}°)`;
             }
             doAll();
+            const newW = canvas.width, newH = canvas.height;
+            const sx = newW / oldW, sy = newH / oldH;
+            const mapX = (x) => Math.round(x * sx), mapY = (y) => Math.round(y * sy);
+            strokes = kept.strokes.map(function(st) {
+                return Object.assign({}, st, { points: (st.points || []).map(function(pt) { return Object.assign({}, pt, { x: mapX(pt.x), y: mapY(pt.y) }); }) });
+            });
+            textObjects = kept.textObjects.map(function(t) { return Object.assign({}, t, { x: mapX(t.x), y: mapY(t.y) }); });
+            qrObjects = kept.qrObjects.map(function(q) {
+                const size = Math.min(q.size, newW, newH);
+                return Object.assign({}, q, { size: size, x: Math.max(0, Math.min(mapX(q.x), newW - size)), y: Math.max(0, Math.min(mapY(q.y), newH - size)) });
+            });
+            actionStack = kept.actionStack;
+            if (strokes.length || textObjects.length || qrObjects.length) renderContent();
         }
         function toggleZoom() {
             const stage = document.getElementById('canvasStage');
@@ -2825,6 +3524,47 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             setStatus("Connection failed", false, true);
             setConnectedUI(false);
         }
+        // The Send button mirrors the upload, so feedback is visible without scrolling up to the status bar.
+        function setUploadButtonProgress(progress) {
+            const btn = document.getElementById('uploadButton');
+            if (!btn) return;
+            if (!btn.dataset.labelHtml) btn.dataset.labelHtml = btn.innerHTML;
+            btn.classList.remove('is-done', 'is-failed', 'is-refreshing');
+            btn.classList.add('is-busy', 'is-sending');
+            btn.setAttribute('aria-busy', 'true');
+            btn.style.setProperty('--progress', (progress || 0) + '%');
+            if (deviceBusyReason !== 'sending image…') setDeviceBusy('sending image…');
+            btn.textContent = progress > 0 ? 'Sending… ' + progress + '%' : 'Sending…';
+            btn.dataset.note = '';
+        }
+        // Mirror the library's upload phases that matter to people: refreshing, and "nothing to do".
+        function setUploadButtonPhase(message) {
+            const btn = document.getElementById('uploadButton');
+            if (!btn || !btn.classList.contains('is-busy')) return;
+            if (/refreshing/i.test(message)) {
+                btn.classList.remove('is-sending');
+                btn.classList.add('is-refreshing');
+                btn.textContent = 'Refreshing screen…';
+                setDeviceBusy('refreshing screen…');
+            } else if (/no pixel changes/i.test(message)) {
+                btn.dataset.note = 'Nothing new to send';
+            }
+        }
+        function setUploadButtonResult(ok) {
+            const btn = document.getElementById('uploadButton');
+            if (!btn) return;
+            const labelHtml = btn.dataset.labelHtml || 'Send to device';
+            btn.classList.remove('is-busy', 'is-sending', 'is-refreshing');
+            btn.removeAttribute('aria-busy');
+            btn.classList.add(ok ? 'is-done' : 'is-failed');
+            btn.textContent = ok ? (btn.dataset.note || 'Sent to device') : 'Send failed';
+            btn.dataset.note = '';
+            setDeviceBusy(null);
+            setTimeout(function() {
+                btn.classList.remove('is-done', 'is-failed');
+                btn.innerHTML = labelHtml;
+            }, 2500);
+        }
         async function sendDirectWriteAuto(extraOptions) {
             extraOptions = extraOptions || {};
             const canvas = document.getElementById('myCanvas');
@@ -2864,8 +3604,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (originalImageData) {
                 ctx.putImageData(originalImageData, 0, 0);
             }
-            const dither = await bleLib.applyDithering(
-                ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
+            const manualUpload = !(extraOptions.onComplete || extraOptions.onProgress || extraOptions.onStatusChange);
+            if (manualUpload) setUploadButtonProgress(0);
+            const dither = ditherBaseAndCompositeInk(
+                await OpenDisplayBLE.ditherReady(), ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
             );
             lastDither = dither;
             lastDither.scheme = colorScheme;
@@ -2887,12 +3629,15 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     const progress = Math.floor((current / total) * 100);
                     setProgressBar(true, progress);
                     setStatus(`Uploading: ${progress}%`);
+                    setUploadButtonProgress(progress);
                 }),
                 onStatusChange: extraOptions.onStatusChange || ((message) => {
                     setStatus(message, !!(bleLib && bleLib.isConnected));
+                    setUploadButtonPhase(message);
                 }),
                 onComplete: (success, error) => {
                     if (!useDemoCallbacks) setProgressBar(false);
+                    if (!useDemoCallbacks) setUploadButtonResult(success);
                     if (success) {
                         if (!extraOptions.quietLog) addLog("Canvas sent to display successfully!", 'success');
                     } else if (!extraOptions.quietLog) {
@@ -2903,6 +3648,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 }
             }).catch(error => {
                 if (!useDemoCallbacks) setProgressBar(false);
+                if (!useDemoCallbacks) setUploadButtonResult(false);
                 if (!extraOptions.quietLog) {
                     addLog("Error: " + error.message, 'error');
                     setStatus("Error: " + error.message, false, true);
@@ -2951,6 +3697,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 } else if (continuousHex.length >= 4 && continuousHex.substring(0, 4) === "FF77") {
                     const err = continuousHex.length >= 6 ? continuousHex.substring(4, 6) : "??";
                     addLog("Buzzer error (0x" + err + ")", 'error');
+                } else if (cmdHex === "FF83") {
+                    const err = continuousHex.length >= 8 ? continuousHex.substring(6, 8) : "??";
+                    addLog('NFC error (0x' + err + ')', 'error');
+                    settleNfcAck(false);
                 } else if (cmdHex === "0083") {
                     const bytesArr = (bytes && bytes.length) ? bytes : new Uint8Array();
                     if (bytesArr.length >= 3) {
@@ -2996,6 +3746,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                             addLog('NFC read: type=' + nfcType + ', len=' + nfcLen + ', content="' + decoded + '"', 'success');
                         } else if (op === 0x81) {
                             addLog('NFC write acknowledged (0x0083/0x81)', 'success');
+                            settleNfcAck(true);
                         } else if (op === 0xFF) {
                             const err = bytesArr.length >= 4 ? hexByte(bytesArr[3]) : '??';
                             addLog('NFC error (0x' + err + ')', 'error');
@@ -3020,6 +3771,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 reconnectDelay: 2000,
                 onConnect: () => {
                     addLog('Connection successful!', 'success');
+                    const connectedName = bleLib && bleLib.device && bleLib.device.name;
+                    document.getElementById('connName').textContent = connectedName || 'Your device';
+                    updateToolboxLink();
                     setStatus('Connected', true);
                     setConnectedUI(true);
                     setTimeout(() => {
@@ -3087,17 +3841,57 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function setStatus(statusText, isConnected = false, isError = false) {
             lastStatusText = statusText;
             lastStatusConnected = isConnected;
-            const displayText = statusText;
-            const statusElement = document.getElementById("statusText");
-            if (statusElement) {
-                statusElement.textContent = displayText;
-                statusElement.className = 'status-text' + (isError ? ' error' : '');
+            let displayText = statusText;
+            // While connected, upload progress lives on the Send button; the bar only shows
+            // connection state and problems, so it doesn't fill up with transfer details.
+            const connected = !!(bleLib && bleLib.isConnected);
+            const isTransferChatter = /upload|refresh|pipe|direct write|chunk/i.test(statusText);
+            if (connected && !isError && (isTransferChatter || statusText === 'Connected' || deviceBusyReason)) {
+                displayText = deviceBusyReason ? 'Busy: ' + deviceBusyReason : 'Connected';
             }
+            // While connecting, the Connect button shows the progress, so it isn't said twice.
+            if (!connected) {
+                const connecting = !isError && /requesting|found|connecting|reconnecting|authenticat/i.test(statusText);
+                setConnectButtonBusy(connecting ? statusText : null);
+                if (connecting) displayText = '';
+            }
+            // Connected: activity and errors replace the firmware/battery line under the device name.
+            // Not connected: messages sit under the Connect button.
+            const inRow = connected && !!document.getElementById('connName').textContent;
+            const rowStatus = document.getElementById('connStatus');
+            const statusElement = document.getElementById("statusText");
+            let rowText = inRow && displayText !== 'Connected' ? displayText : '';
+            if (rowText.indexOf('Busy: ') === 0) rowText = rowText.slice(6);
+            if (rowStatus) {
+                rowStatus.textContent = rowText ? rowText.charAt(0).toUpperCase() + rowText.slice(1) : '';
+                rowStatus.className = 'bt-conn__status' + (isError ? ' error' : (deviceBusyReason ? ' busy' : ''));
+            }
+            if (statusElement) {
+                statusElement.textContent = inRow ? '' : displayText;
+                statusElement.className = 'status-text' + (isError ? ' error' : '') + (displayText === 'Connected' ? ' is-idle' : '');
+            }
+        }
+        function setConnectButtonBusy(message) {
+            const btn = document.getElementById('connectbutton');
+            if (!btn) return;
+            if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
+            if (!message) {
+                btn.classList.remove('is-busy');
+                btn.removeAttribute('aria-busy');
+                btn.textContent = btn.dataset.label;
+                return;
+            }
+            btn.classList.add('is-busy');
+            btn.setAttribute('aria-busy', 'true');
+            btn.textContent = /requesting/i.test(message) ? 'Choose your device…'
+                : /reconnecting/i.test(message) ? 'Reconnecting…'
+                : 'Connecting…';
         }
         function setStatusWithFirmware(statusText, isError = false) {
             setStatus(statusText, !!(bleLib && bleLib.isConnected), isError);
         }
         function addLog(logTXT, type = 'info') {
+            if (sensorPollQuiet && type !== 'error' && type !== 'warning') return;
             const logArea = document.getElementById("logDisplay");
             if (!logArea) return;
             const today = new Date();
@@ -3186,6 +3980,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 buzzerScale.durationUnitMs = 5;
                 setBuzzerUI(deviceBuzzerCount > 0);
                 if (deviceBuzzerCount > 0) addLog('Passive buzzer config: ' + deviceBuzzerCount + ' instance(s)', 'info');
+                setupSensorCard();
                 addLog("Config parsing completed", 'success');
             } catch (e) {
                 addLog("Error applying parsed config: " + e.message, 'error');
@@ -3194,6 +3989,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         function updatePreviewLine(validScheme) {
             const scheme = validScheme != null ? clampScheme(validScheme) : getScheme();
+            const connDetail = document.getElementById('connDetail');
+            if (connDetail) connDetail.textContent = firmwareVersionPreview ? 'Firmware ' + firmwareVersionPreview : '';
             const previewMeta = document.getElementById('previewMeta');
             const previewLockIcon = document.getElementById('previewLockIcon');
             if (previewMeta) {
@@ -3201,14 +3998,17 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     previewMeta.textContent = '';
                 } else {
                     const diagonal = screenDiagonalInches(activeWidthMm, activeHeightMm);
-                    const resolution = widthInput + '×' + heightInput + (diagonal != null ? ' (' + diagonal.toFixed(1) + '")' : '');
-                    previewMeta.textContent = ' · ' + resolution + ' · ' + (SCHEME_SHORT[scheme] || ('S' + scheme)) + (firmwareVersionPreview ? ' · v' + firmwareVersionPreview : '');
+                    const size = diagonal != null ? diagonal.toFixed(1) + '″ screen · ' : '';
+                    previewMeta.textContent = size + widthInput + ' × ' + heightInput + ' · ' + (SCHEME_FRIENDLY[scheme] || SCHEME_NAMES[scheme] || ('scheme ' + scheme));
                 }
             }
             if (previewLockIcon) {
                 const enc = bleLib && bleLib.encryptionSession && bleLib.encryptionSession.authenticated;
                 previewLockIcon.style.display = '';
-                previewLockIcon.innerHTML = ' · ' + (enc
+                previewLockIcon.title = enc ? 'Encrypted connection' : 'Not encrypted';
+                previewLockIcon.setAttribute('aria-label', previewLockIcon.title);
+                previewLockIcon.setAttribute('role', 'img');
+                previewLockIcon.innerHTML = (enc
                     ? '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>'
                     : '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h2c0-1.65 1.35-3 3-3s3 1.35 3 3v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>');
             }
@@ -3363,6 +4163,90 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
         }
         
+        // Toolbox shortcut: same device (connected name, else the filter) and the key from the link.
+        function updateToolboxLink() {
+            const a = document.getElementById('toolboxLink');
+            if (!a) return;
+            const url = new URL('../toolbox/index.html', window.location.href);
+            const connected = bleLib && bleLib.isConnected && bleLib.device && bleLib.device.name;
+            const filter = (document.getElementById('namePrefix')?.value || '').trim();
+            const device = connected || (filter && filter.toUpperCase() !== 'OD' ? filter : '');
+            if (device) url.searchParams.set('device', device);
+            const key = (getUrlParameter('key') || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+            if (key.length === 32 && !/^0+$/.test(key)) url.searchParams.set('key', key);
+            a.href = url.toString();
+        }
+        // Name the device on the Connect button when the link (e.g. from the device page) says which one.
+        function showConnectTarget() {
+            const btn = document.getElementById('connectbutton');
+            const filter = (getUrlParameter('filter') || getUrlParameter('device') || getUrlParameter('prefix') || '').trim();
+            if (btn && filter && filter.indexOf(',') === -1 && filter.toUpperCase() !== 'OD') {
+                btn.textContent = 'Connect to ' + filter;
+                btn.dataset.label = btn.textContent;
+                const hint = document.getElementById('connectHint');
+                if (hint) {
+                    hint.textContent = 'Your browser will list nearby Bluetooth devices. Pick ';
+                    const strong = document.createElement('strong');
+                    strong.textContent = filter;
+                    hint.appendChild(strong);
+                    hint.appendChild(document.createTextNode('.'));
+                }
+            }
+        }
+        // Explain up front when this browser can't do Web Bluetooth, instead of an alert on Connect.
+        function showBluetoothSupport() {
+            const browser = window.OpenDisplayBrowser;
+            const notice = document.getElementById('btUnsupported');
+            if (!browser || !notice || browser.isWebBluetoothSupported()) return;
+            const reason = browser.getWebBluetoothBlockReason();
+            const android = browser.isAndroid();
+            const brave = !!navigator.brave;
+            let title, body, link = null;
+            if (reason === 'ios-safari') {
+                title = 'iPhone and iPad browsers can\u2019t use Bluetooth.';
+                body = ['Open this page in the free Bluefy browser instead.'];
+                link = { href: 'https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055', text: 'Get Bluefy from the App Store' };
+            } else if (reason === 'insecure') {
+                title = 'Bluetooth only works on a secure connection.';
+                body = ['Open this page with https:// in the address bar.'];
+            } else if (reason === 'chromium-disabled' && brave) {
+                title = 'Brave turns Web Bluetooth off by default.';
+                body = ['Turn on \u201cWeb Bluetooth API\u201d in brave://flags, restart Brave and reload this page. Or open this page in Chrome or Edge.'];
+            } else if (reason === 'chromium-disabled') {
+                const name = browser.isEdge() ? 'Edge' : 'Chrome';
+                title = 'Bluetooth is blocked in ' + name + '.';
+                body = ['In ' + name + '\u2019s settings, go to Privacy and security \u2192 Site settings \u2192 Bluetooth and allow sites to ask. Also make sure Bluetooth is turned on for your ' + (android ? 'phone' : 'computer') + '.'];
+            } else {
+                title = (browser.isFirefox() ? 'Firefox' : 'This browser') + ' can\u2019t use Bluetooth.';
+                body = [android ? 'Open this page in Chrome or Edge.' : 'Open this page in Chrome or Edge on your computer or on an Android phone.'];
+            }
+            notice.textContent = '';
+            const strong = document.createElement('p');
+            strong.className = 'bt-notice__title';
+            strong.textContent = title;
+            notice.appendChild(strong);
+            body.forEach(function(text) {
+                const para = document.createElement('p');
+                para.textContent = text;
+                notice.appendChild(para);
+            });
+            if (link) {
+                const para = document.createElement('p');
+                const a = document.createElement('a');
+                a.href = link.href;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                a.textContent = link.text;
+                para.appendChild(a);
+                notice.appendChild(para);
+            }
+            notice.hidden = false;
+            // Nothing to connect with here: hide Connect and its hint so the notice is the only step.
+            document.getElementById('connectbutton').hidden = true;
+            const hint = document.getElementById('connectHint');
+            if (hint) hint.hidden = true;
+        }
+
         // Initialize from URL - run as early as possible and also on load
         function setUrlFilter() {
             const filterParam = getUrlParameter('filter') || getUrlParameter('device') || getUrlParameter('prefix');
@@ -3416,13 +4300,31 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 if (ditherSel.value !== 'auto') markPresetCustom();
                 getPixelData();
             });
-            if (setUrlFilter()) {
-                const filterParam = getUrlParameter('filter') || getUrlParameter('device') || getUrlParameter('prefix');
-                addLog(`Device filter set from URL: ${filterParam}`, 'info');
-            }
+            setUrlFilter();
             initializeFromUrl();
             addLog("Page loaded. Ready.", 'info');
-            setStatus("Ready");
+            setStatus("");
+            showConnectTarget();
+            showBluetoothSupport();
+            updateToolboxLink();
+            // Tap a slider's value to reset it (double-click on the slider still works on desktop).
+            document.querySelectorAll('#tuningPanel .slider-row output').forEach(function(out) {
+                const input = document.getElementById(out.getAttribute('for'));
+                if (!input) return;
+                out.setAttribute('role', 'button');
+                out.tabIndex = 0;
+                out.title = 'Reset';
+                const reset = function() { input.dispatchEvent(new Event('dblclick')); };
+                out.addEventListener('click', reset);
+                out.addEventListener('keydown', function(e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); reset(); } });
+            });
+            [['drawTextInput', addUserText], ['qrDataInput', addUserQR], ['imageUrl', loadImageFromUrl]].forEach(function(pair) {
+                const el = document.getElementById(pair[0]);
+                if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); pair[1](); } });
+            });
+            document.getElementById('myCanvas').addEventListener('pointerdown', function() {
+                document.getElementById('canvasEmptyHint').hidden = true;
+            });
         });
     </script>
 
