@@ -8,7 +8,7 @@
 
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenDisplay BLE Tester</title>
+<title>Send an image – OpenDisplay</title>
     <style>
 /* Page-specific styles */
 label{font-weight:600;font-size:1.1rem;color:var(--foreground);margin-bottom:16px;display:block}
@@ -125,14 +125,108 @@ input[type=file]::file-selector-button:active{
 .partial-demo-actions > button{flex:1 1 50%;min-width:0;margin:0!important}
 .partial-demo-actions > .partial-demo-stop-btn{background:var(--card-background)!important;color:var(--foreground)!important;border:1.5px solid var(--border-color)!important;box-shadow:none!important}
 .partial-demo-actions > .partial-demo-stop-btn:hover{background:var(--od-paper-3,#e8e4dc)!important;color:var(--foreground)!important;transform:translateY(-1px)}
-.connection-actions{display:flex;justify-content:center;flex-wrap:nowrap;gap:10px;margin-top:0;width:100%}
-.display-container{display:none}
-.display-container.visible{display:block}
-.connection-actions > button{min-width:120px}
+.connection-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:0;width:100%}
+.display-container{display:block}
+.connection-actions > button{min-width:120px;flex:1 1 auto}
 .connection-actions > #connectbutton{flex:1 1 100%}
-.connection-actions > button.connected-only{flex:1 1 50%;min-width:0}
 .connected-only{display:none}
 .connected-only.visible{display:block}
+.connected-only.visible.inline{display:inline-flex}
+
+/* Concept A guided layout */
+.dt{max-width:720px;margin:0 auto;padding:0 4px 8px;box-sizing:border-box}
+.page-inner.tool-ui .tool-page .dt h1{
+  font-size:1.35rem;line-height:1.2;letter-spacing:-0.02em;margin:0 0 4px;font-family:var(--font-sans)
+}
+.dt__lead{margin:0 0 14px;color:var(--fg2);font-size:0.95rem;line-height:1.35;max-width:40ch}
+.dt-card{
+  border:1px solid var(--od-ink-line);border-radius:14px;background:var(--od-paper-2);
+  padding:14px 16px;margin-bottom:16px
+}
+.dt-section{margin-bottom:20px}
+.prep-group{margin-top:16px}
+.prep-group:first-of-type{margin-top:10px}
+/* Extra air after draw swatches before Image — reads as a new block */
+#canvasOptions.prep-group{margin-top:28px;padding-top:4px;border-top:1px solid var(--od-paper-line)}
+.prep-group__label{
+  margin:0 0 8px;font-size:.8rem;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--fg3);font-family:var(--font-sans)
+}
+.preview-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0;justify-content:flex-start}
+.tool-ui .preview-action{
+  margin:0;min-height:44px;padding:0 14px;border-radius:10px;
+  background:transparent;border:1.5px solid var(--od-ink-line);color:var(--fg1);font-weight:600
+}
+.tool-ui .preview-action:hover{border-color:var(--fg1);background:transparent;transform:none;box-shadow:none}
+.tool-ui .preview-action.active{border-color:var(--od-blue);background:var(--od-blue-wash);color:var(--fg1)}
+.tool-ui .preview-action--primary{
+  background:var(--od-blue);border-color:var(--od-blue);color:var(--od-bezel)
+}
+.tool-ui .preview-action--primary:hover{background:#33CCFF;border-color:#33CCFF;transform:none;box-shadow:none}
+.tool-ui .preview-action--primary.active{background:var(--od-blue-deep);border-color:var(--od-blue-deep);color:#fff}
+.draw-tools{margin-top:0}
+.draw-mode-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-start}
+.draw-mode-bar__tools{
+  display:inline-flex;border:1.5px solid var(--od-ink-line);border-radius:10px;overflow:hidden;gap:0
+}
+.draw-mode-bar__edit{display:flex;gap:8px;align-items:center;margin-left:auto}
+.tool-ui .draw-mode-bar__edit button{
+  margin:0!important;min-height:40px!important;height:auto!important;
+  padding:0 12px!important;border-radius:10px!important;box-sizing:border-box;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent!important;border:1.5px solid var(--od-ink-line)!important;
+  color:var(--fg1)!important;box-shadow:none!important;font-weight:600
+}
+.tool-ui .draw-mode-bar__edit button:hover{
+  border-color:var(--fg1)!important;background:transparent!important;transform:none!important
+}
+.tool-ui .draw-mode-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:40px;padding:0 12px;margin:0;border:none;border-radius:0;
+  background:transparent;color:var(--fg1);cursor:pointer;font-weight:600;font-size:.9rem;
+  font-family:var(--font-sans);box-shadow:none
+}
+.tool-ui .draw-mode-btn + .draw-mode-btn{border-left:1px solid var(--od-ink-line)}
+.tool-ui .draw-mode-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tool-ui .draw-mode-btn:hover{background:var(--od-paper-2);color:var(--fg1);border-color:transparent;transform:none;box-shadow:none}
+.tool-ui .draw-mode-btn.active{
+  background:var(--od-blue-wash);color:var(--od-blue-ink);box-shadow:none;border-color:transparent
+}
+.draw-tools .color-row{display:flex;justify-content:flex-start;align-items:center;flex-wrap:wrap;gap:8px;width:100%;margin-bottom:0}
+.color-swatches{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-start}
+#canvasOptions{margin-top:0}
+#canvasOptions .field-row{margin-bottom:10px}
+#canvasOptions .field-row:last-child{margin-bottom:0}
+.dt-folds{margin-top:8px;border-top:1px solid var(--od-paper-line)}
+.dt-fold{border-bottom:1px solid var(--od-paper-line)}
+.dt-fold > summary{
+  min-height:56px;display:flex;align-items:center;gap:12px;font-weight:600;cursor:pointer;
+  list-style:none;font-family:var(--font-sans);color:var(--fg1)
+}
+.dt-fold > summary::-webkit-details-marker{display:none}
+.dt-fold > summary::after{
+  content:'';margin-left:auto;width:9px;height:9px;
+  border-right:2px solid var(--fg3);border-bottom:2px solid var(--fg3);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform 150ms ease
+}
+.dt-fold[open] > summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.dt-fold > summary .draw-hint{margin-left:8px;font-weight:500}
+.dt-fold__body{padding:0 0 20px;color:var(--fg2)}
+.dt-fold__body > .panel-inner{padding:0}
+.dt-toolbox{
+  display:block;padding:14px 16px;margin-bottom:14px;border-radius:14px;
+  border:1px solid var(--od-ink-line);color:var(--fg1);text-decoration:none
+}
+.dt-toolbox:hover{border-color:var(--fg1)}
+.dt-toolbox__title{display:block;font-weight:600;color:var(--fg1);margin-bottom:4px}
+.dt-toolbox__desc{display:block;font-size:0.92rem;line-height:1.35;color:var(--fg3)}
+.page-inner.tool-ui .tool-page .dt h2{
+  font-size:1.05rem;margin:0 0 10px;font-family:var(--font-sans)
+}
+.dt-send{margin-bottom:8px}
+.tool-ui .dt-send-btn{width:100%;margin:0;min-height:48px;font-size:1.05rem;font-weight:600}
+.stage-tools{display:none!important}
+#lightsFold[hidden],#nfcFold[hidden]{display:none!important}
 .log-display{
   font-family:var(--font-mono);
   font-size:12px;color:#8b949e;max-height:200px;overflow-y:auto;white-space:pre-wrap
@@ -153,10 +247,8 @@ input[type=file]::file-selector-button:active{
   width: min(800px, 100%, calc(44dvh * var(--canvas-ar-w, 800) / var(--canvas-ar-h, 480)));
   height: auto;
 }
-.draw-tools{margin-top:4px}
 .draw-tools .field-row{align-items:center}
 .draw-label{font-size:.9rem;margin:0 8px 0 0;font-weight:500}
-.color-swatches{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center}
 .color-swatch{width:36px;height:36px;border:2px solid var(--border-color);border-radius:8px;padding:0;cursor:pointer;flex-shrink:0;box-sizing:border-box}
 button.color-swatch{
   width:36px!important;height:36px!important;min-height:36px!important;
@@ -170,25 +262,15 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .tool-ui button.color-swatch:hover,.tool-ui button.color-swatch:active{transform:scale(1.05)}
 .draw-hint{font-size:.8rem;color:var(--muted-foreground);margin-left:8px}
 .selected-text-wrap{flex-wrap:wrap;align-items:center;gap:8px}
-.draw-tools .color-row{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:8px;width:100%;margin-bottom:4px}
-.draw-mode-bar{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap}
-.draw-mode-bar__tools{display:flex;gap:8px;align-items:center}
-.draw-mode-bar__edit{display:flex;gap:8px;align-items:center}
-.draw-mode-bar__edit button{
-  margin:0!important;height:48px!important;min-height:48px!important;
-  padding:0 14px!important;border-radius:10px!important;box-sizing:border-box;
-  display:inline-flex;align-items:center;justify-content:center
-}
-.draw-mode-btn{
-  display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;
-  padding:0;margin:0;border:2px solid var(--border-color);border-radius:10px;
-  background:var(--card-background);color:var(--foreground);cursor:pointer;transition:.15s
-}
-.draw-mode-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.draw-mode-btn:hover{border-color:var(--accent);color:var(--accent)}
-.draw-mode-btn.active{border-color:var(--accent);background:rgba(0,191,255,.08);color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .draw-mode-panel{display:none}
 .draw-mode-panel.active{display:block}
+.tool-ui .draw-tools .field-row > button{
+  background:transparent;border:1.5px solid var(--od-ink-line);color:var(--fg1);
+  box-shadow:none;font-weight:600
+}
+.tool-ui .draw-tools .field-row > button:hover{
+  border-color:var(--fg1);background:transparent;transform:none;box-shadow:none
+}
 .preview-header{text-align:center;margin:0;line-height:1.25}
 .preview-header label{display:inline;margin-bottom:0}
 .preview-meta{display:inline;font-size:0.875rem;color:var(--muted-foreground);font-weight:normal;margin-left:0.25em}
@@ -280,18 +362,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .field-row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 /* Compact page layout — beat inner.css / tool-ui.css on this page */
 .page-inner.tool-ui .tool-page{padding-top:24px;padding-bottom:48px}
-.page-inner.tool-ui .tool-page > .container > .col{margin-bottom:8px}
 .page-inner.tool-ui .tool-page .panel{padding:14px 16px}
-.page-inner.tool-ui .tool-page .panel > label{margin-bottom:6px;font-size:1rem}
 .page-inner.tool-ui .tool-page .field-row{margin-bottom:6px;gap:10px}
 .page-inner.tool-ui .tool-page .ble-controls{gap:8px}
 .page-inner.tool-ui .tool-page .ble-controls[style*="margin-top"]{margin-top:4px!important}
-#displayPanel{padding:6px 14px 10px}
-#displayPanel .field-row{margin-bottom:6px}
-#displayPanel #canvasOptions{margin-top:2px}
-#displayPanel #canvasOptions .field-row{margin-top:0!important;margin-bottom:6px}
-#displayPanel #canvasOptions .field-row + .field-row{margin-top:0!important}
-#connectionPanel .status-text{margin:0 0 6px}
+#displayPanel #canvasOptions .field-row{margin-top:0!important;margin-bottom:10px}
+#displayPanel #canvasOptions .field-row:last-of-type{margin-bottom:0}
+#connectionPanel .status-text{margin:0 0 6px;text-align:left}
 #connectionPanel .upload-progress-wrap{margin:0 0 8px}
 .page-inner.tool-ui .tool-page .status-display{margin-top:6px!important}
 .advertising-read-btn,.nfc-write-btn{margin-top:0!important}
@@ -336,417 +413,449 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 
   <main id="main-content" class="tool-page">
     <div class="container">
-<div class="col panel">
-        <div id="connectionPanel" class="connection-panel">
-            <div id="statusText" class="status-text">Not connected</div>
-            <div id="uploadProgressWrap" class="upload-progress-wrap"><div id="uploadProgressBar" class="upload-progress-fill"></div></div>
-            <div class="connection-actions">
-                <button id="connectbutton" type="button" onclick="preConnect();">Connect</button>
-                <button id="uploadButton" type="button" onclick="sendDirectWriteAuto();" class="connected-only">Upload image</button>
-                <button id="disconnectbutton" type="button" onclick="preConnect();" class="connected-only">Disconnect</button>
-            </div>
-        </div>
-    </div>
-    <div id="displayPanel" class="col panel display-container connected-only">
-        <div class="preview-header">
+      <div class="dt">
+        <h1>Send an image</h1>
+        <p class="dt__lead">Over Bluetooth to your OpenDisplay.</p>
+
+        <section class="dt-card" id="connectionPanel" aria-label="Connection">
+          <div id="statusText" class="status-text">Not connected</div>
+          <div id="uploadProgressWrap" class="upload-progress-wrap"><div id="uploadProgressBar" class="upload-progress-fill"></div></div>
+          <div class="connection-actions">
+            <button id="connectbutton" type="button" onclick="preConnect();">Connect to device</button>
+            <button id="disconnectbutton" type="button" onclick="preConnect();" class="connected-only">Disconnect</button>
+          </div>
+        </section>
+
+        <section id="displayPanel" class="dt-section display-container" aria-labelledby="prepare-heading">
+          <h2 id="prepare-heading">1. Prepare your picture</h2>
+          <div class="preview-header">
             <span id="previewBatterySoc" class="preview-meta preview-battery" hidden>
-                <svg class="preview-battery-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M20 10v4"/><path d="M6 11v2" opacity=".45"/></svg>
-                <span id="previewBatterySocText"></span>
+              <svg class="preview-battery-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M20 10v4"/><path d="M6 11v2" opacity=".45"/></svg>
+              <span id="previewBatterySocText"></span>
             </span>
             <span id="previewMeta" class="preview-meta"></span>
             <span id="previewLockIcon" class="preview-meta" style="display:none;"></span>
-        </div>
-        <div class="canvas-container">
+          </div>
+          <div class="canvas-container">
             <div id="canvasStage" class="canvas-stage">
-                <canvas id="myCanvas" width="800" height="480"></canvas>
-                <canvas id="originalOverlay" width="800" height="480"></canvas>
-                <div id="splitHandle" class="split-handle" role="separator" aria-label="Compare original and dithered"></div>
-                <div class="stage-tools">
-                    <button type="button" id="splitToggle" class="stage-btn" onclick="toggleSplit()" title="Compare original / dithered" aria-label="Compare original and dithered">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
-                    </button>
-                    <button type="button" id="rotateCanvasBtn" class="stage-btn" onclick="rotateCanvas()" title="Rotate canvas 90° (currently 0°)" aria-label="Rotate canvas 90 degrees">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                    </button>
-                    <button type="button" id="zoomToggle" class="stage-btn" onclick="toggleZoom()" title="Pixel zoom (2x)" aria-label="Pixel zoom">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
-                    </button>
-                </div>
+              <canvas id="myCanvas" width="800" height="480"></canvas>
+              <canvas id="originalOverlay" width="800" height="480"></canvas>
+              <div id="splitHandle" class="split-handle" role="separator" aria-label="Compare original and dithered"></div>
+              <div class="stage-tools" aria-hidden="true">
+                <button type="button" class="stage-btn" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></button>
+              </div>
             </div>
-        </div>
-        <div id="drawTools" class="draw-tools">
-            <!-- New tool: add <button class="draw-mode-btn" data-draw-mode="id">…</button> and <div class="draw-mode-panel" data-draw-mode-panel="id">…</div>; setDrawMode only toggles panels that exist. -->
-            <div class="draw-mode-bar" role="tablist" aria-label="Canvas tools">
+          </div>
+
+          <div class="prep-group">
+            <p class="prep-group__label">Canvas</p>
+            <div class="preview-actions">
+              <button type="button" id="rotateCanvasBtn" class="preview-action preview-action--primary" onclick="rotateCanvas()" title="Currently 0°">Rotate 90°</button>
+              <button type="button" id="splitToggle" class="preview-action" onclick="toggleSplit()" title="Compare original / dithered">Compare original</button>
+              <button type="button" id="zoomToggle" class="preview-action" onclick="toggleZoom()" title="Pixel zoom (2x)">Pixel zoom</button>
+            </div>
+          </div>
+
+          <div class="prep-group" id="drawTools">
+            <p class="prep-group__label">Draw</p>
+            <div class="draw-tools">
+              <div class="draw-mode-bar" role="tablist" aria-label="Canvas tools">
                 <div class="draw-mode-bar__tools">
-                    <button type="button" class="draw-mode-btn active" data-draw-mode="draw" role="tab" aria-selected="true" title="Draw" aria-label="Draw">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                    </button>
-                    <button type="button" class="draw-mode-btn" data-draw-mode="text" role="tab" aria-selected="false" title="Text" aria-label="Text">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-                    </button>
-                    <button type="button" class="draw-mode-btn" data-draw-mode="qr" role="tab" aria-selected="false" title="QR code" aria-label="QR code">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2h4v4H5zm9-2h8v8h-8zm2 2h4v4h-4zM3 14h8v8H3zm2 2h4v4H5zm9-2h2v2h-2v2h2v2h-2m2-6h2v2h2v2h-2v2h2m-6 2h2v2m4 0h2v2h2v2h-2v2"/></svg>
-                    </button>
+                  <button type="button" class="draw-mode-btn active" data-draw-mode="draw" role="tab" aria-selected="true" title="Draw" aria-label="Draw">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                    <span class="draw-mode-btn__label">Draw</span>
+                  </button>
+                  <button type="button" class="draw-mode-btn" data-draw-mode="text" role="tab" aria-selected="false" title="Text" aria-label="Text">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+                    <span class="draw-mode-btn__label">Text</span>
+                  </button>
+                  <button type="button" class="draw-mode-btn" data-draw-mode="qr" role="tab" aria-selected="false" title="QR code" aria-label="QR code">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2h4v4H5zm9-2h8v8h-8zm2 2h4v4h-4zM3 14h8v8H3zm2 2h4v4H5zm9-2h2v2h-2v2h2v2h-2m2-6h2v2h2v2h-2v2h2m-6 2h2v2m4 0h2v2h2v2h-2v2"/></svg>
+                    <span class="draw-mode-btn__label">QR</span>
+                  </button>
                 </div>
                 <div class="draw-mode-bar__edit">
-                    <button type="button" id="clearCanvasBtn" onclick="clearDrawingCanvas()">Clear</button>
-                    <button type="button" id="undoBtn" onclick="undoLast()">Undo</button>
+                  <button type="button" id="undoBtn" onclick="undoLast()">Undo</button>
+                  <button type="button" id="clearCanvasBtn" onclick="clearDrawingCanvas()">Clear</button>
                 </div>
-            </div>
-            <div id="drawModePanelDraw" class="draw-mode-panel active" data-draw-mode-panel="draw">
+              </div>
+              <div id="drawModePanelDraw" class="draw-mode-panel active" data-draw-mode-panel="draw">
                 <div class="color-row">
-                    <div id="drawColorSwatches" class="color-swatches"></div>
+                  <div id="drawColorSwatches" class="color-swatches"></div>
                 </div>
-            </div>
-            <div id="drawModePanelText" class="draw-mode-panel" data-draw-mode-panel="text">
+              </div>
+              <div id="drawModePanelText" class="draw-mode-panel" data-draw-mode-panel="text">
                 <div class="color-row">
-                    <div id="textColorSwatches" class="color-swatches"></div>
+                  <div id="textColorSwatches" class="color-swatches"></div>
                 </div>
                 <div class="field-row">
-                    <label for="drawTextInput" style="margin: 0; min-width: 80px;">Text:</label>
-                    <input type="text" id="drawTextInput" placeholder="Type then Add" style="flex: 1;" />
-                    <button type="button" id="addTextBtn" onclick="addUserText()">Add text</button>
-                    <span class="draw-hint">Tap canvas to set position</span>
+                  <label for="drawTextInput" style="margin: 0; min-width: 80px;">Text</label>
+                  <input type="text" id="drawTextInput" placeholder="Type then Add" style="flex: 1;" />
+                  <button type="button" id="addTextBtn" onclick="addUserText()">Add text</button>
                 </div>
                 <div id="selectedTextWrap" class="field-row selected-text-wrap" style="display: none;">
-                    <span class="draw-label">Selected:</span>
-                    <span class="draw-label" style="margin-left:8px">Color</span>
-                    <div id="selectedTextColorSwatches" class="color-swatches"></div>
-                    <label for="selectedTextSize" style="margin: 0;">Size</label>
-                    <input type="number" id="selectedTextSize" min="8" max="200" value="24" style="width: 60px;" />
-                    <button type="button" onclick="deselectText();">Deselect</button>
-                    <span class="draw-hint">Drag to move</span>
+                  <span class="draw-label">Selected</span>
+                  <span class="draw-label" style="margin-left:8px">Color</span>
+                  <div id="selectedTextColorSwatches" class="color-swatches"></div>
+                  <label for="selectedTextSize" style="margin: 0;">Size</label>
+                  <input type="number" id="selectedTextSize" min="8" max="200" value="24" style="width: 60px;" />
+                  <button type="button" onclick="deselectText();">Deselect</button>
                 </div>
-            </div>
-            <div id="drawModePanelQr" class="draw-mode-panel" data-draw-mode-panel="qr">
+              </div>
+              <div id="drawModePanelQr" class="draw-mode-panel" data-draw-mode-panel="qr">
                 <div class="color-row">
-                    <div id="qrColorSwatches" class="color-swatches"></div>
+                  <div id="qrColorSwatches" class="color-swatches"></div>
                 </div>
                 <div class="field-row">
-                    <label for="qrDataInput" style="margin: 0; min-width: 80px;">QR code:</label>
-                    <input type="text" id="qrDataInput" placeholder="URL or text" style="flex: 1;" />
-                    <button type="button" id="addQRBtn" onclick="addUserQR()">Add QR</button>
-                    <span class="draw-hint">Tap canvas to set position</span>
+                  <label for="qrDataInput" style="margin: 0; min-width: 80px;">QR code</label>
+                  <input type="text" id="qrDataInput" placeholder="URL or text" style="flex: 1;" />
+                  <button type="button" id="addQRBtn" onclick="addUserQR()">Add QR</button>
                 </div>
                 <div id="selectedQRWrap" class="field-row selected-text-wrap" style="display: none;">
-                    <span class="draw-label">Selected QR:</span>
-                    <span class="draw-label" style="margin-left:8px">Color</span>
-                    <div id="selectedQRColorSwatches" class="color-swatches"></div>
-                    <label for="selectedQRSize" style="margin: 0;">Size</label>
-                    <input type="number" id="selectedQRSize" min="32" max="400" value="80" style="width: 60px;" />
-                    <button type="button" onclick="deselectQR();">Deselect</button>
-                    <span class="draw-hint">Drag to move</span>
+                  <span class="draw-label">Selected QR</span>
+                  <span class="draw-label" style="margin-left:8px">Color</span>
+                  <div id="selectedQRColorSwatches" class="color-swatches"></div>
+                  <label for="selectedQRSize" style="margin: 0;">Size</label>
+                  <input type="number" id="selectedQRSize" min="32" max="400" value="80" style="width: 60px;" />
+                  <button type="button" onclick="deselectQR();">Deselect</button>
                 </div>
+              </div>
             </div>
-        </div>
-        <div id="canvasOptions">
+          </div>
+
+          <div class="prep-group" id="canvasOptions">
+            <p class="prep-group__label">Image</p>
             <div class="field-row">
-                <label for="ditheringSelect" style="margin: 0; min-width: 120px;">Dithering:</label>
-                <select id="ditheringSelect" onchange="onDitherModeChange()" style="flex: 1;">
-                    <option value="auto" selected>Auto</option>
-                </select>
+              <label for="imageUpload" style="margin: 0; min-width: 120px;">Image</label>
+              <input type="file" id="imageUpload" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" style="flex: 1;" />
             </div>
             <div class="field-row">
-                <label for="imageUpload" style="margin: 0; min-width: 120px;">Select image:</label>
-                <input type="file" id="imageUpload" accept="image/*" onclick="resetImageSelector()" onchange="uploadImage()" style="flex: 1;" />
-                <span class="draw-hint">or drop / paste an image</span>
+              <label for="fitMode" style="margin: 0; min-width: 120px;">Fit</label>
+              <select id="fitMode" style="flex: 1;">
+                <option value="cover" selected>Cover — fill, crop overflow</option>
+                <option value="contain">Contain — fit whole image</option>
+                <option value="fill">Fill — stretch to panel</option>
+              </select>
             </div>
-            <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 4px;">
-                <label for="usePartialUpload">
-                    <input type="checkbox" id="usePartialUpload" checked onchange="onUsePartialUploadChange();" />
-                    Use partial refresh when possible
-                </label>
+            <div class="field-row">
+              <label for="ditheringSelect" style="margin: 0; min-width: 120px;">Dithering</label>
+              <select id="ditheringSelect" onchange="onDitherModeChange()" style="flex: 1;">
+                <option value="auto" selected>Auto</option>
+              </select>
             </div>
             <div class="field-row" style="margin-top: 12px;display:none">
-                <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
-                <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
-                    <option value="0">Monochrome (B/W)</option>
-                    <option value="1">B/W + Red</option>
-                    <option value="2">B/W + Yellow</option>
-                    <option value="3">B/W + Red + Yellow</option>
-                    <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
-                    <option value="5">4 Grayscale</option>
-                    <option value="6">16 Grayscale (4bpp)</option>
-                    <option value="7">B/W + Green + Blue + Red + Yellow + Orange (7-color)</option>
-                    <option value="8">6-color split (left half-plane then right; dual-CS)</option>
-                </select>
+              <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
+              <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
+                <option value="0">Monochrome (B/W)</option>
+                <option value="1">B/W + Red</option>
+                <option value="2">B/W + Yellow</option>
+                <option value="3">B/W + Red + Yellow</option>
+                <option value="4" selected>B/W + Green + Blue + Red + Yellow (6-color)</option>
+                <option value="5">4 Grayscale</option>
+                <option value="6">16 Grayscale (4bpp)</option>
+                <option value="7">B/W + Green + Blue + Red + Yellow + Orange (7-color)</option>
+                <option value="8">6-color split (left half-plane then right; dual-CS)</option>
+              </select>
             </div>
-            <details class="tuning" id="tuningPanel">
-                <summary>Image tuning<span class="draw-hint" id="tuningSummary">Auto</span></summary>
-                <div class="tuning-body">
-                    <div class="preset-row" id="presetRow">
-                        <span class="draw-label">Preset:</span>
-                        <button type="button" class="preset-btn active" data-preset="auto" onclick="applyPreset('auto')">Auto</button>
-                        <button type="button" class="preset-btn" data-preset="photo" onclick="applyPreset('photo')">Photo</button>
-                        <button type="button" class="preset-btn" data-preset="graphics" onclick="applyPreset('graphics')">Graphics</button>
-                        <button type="button" class="preset-btn" data-preset="logo" onclick="applyPreset('logo')">Logo</button>
-                        <button type="button" class="preset-btn" data-preset="poster" onclick="applyPreset('poster')">Poster</button>
-                    </div>
-                    <div class="tuning-sep"></div>
-                    <div class="slider-row">
-                        <label for="tuneExposure">Exposure</label>
-                        <input type="range" id="tuneExposure" min="0.25" max="4" step="0.05" value="1" data-default="1" />
-                        <output for="tuneExposure" id="tuneExposureOut">1.00x</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneSaturation">Saturation</label>
-                        <input type="range" id="tuneSaturation" min="0" max="2.5" step="0.05" value="1" data-default="1" />
-                        <output for="tuneSaturation" id="tuneSaturationOut">1.00x</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneShadows">Shadows</label>
-                        <input type="range" id="tuneShadows" min="0" max="1" step="0.02" value="0" data-default="0" />
-                        <output for="tuneShadows" id="tuneShadowsOut">off</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneHighlights">Highlights</label>
-                        <input type="range" id="tuneHighlights" min="0" max="1" step="0.02" value="0" data-default="0" />
-                        <output for="tuneHighlights" id="tuneHighlightsOut">off</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneTone">Tone</label>
-                        <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                        <output for="tuneTone" id="tuneToneOut">auto</output>
-                    </div>
-                    <div class="slider-row">
-                        <label for="tuneGamut">Gamut</label>
-                        <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                        <output for="tuneGamut" id="tuneGamutOut">auto</output>
-                    </div>
-                    <span class="draw-hint">Tone and gamut need a measured palette. Double-click a slider to reset it.</span>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <label for="paletteSelect" style="margin:0;min-width:120px;">Palette:</label>
-                        <select id="paletteSelect" style="flex:1;"></select>
-                    </div>
-                    <div class="checkbox-group">
-                        <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <label for="tuneRealistic"><input type="checkbox" id="tuneRealistic" /> Preview real panel colors</label>
-                    </div>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <label for="fitMode" style="margin:0;min-width:120px;">Image fit:</label>
-                        <select id="fitMode" style="flex:1;">
-                            <option value="cover" selected>Cover — fill, crop overflow</option>
-                            <option value="contain">Contain — fit whole image</option>
-                            <option value="fill">Fill — stretch to panel</option>
-                        </select>
-                        <button type="button" onclick="rotateSourceImage()" title="Rotate image 90°">Rotate</button>
-                    </div>
-                    <div class="field-row">
-                        <label for="imageUrl" style="margin:0;min-width:120px;">Image URL:</label>
-                        <input type="text" id="imageUrl" placeholder="https://…" style="flex:1;" />
-                        <button type="button" onclick="loadImageFromUrl()">Load</button>
-                    </div>
-                    <div class="tuning-sep"></div>
-                    <div class="field-row">
-                        <button type="button" onclick="toggleCompareGrid()" id="compareBtn">Compare algorithms</button>
-                        <button type="button" onclick="downloadDitheredPng()">Download PNG</button>
-                        <button type="button" onclick="downloadWireBytes()">Export wire bytes</button>
-                        <button type="button" onclick="resetTuning()">Reset</button>
-                    </div>
-                    <div id="compareGrid" class="dither-grid" style="display:none;"></div>
-                    <div class="tuning-sep"></div>
-                    <div class="ink-bar" id="inkBar"></div>
-                    <div class="ink-legend" id="inkLegend"></div>
-                </div>
-            </details>
-        </div>
-    </div>
-    <div id="ledControlPanel" class="col panel" style="display: none;">
-        <label>LED</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div id="ledInstanceRow" class="field-row led-instance-row" style="display: none; align-items: center;">
-                <span id="ledInstanceLabel" class="draw-label" style="min-width: 88px;">Instance</span>
-                <select id="ledInstanceSelect" style="flex: 1; min-width: 0;"></select>
+          </div>
+        </section>
+
+        <section class="dt-section dt-send" aria-labelledby="send-heading" hidden>
+          <h2 id="send-heading">2. Send it</h2>
+          <button id="sendDisplayBtn" type="button" class="dt-send-btn connected-only" onclick="sendDirectWriteAuto();">Send to display</button>
+        </section>
+
+        <div class="dt-folds">
+          <details class="dt-fold tuning" id="tuningPanel">
+            <summary>Image tuning<span class="draw-hint" id="tuningSummary">Auto</span></summary>
+            <div class="dt-fold__body tuning-body">
+              <div class="preset-row" id="presetRow">
+                <button type="button" class="preset-btn active" data-preset="auto" onclick="applyPreset('auto')">Auto</button>
+                <button type="button" class="preset-btn" data-preset="photo" onclick="applyPreset('photo')">Photo</button>
+                <button type="button" class="preset-btn" data-preset="graphics" onclick="applyPreset('graphics')">Graphics</button>
+                <button type="button" class="preset-btn" data-preset="logo" onclick="applyPreset('logo')">Logo</button>
+                <button type="button" class="preset-btn" data-preset="poster" onclick="applyPreset('poster')">Poster</button>
+              </div>
+              <div class="tuning-sep"></div>
+              <div class="slider-row">
+                <label for="tuneExposure">Exposure</label>
+                <input type="range" id="tuneExposure" min="0.25" max="4" step="0.05" value="1" data-default="1" />
+                <output for="tuneExposure" id="tuneExposureOut">1.00x</output>
+              </div>
+              <div class="slider-row">
+                <label for="tuneSaturation">Saturation</label>
+                <input type="range" id="tuneSaturation" min="0" max="2.5" step="0.05" value="1" data-default="1" />
+                <output for="tuneSaturation" id="tuneSaturationOut">1.00x</output>
+              </div>
+              <div class="slider-row">
+                <label for="tuneShadows">Shadows</label>
+                <input type="range" id="tuneShadows" min="0" max="1" step="0.02" value="0" data-default="0" />
+                <output for="tuneShadows" id="tuneShadowsOut">off</output>
+              </div>
+              <div class="slider-row">
+                <label for="tuneHighlights">Highlights</label>
+                <input type="range" id="tuneHighlights" min="0" max="1" step="0.02" value="0" data-default="0" />
+                <output for="tuneHighlights" id="tuneHighlightsOut">off</output>
+              </div>
+              <div class="slider-row">
+                <label for="tuneTone">Tone</label>
+                <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                <output for="tuneTone" id="tuneToneOut">auto</output>
+              </div>
+              <div class="slider-row">
+                <label for="tuneGamut">Gamut</label>
+                <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
+                <output for="tuneGamut" id="tuneGamutOut">auto</output>
+              </div>
+              <div class="tuning-sep"></div>
+              <div class="field-row">
+                <label for="paletteSelect" style="margin:0;min-width:120px;">Palette</label>
+                <select id="paletteSelect" style="flex:1;"></select>
+              </div>
+              <div class="checkbox-group">
+                <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
+              </div>
+              <div class="checkbox-group">
+                <label for="tuneRealistic"><input type="checkbox" id="tuneRealistic" /> Preview real panel colors</label>
+              </div>
+              <div class="tuning-sep"></div>
+              <div class="field-row">
+                <button type="button" onclick="rotateSourceImage()" title="Rotate source image 90°">Rotate photo 90°</button>
+              </div>
+              <div class="field-row">
+                <label for="imageUrl" style="margin:0;min-width:120px;">Image URL</label>
+                <input type="text" id="imageUrl" placeholder="https://…" style="flex:1;" />
+                <button type="button" onclick="loadImageFromUrl()">Load</button>
+              </div>
+              <div class="tuning-sep"></div>
+              <div class="field-row">
+                <button type="button" onclick="toggleCompareGrid()" id="compareBtn">Compare algorithms</button>
+                <button type="button" onclick="downloadDitheredPng()">Download PNG</button>
+                <button type="button" onclick="downloadWireBytes()">Export wire bytes</button>
+                <button type="button" onclick="resetTuning()">Reset</button>
+              </div>
+              <div id="compareGrid" class="dither-grid" style="display:none;"></div>
+              <div class="tuning-sep"></div>
+              <div class="ink-bar" id="inkBar"></div>
+              <div class="ink-legend" id="inkLegend"></div>
             </div>
-            <div class="led-viz">
-                <div class="led-viz-lamp-wrap">
-                    <div id="ledVizLamp" class="led-viz-lamp" aria-hidden="true"></div>
-                    <span id="ledVizPhase" class="draw-hint">Pattern preview</span>
-                </div>
-                <div id="ledVizTimeline" class="led-viz-timeline" role="img" aria-label="LED pattern timeline"></div>
-                <div class="led-viz-meta">
-                    <span><span class="led-viz-key">■</span> flash</span>
-                    <span><span class="led-viz-key led-viz-key--pause">▨</span> pause (on)</span>
-                    <span><span class="led-viz-key led-viz-key--gap">▥</span> gap</span>
-                    <span id="ledVizRepeatLabel">Repeats: 1×</span>
-                </div>
-                <p class="draw-hint led-viz-help">Each color blinks × count, waits <strong>on</strong> ms between blinks, then <strong>gap</strong> ms before the next color. The whole sequence repeats.</p>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Brightness</span>
-                <input id="ledBrightness" type="range" min="1" max="16" value="12" oninput="syncLedBrightnessLabel();" style="flex: 1; min-width: 0; accent-color: var(--accent);" />
-                <span id="ledBrightnessVal" class="draw-label" style="min-width: 24px;">12</span>
-                <span class="draw-label" style="min-width: 70px;">Repeats</span>
-                <input id="ledRepeats" type="number" min="1" max="254" value="1" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 1</span>
-                <input id="ledColor1" type="color" value="#ff0000" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount1" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn1" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap1" type="number" min="0" max="25500" value="80" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 2</span>
-                <input id="ledColor2" type="color" value="#00ff00" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount2" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn2" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap2" type="number" min="0" max="25500" value="80" style="width: 92px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Color 3</span>
-                <input id="ledColor3" type="color" value="#0000ff" style="width: 64px; padding: 0 6px!important;" />
-                <span class="draw-label">x</span>
-                <input id="ledCount3" type="number" min="0" max="15" value="1" style="width: 76px;" />
-                <span class="draw-label">on</span>
-                <input id="ledOn3" type="number" min="0" max="1500" value="150" style="width: 86px;" />
-                <span class="draw-label">gap</span>
-                <input id="ledGap3" type="number" min="0" max="25500" value="200" style="width: 92px;" />
-            </div>
-            <div class="led-actions">
-                <button type="button" id="ledStartBtn" onclick="sendLedPattern();">Start</button>
-                <button type="button" id="ledStopBtn" class="led-stop-btn" onclick="sendLedStop();">Stop</button>
-            </div>
-        </div>
-    </div>
-    <div id="buzzerControlPanel" class="col panel" style="display: none;">
-        <label>Buzzer</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div class="field-row" style="align-items: center;">
-                <span id="buzzerInstanceLabel" style="display: none; margin-right: 8px;">Instance:</span>
-                <select id="buzzerInstanceSelect" style="display: none; min-width: 80px;"></select>
-                <button type="button" onclick="applyBuzzerPreset('single');">Single</button>
-                <button type="button" onclick="applyBuzzerPreset('double');">Double</button>
-                <button type="button" onclick="applyBuzzerPreset('alarm');">Alarm</button>
-                <button type="button" id="buzzerSendBtn" onclick="sendBuzzerPattern();">Send</button>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Outer repeats</span>
-                <input id="buzzerOuterRepeats" type="number" min="1" max="255" value="1" style="width: 92px;" />
-                <span class="draw-hint">Frequency indices map linearly to the device min–max Hz from config</span>
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 1</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz1" type="number" min="0" max="20000" value="2000" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs1" type="number" min="0" max="65535" value="120" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 2</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz2" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs2" type="number" min="0" max="65535" value="80" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 3</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz3" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs3" type="number" min="0" max="65535" value="0" style="width: 88px;" />
-            </div>
-            <div class="field-row" style="margin-top: 8px; align-items: center;">
-                <span class="draw-label" style="min-width: 88px;">Step 4</span>
-                <span class="draw-label">Hz</span>
-                <input id="buzzerHz4" type="number" min="0" max="20000" value="0" style="width: 96px;" />
-                <span class="draw-label">ms</span>
-                <input id="buzzerMs4" type="number" min="0" max="65535" value="0" style="width: 88px;" />
-            </div>
-        </div>
-    </div>
-    <div id="nfcPanelWrap" class="col panel connected-only">
-        <label>NFC</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <div class="field-row">
-                <label for="nfcTypeSelect" style="margin: 0; min-width: 120px;">NFC type:</label>
-                <select id="nfcTypeSelect" style="flex: 1;" onchange="onNfcTypeChanged();">
+          </details>
+
+          <details class="dt-fold" id="nfcFold" hidden>
+            <summary>Write NFC tag</summary>
+            <div class="dt-fold__body" id="nfcPanelWrap">
+              <div class="ble-controls">
+                <div class="field-row">
+                  <label for="nfcTypeSelect" style="margin: 0; min-width: 120px;">Type</label>
+                  <select id="nfcTypeSelect" style="flex: 1;" onchange="onNfcTypeChanged();">
                     <option value="uri" selected>URI</option>
                     <option value="text">Text</option>
                     <option value="mime">MIME (e.g. vCard)</option>
                     <option value="rawndef">Raw NDEF (hex)</option>
                     <option value="wellknown">Well-known (raw)</option>
-                </select>
+                  </select>
+                </div>
+                <div class="field-row" id="nfcMimeTypeRow" style="display: none;">
+                  <label for="nfcMimeTypeInput" style="margin: 0; min-width: 120px;">MIME type</label>
+                  <input type="text" id="nfcMimeTypeInput" value="text/vcard" style="flex: 1;" />
+                </div>
+                <div class="field-row" id="nfcWellKnownTypeRow" style="display: none;">
+                  <label for="nfcWellKnownTypeInput" style="margin: 0; min-width: 120px;">Type (ASCII)</label>
+                  <input type="text" id="nfcWellKnownTypeInput" placeholder="Sp, ac, Hr, Hs, ..." style="flex: 1;" />
+                </div>
+                <div class="field-row">
+                  <label for="nfcContentInput" style="margin: 0; min-width: 120px;">Content</label>
+                  <textarea id="nfcContentInput" rows="1" placeholder="https://opendisplay.org" style="flex: 1; width: 100%; box-sizing: border-box;">https://opendisplay.org</textarea>
+                </div>
+                <div class="field-row nfc-actions">
+                  <button type="button" class="nfc-write-btn" onclick="writeNfcOverBle();">Write NFC</button>
+                </div>
+              </div>
             </div>
-            <div class="field-row" id="nfcMimeTypeRow" style="display: none;">
-                <label for="nfcMimeTypeInput" style="margin: 0; min-width: 120px;">MIME type:</label>
-                <input type="text" id="nfcMimeTypeInput" value="text/vcard" style="flex: 1;" />
+          </details>
+
+          <details class="dt-fold" id="lightsFold" hidden>
+            <summary>Lights &amp; sounds</summary>
+            <div class="dt-fold__body">
+              <div id="ledControlPanel" style="display: none;">
+                <label>LED</label>
+                <div class="ble-controls" style="margin-top: 8px;">
+                  <div id="ledInstanceRow" class="field-row led-instance-row" style="display: none; align-items: center;">
+                    <span id="ledInstanceLabel" class="draw-label" style="min-width: 88px;">Instance</span>
+                    <select id="ledInstanceSelect" style="flex: 1; min-width: 0;"></select>
+                  </div>
+                  <div class="led-viz">
+                    <div class="led-viz-lamp-wrap">
+                      <div id="ledVizLamp" class="led-viz-lamp" aria-hidden="true"></div>
+                      <span id="ledVizPhase" class="draw-hint">Pattern preview</span>
+                    </div>
+                    <div id="ledVizTimeline" class="led-viz-timeline" role="img" aria-label="LED pattern timeline"></div>
+                    <div class="led-viz-meta">
+                      <span><span class="led-viz-key">■</span> flash</span>
+                      <span><span class="led-viz-key led-viz-key--pause">▨</span> pause (on)</span>
+                      <span><span class="led-viz-key led-viz-key--gap">▥</span> gap</span>
+                      <span id="ledVizRepeatLabel">Repeats: 1×</span>
+                    </div>
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Brightness</span>
+                    <input id="ledBrightness" type="range" min="1" max="16" value="12" oninput="syncLedBrightnessLabel();" style="flex: 1; min-width: 0; accent-color: var(--accent);" />
+                    <span id="ledBrightnessVal" class="draw-label" style="min-width: 24px;">12</span>
+                    <span class="draw-label" style="min-width: 70px;">Repeats</span>
+                    <input id="ledRepeats" type="number" min="1" max="254" value="1" style="width: 92px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Color 1</span>
+                    <input id="ledColor1" type="color" value="#ff0000" style="width: 64px; padding: 0 6px!important;" />
+                    <span class="draw-label">x</span>
+                    <input id="ledCount1" type="number" min="0" max="15" value="1" style="width: 76px;" />
+                    <span class="draw-label">on</span>
+                    <input id="ledOn1" type="number" min="0" max="1500" value="150" style="width: 86px;" />
+                    <span class="draw-label">gap</span>
+                    <input id="ledGap1" type="number" min="0" max="25500" value="80" style="width: 92px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Color 2</span>
+                    <input id="ledColor2" type="color" value="#00ff00" style="width: 64px; padding: 0 6px!important;" />
+                    <span class="draw-label">x</span>
+                    <input id="ledCount2" type="number" min="0" max="15" value="1" style="width: 76px;" />
+                    <span class="draw-label">on</span>
+                    <input id="ledOn2" type="number" min="0" max="1500" value="150" style="width: 86px;" />
+                    <span class="draw-label">gap</span>
+                    <input id="ledGap2" type="number" min="0" max="25500" value="80" style="width: 92px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Color 3</span>
+                    <input id="ledColor3" type="color" value="#0000ff" style="width: 64px; padding: 0 6px!important;" />
+                    <span class="draw-label">x</span>
+                    <input id="ledCount3" type="number" min="0" max="15" value="1" style="width: 76px;" />
+                    <span class="draw-label">on</span>
+                    <input id="ledOn3" type="number" min="0" max="1500" value="150" style="width: 86px;" />
+                    <span class="draw-label">gap</span>
+                    <input id="ledGap3" type="number" min="0" max="25500" value="200" style="width: 92px;" />
+                  </div>
+                  <div class="led-actions">
+                    <button type="button" id="ledStartBtn" onclick="sendLedPattern();">Play LED</button>
+                    <button type="button" id="ledStopBtn" class="led-stop-btn" onclick="sendLedStop();">Stop</button>
+                  </div>
+                </div>
+              </div>
+              <div id="buzzerControlPanel" style="display: none; margin-top: 16px;">
+                <label>Buzzer</label>
+                <div class="ble-controls" style="margin-top: 8px;">
+                  <div class="field-row" style="align-items: center;">
+                    <span id="buzzerInstanceLabel" style="display: none; margin-right: 8px;">Instance:</span>
+                    <select id="buzzerInstanceSelect" style="display: none; min-width: 80px;"></select>
+                    <button type="button" onclick="applyBuzzerPreset('single');">Single</button>
+                    <button type="button" onclick="applyBuzzerPreset('double');">Double</button>
+                    <button type="button" onclick="applyBuzzerPreset('alarm');">Alarm</button>
+                    <button type="button" id="buzzerSendBtn" onclick="sendBuzzerPattern();">Play sound</button>
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Repeats</span>
+                    <input id="buzzerOuterRepeats" type="number" min="1" max="255" value="1" style="width: 92px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Step 1</span>
+                    <span class="draw-label">Hz</span>
+                    <input id="buzzerHz1" type="number" min="0" max="20000" value="2000" style="width: 96px;" />
+                    <span class="draw-label">ms</span>
+                    <input id="buzzerMs1" type="number" min="0" max="65535" value="120" style="width: 88px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Step 2</span>
+                    <span class="draw-label">Hz</span>
+                    <input id="buzzerHz2" type="number" min="0" max="20000" value="0" style="width: 96px;" />
+                    <span class="draw-label">ms</span>
+                    <input id="buzzerMs2" type="number" min="0" max="65535" value="80" style="width: 88px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Step 3</span>
+                    <span class="draw-label">Hz</span>
+                    <input id="buzzerHz3" type="number" min="0" max="20000" value="0" style="width: 96px;" />
+                    <span class="draw-label">ms</span>
+                    <input id="buzzerMs3" type="number" min="0" max="65535" value="0" style="width: 88px;" />
+                  </div>
+                  <div class="field-row" style="margin-top: 8px; align-items: center;">
+                    <span class="draw-label" style="min-width: 88px;">Step 4</span>
+                    <span class="draw-label">Hz</span>
+                    <input id="buzzerHz4" type="number" min="0" max="20000" value="0" style="width: 96px;" />
+                    <span class="draw-label">ms</span>
+                    <input id="buzzerMs4" type="number" min="0" max="65535" value="0" style="width: 88px;" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="field-row" id="nfcWellKnownTypeRow" style="display: none;">
-                <label for="nfcWellKnownTypeInput" style="margin: 0; min-width: 120px;">Type (ASCII):</label>
-                <input type="text" id="nfcWellKnownTypeInput" placeholder="Sp, ac, Hr, Hs, ..." style="flex: 1;" />
-            </div>
-            <div class="field-row">
-                <label for="nfcContentInput" style="margin: 0; min-width: 120px;">NFC content:</label>
-                <textarea id="nfcContentInput" rows="1" placeholder="https://opendisplay.org" style="flex: 1; width: 100%; box-sizing: border-box;">https://opendisplay.org</textarea>
-            </div>
-            <div class="field-row nfc-actions">
-                <button type="button" class="nfc-write-btn" onclick="writeNfcOverBle();">Write NFC</button>
-            </div>
-        </div>
-    </div>
-    <div id="advertisingPanelWrap" class="col panel connected-only">
-        <label>Advertising data</label>
-        <div class="ble-controls" style="margin-top: 8px;">
-            <pre id="advertisingDecodeOut" class="log-display" style="min-height: 72px; max-height: 260px; overflow: auto; white-space: pre-wrap; margin: 0 0 6px; width: 100%; box-sizing: border-box; font-size: 12px;"></pre>
-            <div class="field-row" style="margin-bottom: 0;">
-                <button type="button" id="advertisingReadBtn" class="advertising-read-btn" onclick="readAdvertisingData();">Read advertising data</button>
-            </div>
-        </div>
-    </div>
-    <div id="partialDemoPanel" class="col panel" style="display: none;">
-        <label>Partial refresh demo</label>
-        <p class="draw-hint" style="margin-top: 4px;">Stress-test partial updates on the panel. The first frame is a full refresh; later frames send only the changed region.</p>
-        <p id="partialDemoBwNote" class="draw-hint" style="display: none; color: #f85149;">Requires monochrome (B/W) color scheme.</p>
-        <div class="field-row" style="margin-top: 8px; align-items: center;">
-            <span class="draw-label" style="min-width: 88px;">Mode</span>
-            <select id="partialDemoMode" style="flex: 1; min-width: 0;">
-                <option value="counter" selected>Fast counter</option>
-                <option value="clock">Clock (1 s)</option>
-            </select>
-        </div>
-        <div id="partialDemoStats" class="partial-demo-stats">—</div>
-        <div class="partial-demo-actions">
-            <button type="button" id="partialDemoStartBtn" onclick="startPartialDemo();">Start</button>
-            <button type="button" id="partialDemoStopBtn" class="partial-demo-stop-btn" onclick="stopPartialDemo();">Stop</button>
-        </div>
-    </div>
-    <div class="col panel">
-        <label>Device filter &amp; log</label>
-        <div class="ble-controls">
-            <div class="ble-input-group">
-                <label for="namePrefix">OD Device filter:</label>
-                <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" />
-            </div>
-            <div class="field-row debug-cmd-row">
-                <label for="cmdTXT" style="margin: 0; min-width: 120px;">Debug CMD (Hex):</label>
+          </details>
+
+          <details class="dt-fold" id="developerFold">
+            <summary>Developer tools</summary>
+            <div class="dt-fold__body">
+              <a id="toolboxLink" class="dt-toolbox" href="../toolbox/index.html">
+                <span class="dt-toolbox__title">Open config Toolbox</span>
+                <span class="dt-toolbox__desc">For developers and custom builds. Wrong settings can stop the device from working.</span>
+              </a>
+
+              <div class="ble-input-group" style="margin-bottom:12px;">
+                <label for="namePrefix">Device filter</label>
+                <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" oninput="updateToolboxLink();" />
+              </div>
+
+              <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin: 0 0 12px;">
+                <label for="usePartialUpload">
+                  <input type="checkbox" id="usePartialUpload" checked onchange="onUsePartialUploadChange();" />
+                  Only update the changed area
+                </label>
+              </div>
+
+              <div id="advertisingPanelWrap">
+                <pre id="advertisingDecodeOut" class="log-display" style="min-height: 72px; max-height: 260px; overflow: auto; white-space: pre-wrap; margin: 0 0 6px; width: 100%; box-sizing: border-box; font-size: 12px;"></pre>
+                <div class="field-row" style="margin-bottom: 12px;">
+                  <button type="button" id="advertisingReadBtn" class="advertising-read-btn" onclick="readAdvertisingData();">Read advertising data</button>
+                </div>
+              </div>
+
+              <div id="partialDemoPanel" style="display: none; margin-bottom: 12px;">
+                <label>Partial refresh demo</label>
+                <p id="partialDemoBwNote" class="draw-hint" style="display: none; color: #f85149;">Requires monochrome (B/W) color scheme.</p>
+                <div class="field-row" style="margin-top: 8px; align-items: center;">
+                  <span class="draw-label" style="min-width: 88px;">Mode</span>
+                  <select id="partialDemoMode" style="flex: 1; min-width: 0;">
+                    <option value="counter" selected>Fast counter</option>
+                    <option value="clock">Clock (1 s)</option>
+                  </select>
+                </div>
+                <div id="partialDemoStats" class="partial-demo-stats">—</div>
+                <div class="partial-demo-actions">
+                  <button type="button" id="partialDemoStartBtn" onclick="startPartialDemo();">Start</button>
+                  <button type="button" id="partialDemoStopBtn" class="partial-demo-stop-btn" onclick="stopPartialDemo();">Stop</button>
+                </div>
+              </div>
+
+              <div class="field-row debug-cmd-row">
+                <label for="cmdTXT" style="margin: 0; min-width: 120px;">Debug command (hex)</label>
                 <input type="text" id="cmdTXT" value="0001" style="flex: 1;" />
                 <button type="button" onclick="if(bleLib)bleLib.sendHexCommand(document.getElementById('cmdTXT').value).catch(e=>addLog('Error: '+e.message,'error'));">Send</button>
-            </div>
-            <div class="status-display" style="margin-top: 12px;">
-                <div id="logDisplay" class="log-display"></div>
-            </div>
-            <div id="deviceControlWrap" class="connected-only device-control-wrap">
+              </div>
+
+              <div id="deviceControlWrap" class="connected-only device-control-wrap">
                 <div class="device-actions">
-                    <button type="button" onclick="deviceReboot();">Reboot</button>
-                    <button type="button" onclick="deviceClearConfig();">Clear config</button>
-                    <button type="button" onclick="deviceDeepSleep();">Deep sleep</button>
-                    <button type="button" onclick="devicePowerOff();" title="Cut power via D-FF latch (ESP32 boards with power latch only)">Power latch off</button>
-                    <button type="button" onclick="deviceRebootBootloader();">Bootloader</button>
+                  <button type="button" onclick="deviceReboot();">Reboot</button>
+                  <button type="button" onclick="deviceClearConfig();">Clear config</button>
+                  <button type="button" onclick="deviceDeepSleep();">Deep sleep</button>
+                  <button type="button" onclick="devicePowerOff();" title="Cut power via D-FF latch (ESP32 boards with power latch only)">Cut power</button>
+                  <button type="button" onclick="deviceRebootBootloader();">Bootloader</button>
                 </div>
+              </div>
+
+              <div class="status-display" style="margin-top: 12px;">
+                <div id="logDisplay" class="log-display"></div>
+              </div>
             </div>
+          </details>
         </div>
-    </div>
+      </div>
+
       <script src="/js/pako.js"></script>
       <script src="/js/js-yaml.min.js"></script>
       <script src="/l/qrcode.js"></script>
@@ -866,19 +975,18 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         function setConnectedUI(connected) {
             const connectBtn = document.getElementById('connectbutton');
-            const uploadBtn = document.getElementById('uploadButton');
+            const sendDisplayBtn = document.getElementById('sendDisplayBtn');
             const disconnectBtn = document.getElementById('disconnectbutton');
-            const displayPanel = document.getElementById('displayPanel');
             const deviceControlWrap = document.getElementById('deviceControlWrap');
             const advertisingPanelWrap = document.getElementById('advertisingPanelWrap');
-            const nfcPanelWrap = document.getElementById('nfcPanelWrap');
             if (connectBtn) connectBtn.style.display = connected ? 'none' : '';
-            if (uploadBtn) uploadBtn.classList.toggle('visible', connected);
+            if (sendDisplayBtn) sendDisplayBtn.classList.toggle('visible', connected);
+            const sendSection = document.querySelector('.dt-send');
+            if (sendSection) sendSection.hidden = !connected;
             if (disconnectBtn) disconnectBtn.classList.toggle('visible', connected);
-            if (displayPanel) displayPanel.classList.toggle('visible', connected);
             if (deviceControlWrap) deviceControlWrap.classList.toggle('visible', connected);
-            if (advertisingPanelWrap) advertisingPanelWrap.classList.toggle('visible', connected);
-            if (nfcPanelWrap) nfcPanelWrap.classList.toggle('visible', connected && deviceHasNfcConfig);
+            if (advertisingPanelWrap) advertisingPanelWrap.style.display = connected ? '' : 'none';
+            updateNfcFoldVisibility(connected);
             if (!connected) {
                 const advertisingOut = document.getElementById('advertisingDecodeOut');
                 if (advertisingOut) advertisingOut.textContent = '';
@@ -892,6 +1000,38 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             } else {
                 setPartialDemoUI(displayPartialUpdateSupport > 0);
             }
+            updateToolboxLink();
+        }
+        function updateNfcFoldVisibility(connected) {
+            const fold = document.getElementById('nfcFold');
+            if (!fold) return;
+            const show = !!(connected && deviceHasNfcConfig);
+            fold.hidden = !show;
+        }
+        function updateLightsFoldVisibility() {
+            const fold = document.getElementById('lightsFold');
+            const led = document.getElementById('ledControlPanel');
+            const buzzer = document.getElementById('buzzerControlPanel');
+            if (!fold) return;
+            const ledOn = led && led.style.display !== 'none';
+            const buzzerOn = buzzer && buzzer.style.display !== 'none';
+            fold.hidden = !(ledOn || buzzerOn);
+        }
+        function isZeroKeyHex(hex) {
+            const cleaned = (hex || '').replace(/[^0-9A-Fa-f]/g, '');
+            return !cleaned.length || /^0+$/.test(cleaned);
+        }
+        function updateToolboxLink() {
+            const a = document.getElementById('toolboxLink');
+            if (!a) return;
+            const url = new URL('../toolbox/index.html', window.location.href);
+            const filter = (document.getElementById('namePrefix')?.value || '').trim();
+            if (filter) url.searchParams.set('device', filter);
+            const keyParam = getUrlParameter('key');
+            if (keyParam && !isZeroKeyHex(keyParam)) {
+                url.searchParams.set('key', keyParam.replace(/[^0-9A-Fa-f]/g, '').toUpperCase());
+            }
+            a.href = url.toString();
         }
         function isPartialDemoBwScheme() {
             const cs = parseInt(document.getElementById('colorSchemeSelect')?.value || '0', 10);
@@ -1069,8 +1209,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             partialDemo.pending = false;
             partialDemo.lastText = '';
             updatePartialDemoBwNote();
-            const uploadBtn = document.getElementById('uploadButton');
-            if (uploadBtn) uploadBtn.disabled = true;
+            const sendDisplayBtn = document.getElementById('sendDisplayBtn');
+            if (sendDisplayBtn) sendDisplayBtn.disabled = true;
             if (partialDemo.mode === 'clock') {
                 const tick = () => {
                     if (!partialDemo.running || partialDemo.pending) return;
@@ -1097,8 +1237,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             partialDemo.running = false;
             partialDemo.pending = false;
             partialDemo.textId = null;
-            const uploadBtn = document.getElementById('uploadButton');
-            if (uploadBtn) uploadBtn.disabled = false;
+            const sendDisplayBtn = document.getElementById('sendDisplayBtn');
+            if (sendDisplayBtn) sendDisplayBtn.disabled = false;
             if (partialDemo.savedState) {
                 strokes = partialDemo.savedState.strokes;
                 textObjects = partialDemo.savedState.textObjects;
@@ -1195,6 +1335,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const instanceSelect = document.getElementById('buzzerInstanceSelect');
             if (!wrap) return;
             wrap.style.display = show ? 'block' : 'none';
+            updateLightsFoldVisibility();
             if (!show) return;
             const multi = deviceBuzzerCount > 1;
             if (instanceLabel) instanceLabel.style.display = multi ? '' : 'none';
@@ -1428,6 +1569,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const instanceSelect = document.getElementById('ledInstanceSelect');
             if (!wrap) return;
             wrap.style.display = show ? 'block' : 'none';
+            updateLightsFoldVisibility();
             if (!show) {
                 stopLedVizAnimation();
                 return;
@@ -1833,12 +1975,57 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (baseImageData) {
-                ctx.putImageData(baseImageData, 0, 0);
-            } else {
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Compare-original overlay: undithered base + ink.
+            putBaseOntoContext(ctx, canvas.width, canvas.height);
+            drawInkLayer(ctx);
+            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            syncOriginalOverlay();
+            // Dither the photo/base only, then stamp ink as nearest palette colors.
+            await getPixelData();
+            const sel = textObjects.find(t => t.id === selectedTextId);
+            if (sel) {
+                ctx.font = sel.fontSize + 'px Arial';
+                const w = ctx.measureText(sel.text).width;
+                const h = sel.fontSize * 1.2;
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
+                ctx.setLineDash([]);
             }
+            const selQR = qrObjects.find(q => q.id === selectedQRId);
+            if (selQR) {
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
+                ctx.setLineDash([]);
+            }
+        }
+        function hasInkContent() {
+            return strokes.length > 0 || textObjects.length > 0 || qrObjects.length > 0;
+        }
+        function putBaseOntoContext(ctx, width, height) {
+            if (baseImageData && baseImageData.width === width && baseImageData.height === height) {
+                ctx.putImageData(baseImageData, 0, 0);
+                return;
+            }
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height);
+        }
+        function getBaseImageData(width, height) {
+            if (baseImageData && baseImageData.width === width && baseImageData.height === height) {
+                return baseImageData;
+            }
+            const c = document.createElement('canvas');
+            c.width = width;
+            c.height = height;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height);
+            return ctx.getImageData(0, 0, width, height);
+        }
+        function drawInkLayer(ctx) {
             strokes.forEach(s => {
                 if (s.points.length < 2) return;
                 ctx.strokeStyle = s.color;
@@ -1860,29 +2047,64 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             qrObjects.forEach(qr => {
                 drawQRToCanvas(ctx, qr);
             });
-            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            syncOriginalOverlay();
-            // Dither first, then draw selection handles so they stay visible on top.
-            await getPixelData();
-            const sel = textObjects.find(t => t.id === selectedTextId);
-            if (sel) {
-                ctx.font = sel.fontSize + 'px Arial';
-                const w = ctx.measureText(sel.text).width;
-                const h = sel.fontSize * 1.2;
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
-                ctx.setLineDash([]);
+        }
+        function nearestPaletteIndex(r, g, b, preview) {
+            let best = 0;
+            let bestD = Infinity;
+            for (let i = 0; i < preview.length; i++) {
+                const c = preview[i];
+                if (!c) continue;
+                const dr = r - c.r;
+                const dg = g - c.g;
+                const db = b - c.b;
+                const d = dr * dr + dg * dg + db * db;
+                if (d < bestD) {
+                    bestD = d;
+                    best = i;
+                }
             }
-            const selQR = qrObjects.find(q => q.id === selectedQRId);
-            if (selQR) {
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
-                ctx.setLineDash([]);
+            return best;
+        }
+        /** Stamp strokes/text/QR onto palette indices after the base was dithered. */
+        function compositeInkOntoIndices(indices, width, height, preview) {
+            if (!hasInkContent() || !indices || !preview || !preview.length) return false;
+            const ink = document.createElement('canvas');
+            ink.width = width;
+            ink.height = height;
+            const ictx = ink.getContext('2d', { willReadFrequently: true });
+            ictx.clearRect(0, 0, width, height);
+            drawInkLayer(ictx);
+            const data = ictx.getImageData(0, 0, width, height).data;
+            const n = width * height;
+            for (let i = 0; i < n; i++) {
+                const p = i * 4;
+                if (data[p + 3] < 128) continue;
+                indices[i] = nearestPaletteIndex(data[p], data[p + 1], data[p + 2], preview);
             }
+            return true;
+        }
+        function recountDitherCounts(result) {
+            if (!result || !result.indices || !result.preview) return;
+            const counts = new Uint32Array(result.preview.length);
+            for (let i = 0; i < result.indices.length; i++) {
+                const idx = result.indices[i];
+                if (idx < counts.length) counts[idx]++;
+            }
+            result.counts = counts;
+        }
+        /**
+         * Dither photo/base only, then overlay ink as nearest palette colors.
+         * Shared by preview and upload so both stay speck-free on drawings.
+         */
+        async function ditherBaseAndCompositeInk(lib, ctx, width, height, scheme, mode, options) {
+            const base = getBaseImageData(width, height);
+            const result = lib.dither(base, { ...options, scheme, mode });
+            if (compositeInkOntoIndices(result.indices, width, height, result.preview)) {
+                recountDitherCounts(result);
+            }
+            result.scheme = scheme;
+            lib.paint(ctx, width, height, result.indices, result.preview);
+            return result;
         }
         function drawQRToCanvas(ctx, qr) {
             if (typeof QRCode === 'undefined' || !qr.data) return;
@@ -2167,7 +2389,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 stage.style.setProperty('--canvas-ar-h', String(canvas.height));
             }
         }
-        function createCanvas() {
+        function createCanvas(options) {
+            var clearContent = !options || options.clearContent !== false;
             var width = widthInput;
             var height = heightInput;
             var canvas = document.getElementById('myCanvas');
@@ -2198,15 +2421,63 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             });
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            originalImageData = null;
-            baseImageData = null;
-            strokes = [];
-            textObjects = [];
-            qrObjects = [];
-            selectedTextId = null;
-            selectedQRId = null;
-            actionStack = [];
-            addLog(`Canvas created/cleared: ${canvas.width}x${canvas.height} (rotation: ${displayRotation * 90}°)`);
+            if (clearContent) {
+                originalImageData = null;
+                baseImageData = null;
+                strokes = [];
+                textObjects = [];
+                qrObjects = [];
+                selectedTextId = null;
+                selectedQRId = null;
+                actionStack = [];
+            } else {
+                originalImageData = null;
+            }
+            addLog(`Canvas created${clearContent ? '/cleared' : ''}: ${canvas.width}x${canvas.height} (rotation: ${displayRotation * 90}°)`);
+        }
+        /** 90° clockwise pixel rotate. (w×h) → (h×w). */
+        function rotateImageDataCw90(src) {
+            const ow = src.width;
+            const oh = src.height;
+            const nw = oh;
+            const nh = ow;
+            const out = new ImageData(nw, nh);
+            const s = src.data;
+            const d = out.data;
+            for (let y = 0; y < oh; y++) {
+                for (let x = 0; x < ow; x++) {
+                    const si = (y * ow + x) * 4;
+                    const nx = oh - 1 - y;
+                    const ny = x;
+                    const di = (ny * nw + nx) * 4;
+                    d[di] = s[si];
+                    d[di + 1] = s[si + 1];
+                    d[di + 2] = s[si + 2];
+                    d[di + 3] = s[si + 3];
+                }
+            }
+            return out;
+        }
+        function mapPointCw90(x, y, oldH) {
+            return { x: oldH - y, y: x };
+        }
+        /** Rotate strokes / text / QR with the canvas (90° clockwise). */
+        function rotateInkObjectsCw90(oldW, oldH) {
+            strokes.forEach(s => {
+                s.points = s.points.map(p => mapPointCw90(p.x, p.y, oldH));
+            });
+            textObjects.forEach(t => {
+                const p = mapPointCw90(t.x, t.y, oldH);
+                t.x = p.x;
+                t.y = p.y;
+            });
+            qrObjects.forEach(q => {
+                const cx = q.x + q.size / 2;
+                const cy = q.y + q.size / 2;
+                const np = mapPointCw90(cx, cy, oldH);
+                q.x = np.x - q.size / 2;
+                q.y = np.y - q.size / 2;
+            });
         }
         function addText() {
             var canvas = document.getElementById('myCanvas');
@@ -2374,7 +2645,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             overlay.getContext('2d').putImageData(originalImageData, 0, 0);
         }
         /**
-         * Re-dither the composited image onto the canvas.
+         * Re-dither the photo/base onto the canvas, then stamp ink on top.
          * While a slider is being dragged, a half-resolution proxy keeps it responsive.
          */
         async function getPixelData() {
@@ -2390,12 +2661,6 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 do {
                     ditherQueued = false;
                     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    if (originalImageData) {
-                        ctx.putImageData(originalImageData, 0, 0);
-                    } else {
-                        originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        syncOriginalOverlay();
-                    }
                     const lib = await OpenDisplayBLE.ditherReady();
                     populateDitherSelect(lib);
                     const options = tuningValues();
@@ -2404,12 +2669,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     if (coarsePreview) {
                         renderCoarsePreview(lib, ctx, canvas, scheme, mode, options);
                     } else {
-                        // Use the library directly: the preview runs before any BLE connection.
-                        const result = lib.dither(ctx.getImageData(0, 0, canvas.width, canvas.height), { ...options, scheme, mode });
-                        lib.paint(ctx, canvas.width, canvas.height, result.indices, result.preview);
-                        result.scheme = scheme;
-                        lastDither = result;
-                        updateTuningReadout(lib, result, scheme);
+                        lastDither = await ditherBaseAndCompositeInk(
+                            lib, ctx, canvas.width, canvas.height, scheme, mode, options
+                        );
+                        updateTuningReadout(lib, lastDither, scheme);
                     }
                 } while (ditherQueued);
             } finally {
@@ -2418,19 +2681,47 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         /** Half-resolution pass used only while dragging a slider. */
         function renderCoarsePreview(lib, ctx, canvas, scheme, mode, options) {
-            const overlay = document.getElementById('originalOverlay');
             const w = Math.max(1, canvas.width >> 1);
             const h = Math.max(1, canvas.height >> 1);
             const small = document.createElement('canvas');
             small.width = w;
             small.height = h;
             const sctx = small.getContext('2d', { willReadFrequently: true });
-            sctx.drawImage(overlay, 0, 0, w, h);
+            const base = getBaseImageData(canvas.width, canvas.height);
+            // Scale base into the proxy without pulling ink through dither.
+            const full = document.createElement('canvas');
+            full.width = canvas.width;
+            full.height = canvas.height;
+            full.getContext('2d').putImageData(base, 0, 0);
+            sctx.drawImage(full, 0, 0, w, h);
             const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode });
             lib.paint(sctx, w, h, result.indices, result.preview);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
             ctx.imageSmoothingEnabled = true;
+            if (hasInkContent()) {
+                // Fast approximate: snap ink onto the upscaled preview pixels.
+                const previewData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const ink = document.createElement('canvas');
+                ink.width = canvas.width;
+                ink.height = canvas.height;
+                const ictx = ink.getContext('2d', { willReadFrequently: true });
+                drawInkLayer(ictx);
+                const idata = ictx.getImageData(0, 0, canvas.width, canvas.height).data;
+                const pdata = previewData.data;
+                const preview = result.preview;
+                for (let i = 0; i < canvas.width * canvas.height; i++) {
+                    const p = i * 4;
+                    if (idata[p + 3] < 128) continue;
+                    const idx = nearestPaletteIndex(idata[p], idata[p + 1], idata[p + 2], preview);
+                    const c = preview[idx] || preview[0];
+                    pdata[p] = c.r;
+                    pdata[p + 1] = c.g;
+                    pdata[p + 2] = c.b;
+                    pdata[p + 3] = 255;
+                }
+                ctx.putImageData(previewData, 0, 0);
+            }
             updateTuningReadout(lib, result, scheme);
         }
         function updateTuningReadout(lib, result, scheme) {
@@ -2620,16 +2911,50 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             document.getElementById('splitToggle').classList.toggle('active', on);
             if (on && !stage.style.getPropertyValue('--split')) stage.style.setProperty('--split', '50%');
         }
-        /** Rotate the canvas orientation by 90° on top of the device's own rotation. */
+        /** Rotate the canvas orientation by 90° and keep existing photo + ink. */
         function rotateCanvas() {
+            const canvas = document.getElementById('myCanvas');
+            if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+            const oldW = canvas.width;
+            const oldH = canvas.height;
+
+            let rotatedBase = false;
+            if (baseImageData && baseImageData.width === oldW && baseImageData.height === oldH) {
+                baseImageData = rotateImageDataCw90(baseImageData);
+                rotatedBase = true;
+            } else {
+                baseImageData = null;
+            }
+            rotateInkObjectsCw90(oldW, oldH);
+            if (sourceImage) sourceRotation = (sourceRotation + 1) % 4;
+            actionStack = [];
+            selectedTextId = null;
+            selectedQRId = null;
+            updateSelectedTextUI();
+            updateSelectedQRUI();
+
             canvasRotation = (canvasRotation + 1) % 4;
             displayRotation = (deviceRotation + canvasRotation) % 4;
             const btn = document.getElementById('rotateCanvasBtn');
             if (btn) {
                 btn.classList.toggle('active', canvasRotation !== 0);
-                btn.title = `Rotate canvas 90° (currently ${canvasRotation * 90}°)`;
+                btn.title = 'Currently ' + (canvasRotation * 90) + '°';
             }
-            doAll();
+
+            createCanvas({ clearContent: false });
+
+            if (rotatedBase && baseImageData
+                && baseImageData.width === canvas.width
+                && baseImageData.height === canvas.height) {
+                renderContent();
+                return;
+            }
+            baseImageData = null;
+            if (sourceImage) {
+                drawSourceImage();
+                return;
+            }
+            renderContent();
         }
         function toggleZoom() {
             const stage = document.getElementById('canvasStage');
@@ -2689,19 +3014,24 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
         async function buildCompareGrid() {
             const grid = document.getElementById('compareGrid');
-            const overlay = document.getElementById('originalOverlay');
-            if (!overlay || !overlay.width) return;
             const lib = await OpenDisplayBLE.ditherReady();
             const scheme = currentColorScheme();
             const options = tuningValues();
             const current = document.getElementById('ditheringSelect').value;
-            const w = Math.min(240, overlay.width);
-            const h = Math.max(1, Math.round(overlay.height * (w / overlay.width)));
+            const canvas = document.getElementById('myCanvas');
+            if (!canvas || !canvas.width) return;
+            const w = Math.min(240, canvas.width);
+            const h = Math.max(1, Math.round(canvas.height * (w / canvas.width)));
             const proxy = document.createElement('canvas');
             proxy.width = w;
             proxy.height = h;
             const pctx = proxy.getContext('2d', { willReadFrequently: true });
-            pctx.drawImage(overlay, 0, 0, w, h);
+            const base = getBaseImageData(canvas.width, canvas.height);
+            const full = document.createElement('canvas');
+            full.width = canvas.width;
+            full.height = canvas.height;
+            full.getContext('2d').putImageData(base, 0, 0);
+            pctx.drawImage(full, 0, 0, w, h);
             const source = pctx.getImageData(0, 0, w, h);
             grid.innerHTML = '';
             for (const m of lib.MODES) {
@@ -2859,13 +3189,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const colorScheme = currentColorScheme();
             // Always re-dither at full resolution so the upload never inherits a
             // half-res preview pass, and hand the palette indices to the encoder.
+            // Ink is stamped after dither (nearest palette) so strokes stay clean.
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             const ditheringType = document.getElementById('ditheringSelect').value;
-            if (originalImageData) {
-                ctx.putImageData(originalImageData, 0, 0);
-            }
-            const dither = await bleLib.applyDithering(
-                ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
+            const lib = await OpenDisplayBLE.ditherReady();
+            const dither = await ditherBaseAndCompositeInk(
+                lib, ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
             );
             lastDither = dither;
             lastDither.scheme = colorScheme;
@@ -3421,6 +3750,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 addLog(`Device filter set from URL: ${filterParam}`, 'info');
             }
             initializeFromUrl();
+            updateToolboxLink();
             addLog("Page loaded. Ready.", 'info');
             setStatus("Ready");
         });
