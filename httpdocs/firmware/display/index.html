@@ -332,6 +332,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .bt-notice p{margin:0 0 8px}
 .bt-notice p:last-child{margin-bottom:0}
 .bt-notice a{color:var(--od-blue-ink)}
+.bt-notice__title{font-weight:600}
 
 .page-inner.tool-ui .tool-page .bt-conn{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
 /* Once connected, the device bar stays in view while scrolling through the feature cards,
@@ -4101,20 +4102,46 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const browser = window.OpenDisplayBrowser;
             const notice = document.getElementById('btUnsupported');
             if (!browser || !notice || browser.isWebBluetoothSupported()) return;
+            const reason = browser.getWebBluetoothBlockReason();
+            const android = browser.isAndroid();
+            const brave = !!navigator.brave;
+            let title, body, link = null;
+            if (reason === 'ios-safari') {
+                title = 'iPhone and iPad browsers can\u2019t use Bluetooth.';
+                body = ['Open this page in the free Bluefy browser instead.'];
+                link = { href: 'https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055', text: 'Get Bluefy from the App Store' };
+            } else if (reason === 'insecure') {
+                title = 'Bluetooth only works on a secure connection.';
+                body = ['Open this page with https:// in the address bar.'];
+            } else if (reason === 'chromium-disabled' && brave) {
+                title = 'Brave turns Web Bluetooth off by default.';
+                body = ['Turn on \u201cWeb Bluetooth API\u201d in brave://flags, restart Brave and reload this page. Or open this page in Chrome or Edge.'];
+            } else if (reason === 'chromium-disabled') {
+                const name = browser.isEdge() ? 'Edge' : 'Chrome';
+                title = 'Bluetooth is blocked in ' + name + '.';
+                body = ['In ' + name + '\u2019s settings, go to Privacy and security \u2192 Site settings \u2192 Bluetooth and allow sites to ask. Also make sure Bluetooth is turned on for your ' + (android ? 'phone' : 'computer') + '.'];
+            } else {
+                title = (browser.isFirefox() ? 'Firefox' : 'This browser') + ' can\u2019t use Bluetooth.';
+                body = [android ? 'Open this page in Chrome or Edge.' : 'Open this page in Chrome or Edge on your computer or on an Android phone.'];
+            }
             notice.textContent = '';
-            browser.webBluetoothUnsupportedMessage().split('\n\n').forEach(function(text) {
+            const strong = document.createElement('p');
+            strong.className = 'bt-notice__title';
+            strong.textContent = title;
+            notice.appendChild(strong);
+            body.forEach(function(text) {
                 const para = document.createElement('p');
                 para.textContent = text;
                 notice.appendChild(para);
             });
-            if (browser.isIOS() && !browser.isBluefy()) {
+            if (link) {
                 const para = document.createElement('p');
-                const link = document.createElement('a');
-                link.href = 'https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055';
-                link.target = '_blank';
-                link.rel = 'noopener';
-                link.textContent = 'Get Bluefy from the App Store';
-                para.appendChild(link);
+                const a = document.createElement('a');
+                a.href = link.href;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                a.textContent = link.text;
+                para.appendChild(a);
                 notice.appendChild(para);
             }
             notice.hidden = false;
