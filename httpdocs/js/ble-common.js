@@ -869,6 +869,22 @@ class OpenDisplayBLE {
       this.reconnectAttempts = 0;
       this.setStatus('Connected', true);
 
+      // BLE link drop invalidates the device-side crypto session. If we still have
+      // a master key from before the disconnect, re-handshake before onConnect so
+      // callers don't send with a stale session (or skip auth because authenticated
+      // was still true).
+      if (this.encryptionSession.masterKey && !this.encryptionSession.authenticated) {
+        try {
+          this.log('Re-establishing encryption session...', 'info');
+          await this.authenticate();
+        } catch (authError) {
+          this.log(
+            `Re-authentication after reconnect failed: ${authError.message}`,
+            'warning'
+          );
+        }
+      }
+
       if (this.onConnect) {
         this.onConnect();
       }
@@ -955,6 +971,36 @@ class OpenDisplayBLE {
   }
   
   /**
+   * Drop the active crypto session. The device clears its session on BLE
+   * disconnect; keeping authenticated/sessionKey here makes the client encrypt
+   * with a dead session (or skip re-auth) after reconnect.
+   * @param {boolean} [keepMasterKey=true] - retain PSK so reconnect can re-auth
+   *   without prompting again
+   */
+  invalidateEncryptionSession(keepMasterKey = true) {
+    const masterKey = keepMasterKey ? this.encryptionSession.masterKey : null;
+    const authAttempts = this.encryptionSession.authAttempts;
+    const lastAuthTime = this.encryptionSession.lastAuthTime;
+    this.encryptionSession.authenticated = false;
+    this.encryptionSession.masterKey = masterKey;
+    this.encryptionSession.sessionKey = null;
+    this.encryptionSession.sessionId = null;
+    this.encryptionSession.nonceCounter = 0;
+    this.encryptionSession.lastSeenCounter = 0;
+    this.encryptionSession.replayWindow.fill(0);
+    this.encryptionSession.sessionStartTime = 0;
+    this.encryptionSession.lastActivity = 0;
+    this.encryptionSession.integrityFailures = 0;
+    this.encryptionSession.clientNonce = null;
+    this.encryptionSession.serverNonce = null;
+    this.encryptionSession.pendingServerNonce = null;
+    this.encryptionSession.serverNonceTime = 0;
+    this.encryptionSession.deviceId = null;
+    this.encryptionSession.authAttempts = authAttempts;
+    this.encryptionSession.lastAuthTime = lastAuthTime;
+  }
+
+  /**
    * Reset internal state
    */
   resetState() {
@@ -973,6 +1019,7 @@ class OpenDisplayBLE {
     // reconnect to pipe-capable firmware) must be re-probed on the next transfer.
     this.pipeProbe = { probed: false, supported: false };
     this.pipePartialSupported = null;
+    this.invalidateEncryptionSession(true);
   }
 
   /**
@@ -1212,8 +1259,16 @@ class OpenDisplayBLE {
     if (this.encryptionSession.authenticated) return;
 
     let triedUrlKey = false;
+    let triedCachedKey = false;
     while (true) {
       try {
+        // Prefer an already-entered key (e.g. after disconnect/reconnect) so we
+        // don't re-prompt when the PSK is still in memory.
+        if (!triedCachedKey && this.encryptionSession.masterKey) {
+          triedCachedKey = true;
+          await this.authenticate();
+          return;
+        }
         if (!triedUrlKey && typeof getUrlKey === 'function') {
           const urlKey = getUrlKey();
           if (urlKey) {
