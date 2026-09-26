@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.20.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.19.0...1.20.0) (2026-09-26)
+
+
+### Features
+
+* **ble-tester:** dither the photo only, draw ink in exact colors; Toolbox shortcut ([cfdd447](https://github.com/OpenDisplay/opendisplay.org/commit/cfdd4475b62e521263209a5c3932fd2708f32bd4))
+* **ble-tester:** explain missing Web Bluetooth per browser ([f48af2b](https://github.com/OpenDisplay/opendisplay.org/commit/f48af2b7f6be3b533c8348fdc433ab01f5aa658e))
+* **ble-tester:** turn the BLE tester into a showcase of the device ([ceced01](https://github.com/OpenDisplay/opendisplay.org/commit/ceced012606e2bfb669172b7c124b753922d64b4))
+* **ble-tester:** turn the BLE tester into a showcase of the device ([baf4802](https://github.com/OpenDisplay/opendisplay.org/commit/baf48020bd659c9a1c5176fd4d1dc6a7ac853618))
+
+
+### Bug Fixes
+
+* **ble-tester:** hide Connect when the browser has no Web Bluetooth ([9ababfc](https://github.com/OpenDisplay/opendisplay.org/commit/9ababfc1e3e4077938373e73aff9b468ef5afde3))
+* **ble:** re-authenticate encryption session after reconnect ([e6eeb98](https://github.com/OpenDisplay/opendisplay.org/commit/e6eeb98e795e69a3162ba78902f91074f66c5a52))
+* **ble:** re-authenticate encryption session after reconnect ([98d6b7a](https://github.com/OpenDisplay/opendisplay.org/commit/98d6b7a6173baffe3ee5ce9791c6c8f4a188aa2d))
+* **ble:** wait longer for the direct-write end ack ([de6d7b3](https://github.com/OpenDisplay/opendisplay.org/commit/de6d7b3daf32e6d7e0e942f60ddaaa9dd75b10b8))
+* **ble:** wait longer for the direct-write end ack ([e683e73](https://github.com/OpenDisplay/opendisplay.org/commit/e683e73d31e453a0b48cc015143dd29dd635ae05))
+
 ## [1.19.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.18.0...1.19.0) (2026-09-26)
 
 
