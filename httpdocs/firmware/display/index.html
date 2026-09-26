@@ -391,6 +391,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 .tool-ui .bt-btn.connected-only:not(.visible){display:none}
 .page-inner.tool-ui .bt-conn .upload-progress-wrap{margin:0}
 .upload-progress-wrap[hidden]{display:none}
+.tool-ui #connectbutton[hidden],.bt-connect-hint[hidden]{display:none}
 
 .tool-ui .bt-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;
@@ -4117,6 +4118,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 notice.appendChild(para);
             }
             notice.hidden = false;
+            // Nothing to connect with here: hide Connect and its hint so the notice is the only step.
+            document.getElementById('connectbutton').hidden = true;
+            const hint = document.getElementById('connectHint');
+            if (hint) hint.hidden = true;
         }
 
         // Initialize from URL - run as early as possible and also on load
