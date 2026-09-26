@@ -25,6 +25,11 @@ const CONFIG_WRITE_ACK_TIMEOUT_MS = 15000;
 // refresh timeout (0x74), so the ack timer is cleared once the end command acks.
 const DIRECT_WRITE_ACK_TIMEOUT_MS = 15000;
 
+// Some firmware (seen on v2.3.0 with a 2.6" BWRY panel) only acks the end command
+// (0x72) after the display refresh finishes, which takes ~20 s on color e-paper.
+// Give that one step a longer bound so a successful upload isn't reported as a timeout.
+const DIRECT_WRITE_END_ACK_TIMEOUT_MS = 60000;
+
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
 // (transmission_modes bit 4) and falls back to the legacy 0x70 path if the START
@@ -4548,8 +4553,8 @@ if (supportsStreamingDecompression) {
       }
       // Bound the wait for the end-command ack (0x72). Once it arrives the timer
       // is cleared and the refresh phase (0x73) is bounded by the firmware's own
-      // refresh timeout (0x74).
-      this._armDirectWriteAckTimer('end');
+      // refresh timeout (0x74). Some firmware acks only after refreshing, hence the longer bound.
+      this._armDirectWriteAckTimer('end', DIRECT_WRITE_END_ACK_TIMEOUT_MS);
     }
   }
 
@@ -4569,7 +4574,7 @@ if (supportsStreamingDecompression) {
    * re-arms it, so a stalled transfer aborts after DIRECT_WRITE_ACK_TIMEOUT_MS
    * of silence instead of hanging forever.
    */
-  _armDirectWriteAckTimer(label) {
+  _armDirectWriteAckTimer(label, timeoutMs = DIRECT_WRITE_ACK_TIMEOUT_MS) {
     if (!this.directWriteState || !this.directWriteState.active) return;
     this._clearDirectWriteAckTimer();
     this.directWriteState.ackTimeoutId = setTimeout(() => {
@@ -4579,7 +4584,7 @@ if (supportsStreamingDecompression) {
         this.directWriteState.onStatusChange('Upload timed out (no response from device)');
       }
       this._abortDirectWrite(new Error(`Direct write ack timeout (${label})`));
-    }, DIRECT_WRITE_ACK_TIMEOUT_MS);
+    }, timeoutMs);
   }
 
   /**
