@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.19.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.18.0...1.19.0) (2026-09-26)
+
+
+### Features
+
+* **device-page:** make /l understandable for new device owners ([5855e6c](https://github.com/OpenDisplay/opendisplay.org/commit/5855e6cfabebdd2d4486b80643939e474922d4d6))
+* **device-page:** rework /l for people who just scanned their device ([d73b553](https://github.com/OpenDisplay/opendisplay.org/commit/d73b553073c76b4cbd3a5cb4174575774726c929))
+
+
+### Bug Fixes
+
+* **css:** keep doc-page link and text colors out of the site footer ([2c5358b](https://github.com/OpenDisplay/opendisplay.org/commit/2c5358b53ba3e551767a9e2293d715e6338c1aad))
+
 ## [1.18.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.17.0...1.18.0) (2026-09-23)
 
 
