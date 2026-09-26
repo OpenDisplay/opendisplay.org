@@ -574,6 +574,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
 
 .bt-dev__body{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}
 .bt-dev__body .bt-sub{margin:0 0 6px}
+.page-inner.tool-ui .bt-dev a.bt-toolbox{display:block;padding:12px 14px;border:1.5px solid var(--od-ink-line);border-radius:10px;text-decoration:none;color:var(--fg1);font-family:var(--font-sans)}
+.page-inner.tool-ui .bt-dev a.bt-toolbox:hover{border-color:var(--fg1);background:var(--od-paper-2)}
+.bt-toolbox__title{display:block;font-weight:600;margin-bottom:2px}
+.bt-toolbox__desc{display:block;font-size:.85rem;color:var(--fg3);line-height:1.4}
 .bt-dev .bt-pre{min-height:48px;max-height:260px;overflow:auto;white-space:pre-wrap;margin:0 0 8px;padding:10px;font-size:12px;
   border:1px solid var(--od-paper-line);border-radius:8px;background:var(--od-paper-2);box-sizing:border-box}
 .bt-dev .bt-pre:empty::before{content:'Nothing read yet.';font-family:var(--font-sans);color:var(--fg4)}
@@ -1043,9 +1047,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             <details class="col panel bt-dev" id="devTools">
                 <summary>Developer tools</summary>
                 <div class="bt-dev__body">
+            <a id="toolboxLink" class="bt-toolbox" href="../toolbox/index.html">
+                <span class="bt-toolbox__title">Open in the configuration Toolbox</span>
+                <span class="bt-toolbox__desc">Change the device&rsquo;s hardware configuration. Takes this device and its key along. Wrong settings can stop the device from working.</span>
+            </a>
                     <div class="bt-field">
                         <label for="namePrefix">Device name filter</label>
-                        <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" />
+                        <input type="text" id="namePrefix" value="OD" placeholder="OD (comma separated)" oninput="updateToolboxLink();" />
                     </div>
                     <div id="advertisingPanelWrap" class="connected-only">
                         <h3 class="bt-sub">Advertising data</h3>
@@ -2424,12 +2432,53 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const canvas = document.getElementById('myCanvas');
             if (!canvas || canvas.width === 0 || canvas.height === 0) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (baseImageData) {
-                ctx.putImageData(baseImageData, 0, 0);
-            } else {
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Compare-original overlay: undithered photo + ink.
+            ctx.putImageData(getBaseImageData(canvas.width, canvas.height), 0, 0);
+            drawInkLayer(ctx);
+            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            syncOriginalOverlay();
+            // Dither the photo only, then stamp the ink in exact screen colors; selection handles go on top.
+            await getPixelData();
+            const sel = textObjects.find(t => t.id === selectedTextId);
+            if (sel) {
+                ctx.font = sel.fontSize + 'px Arial';
+                const w = ctx.measureText(sel.text).width;
+                const h = sel.fontSize * 1.2;
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
+                ctx.setLineDash([]);
             }
+            const selQR = qrObjects.find(q => q.id === selectedQRId);
+            if (selQR) {
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
+                ctx.setLineDash([]);
+            }
+        }
+        // Two layers, dithered separately (same approach as #142): the photo ("base") goes
+        // through dithering, the ink (strokes, text, QR codes) is drawn on a transparent layer
+        // and mapped straight to the nearest screen color. Drawn colors stay exact, empty areas
+        // stay clean, and anti-aliased text edges keep their own color instead of stray ones.
+        function hasInkContent() {
+            return strokes.length > 0 || textObjects.length > 0 || qrObjects.length > 0;
+        }
+        function getBaseImageData(width, height) {
+            if (baseImageData && baseImageData.width === width && baseImageData.height === height) {
+                return baseImageData;
+            }
+            const c = document.createElement('canvas');
+            c.width = width;
+            c.height = height;
+            const cctx = c.getContext('2d', { willReadFrequently: true });
+            cctx.fillStyle = 'white';
+            cctx.fillRect(0, 0, width, height);
+            return cctx.getImageData(0, 0, width, height);
+        }
+        function drawInkLayer(ctx) {
             strokes.forEach(s => {
                 if (s.points.length < 2) return;
                 ctx.strokeStyle = s.color;
@@ -2451,29 +2500,56 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             qrObjects.forEach(qr => {
                 drawQRToCanvas(ctx, qr);
             });
-            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            syncOriginalOverlay();
-            // Dither first, then draw selection handles so they stay visible on top.
-            await getPixelData();
-            const sel = textObjects.find(t => t.id === selectedTextId);
-            if (sel) {
-                ctx.font = sel.fontSize + 'px Arial';
-                const w = ctx.measureText(sel.text).width;
-                const h = sel.fontSize * 1.2;
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(sel.x - 2, sel.y - 2, w + 4, h + 4);
-                ctx.setLineDash([]);
+        }
+        function nearestPaletteIndex(r, g, b, preview) {
+            let best = 0;
+            let bestD = Infinity;
+            for (let i = 0; i < preview.length; i++) {
+                const c = preview[i];
+                if (!c) continue;
+                const dr = r - c.r, dg = g - c.g, db = b - c.b;
+                const d = dr * dr + dg * dg + db * db;
+                if (d < bestD) { bestD = d; best = i; }
             }
-            const selQR = qrObjects.find(q => q.id === selectedQRId);
-            if (selQR) {
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.strokeRect(selQR.x - 2, selQR.y - 2, selQR.size + 4, selQR.size + 4);
-                ctx.setLineDash([]);
+            return best;
+        }
+        /** Stamp strokes/text/QR onto palette indices after the photo was dithered. */
+        function compositeInkOntoIndices(indices, width, height, preview) {
+            if (!hasInkContent() || !indices || !preview || !preview.length) return false;
+            const ink = document.createElement('canvas');
+            ink.width = width;
+            ink.height = height;
+            const ictx = ink.getContext('2d', { willReadFrequently: true });
+            drawInkLayer(ictx);
+            const data = ictx.getImageData(0, 0, width, height).data;
+            for (let i = 0, n = width * height; i < n; i++) {
+                const p = i * 4;
+                if (data[p + 3] < 128) continue;
+                indices[i] = nearestPaletteIndex(data[p], data[p + 1], data[p + 2], preview);
             }
+            return true;
+        }
+        function recountDitherCounts(result) {
+            if (!result || !result.indices || !result.preview) return;
+            const counts = new Uint32Array(result.preview.length);
+            for (let i = 0; i < result.indices.length; i++) {
+                const idx = result.indices[i];
+                if (idx < counts.length) counts[idx]++;
+            }
+            result.counts = counts;
+        }
+        /** Shared by preview and upload, so what you see is what gets sent. */
+        function ditherBaseAndCompositeInk(lib, ctx, width, height, scheme, mode, options) {
+            // Without a photo the base is plain white: nothing to dither, so map it directly
+            // (a measured palette's "white" would otherwise sprinkle colored specks over it).
+            const plain = !sourceImage || !baseImageData;
+            const result = lib.dither(getBaseImageData(width, height), plain
+                ? { ...options, scheme, mode: 'none', paletteId: 'ideal' }
+                : { ...options, scheme, mode });
+            if (compositeInkOntoIndices(result.indices, width, height, result.preview)) recountDitherCounts(result);
+            result.scheme = scheme;
+            lib.paint(ctx, width, height, result.indices, result.preview);
+            return result;
         }
         function drawQRToCanvas(ctx, qr) {
             if (typeof QRCode === 'undefined' || !qr.data) return;
@@ -2996,9 +3072,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                         renderCoarsePreview(lib, ctx, canvas, scheme, mode, options);
                     } else {
                         // Use the library directly: the preview runs before any BLE connection.
-                        const result = lib.dither(ctx.getImageData(0, 0, canvas.width, canvas.height), { ...options, scheme, mode });
-                        lib.paint(ctx, canvas.width, canvas.height, result.indices, result.preview);
-                        result.scheme = scheme;
+                        const result = ditherBaseAndCompositeInk(lib, ctx, canvas.width, canvas.height, scheme, mode, options);
                         lastDither = result;
                         updateTuningReadout(lib, result, scheme);
                         updateCanvasEmptyHint();
@@ -3024,12 +3098,17 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             small.width = w;
             small.height = h;
             const sctx = small.getContext('2d', { willReadFrequently: true });
-            sctx.drawImage(overlay, 0, 0, w, h);
+            const base = document.createElement('canvas');
+            base.width = canvas.width;
+            base.height = canvas.height;
+            base.getContext('2d').putImageData(getBaseImageData(canvas.width, canvas.height), 0, 0);
+            sctx.drawImage(base, 0, 0, w, h);
             const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode });
             lib.paint(sctx, w, h, result.indices, result.preview);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
             ctx.imageSmoothingEnabled = true;
+            drawInkLayer(ctx);
             updateTuningReadout(lib, result, scheme);
         }
         function updateTuningReadout(lib, result, scheme) {
@@ -3039,7 +3118,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const palette = result.measuredId
                     ? (lib.MEASURED.find(m => m.id === result.measuredId) || {}).label
                     : 'ideal colors';
-                summary.textContent = `${label} · ${palette} · ${result.ms.toFixed(0)} ms`;
+                // Without a photo nothing is dithered; don't make it look like the chosen setting was ignored.
+                summary.textContent = sourceImage
+                    ? `${label} · ${palette} · ${result.ms.toFixed(0)} ms`
+                    : 'Applies to photos';
             }
             const bar = document.getElementById('inkBar');
             const legend = document.getElementById('inkLegend');
@@ -3524,8 +3606,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             const manualUpload = !(extraOptions.onComplete || extraOptions.onProgress || extraOptions.onStatusChange);
             if (manualUpload) setUploadButtonProgress(0);
-            const dither = await bleLib.applyDithering(
-                ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
+            const dither = ditherBaseAndCompositeInk(
+                await OpenDisplayBLE.ditherReady(), ctx, canvas.width, canvas.height, colorScheme, ditheringType, tuningValues()
             );
             lastDither = dither;
             lastDither.scheme = colorScheme;
@@ -3691,6 +3773,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     addLog('Connection successful!', 'success');
                     const connectedName = bleLib && bleLib.device && bleLib.device.name;
                     document.getElementById('connName').textContent = connectedName || 'Your device';
+                    updateToolboxLink();
                     setStatus('Connected', true);
                     setConnectedUI(true);
                     setTimeout(() => {
@@ -4080,6 +4163,19 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
         }
         
+        // Toolbox shortcut: same device (connected name, else the filter) and the key from the link.
+        function updateToolboxLink() {
+            const a = document.getElementById('toolboxLink');
+            if (!a) return;
+            const url = new URL('../toolbox/index.html', window.location.href);
+            const connected = bleLib && bleLib.isConnected && bleLib.device && bleLib.device.name;
+            const filter = (document.getElementById('namePrefix')?.value || '').trim();
+            const device = connected || (filter && filter.toUpperCase() !== 'OD' ? filter : '');
+            if (device) url.searchParams.set('device', device);
+            const key = (getUrlParameter('key') || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+            if (key.length === 32 && !/^0+$/.test(key)) url.searchParams.set('key', key);
+            a.href = url.toString();
+        }
         // Name the device on the Connect button when the link (e.g. from the device page) says which one.
         function showConnectTarget() {
             const btn = document.getElementById('connectbutton');
@@ -4210,6 +4306,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             setStatus("");
             showConnectTarget();
             showBluetoothSupport();
+            updateToolboxLink();
             // Tap a slider's value to reset it (double-click on the slider still works on desktop).
             document.querySelectorAll('#tuningPanel .slider-row output').forEach(function(out) {
                 const input = document.getElementById(out.getAttribute('for'));
