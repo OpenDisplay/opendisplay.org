@@ -895,14 +895,25 @@
           <p class="nrf54-web-details">You can open RTT now to read boot logs, or close this dialog.</p>
         </div>
       `;
-      actions.innerHTML = `
+      // A host page (e.g. the Toolbox) can hook in to continue its own flow after the install.
+      const hooks = window.OpenDisplayInstallHooks;
+      const nextLabel = hooks && typeof hooks.nextLabel === 'function' ? hooks.nextLabel() : null;
+      actions.innerHTML = nextLabel ? `
+        <button type="button" class="nrf54-web-btn nrf54-web-btn-primary" id="nrf54-web-done-btn">${this._escape(nextLabel)}</button>
+        <button type="button" class="nrf54-web-btn nrf54-web-btn-secondary" id="nrf54-web-rtt-after-btn">Read RTT logs</button>
+      ` : `
         <button type="button" class="nrf54-web-btn nrf54-web-btn-primary" id="nrf54-web-rtt-after-btn">Read RTT logs</button>
         <button type="button" class="nrf54-web-btn nrf54-web-btn-secondary" id="nrf54-web-done-btn">Close</button>
       `;
       const rttBtn = document.getElementById('nrf54-web-rtt-after-btn');
       const doneBtn = document.getElementById('nrf54-web-done-btn');
       if (rttBtn) rttBtn.onclick = () => this._beginRtt();
-      if (doneBtn) doneBtn.onclick = () => this.closeModal();
+      if (doneBtn) doneBtn.onclick = () => {
+        this.closeModal();
+        // The click is what lets the host page open its next step (e.g. the Bluetooth device list).
+        if (nextLabel && hooks && typeof hooks.onNext === 'function') hooks.onNext();
+      };
+      if (hooks && typeof hooks.onSuccess === 'function') hooks.onSuccess();
     }
 
     _renderConnectingRtt(headline, content, actions, data) {
