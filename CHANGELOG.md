@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.20.0...1.20.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **schema:** add panel 66 (13.3" Spectra 6 dual-controller, reTerminal E1004) ([925ec4c](https://github.com/OpenDisplay/opendisplay.org/commit/925ec4c38cf8fdd6a8c06a761a6134f6c0f36d1a))
+* **schema:** add panel 66 (13.3" Spectra 6 dual-controller, reTerminal E1004) ([4dd7607](https://github.com/OpenDisplay/opendisplay.org/commit/4dd760730b75c42c08a80f7a62fa58157582b7da))
+
 ## [1.20.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.19.0...1.20.0) (2026-09-26)
 
 
