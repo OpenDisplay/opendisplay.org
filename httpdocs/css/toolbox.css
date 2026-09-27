@@ -176,8 +176,6 @@
 .toolbox-status--pending{color:var(--fg3)}
 .toolbox-status--success{color:var(--od-ok);font-weight:600}
 .toolbox-status--error{color:var(--od-error)}
-.tool-ui #simpleAutoInstallBtn.is-busy{opacity:1;color:var(--od-bezel);border-color:var(--od-blue);cursor:progress;
-  background:linear-gradient(to right,var(--od-blue) var(--progress,0%),color-mix(in srgb,var(--od-blue) 22%,var(--od-paper)) var(--progress,0%))}
 .encryption-hint{margin:6px 0 0;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem;line-height:1.45}
 
 /* Done */
@@ -603,3 +601,20 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 .tb-dialog .tb-field__error{min-height:0;margin:6px 0 0}
 .page-inner.tool-ui .tb-dialog__remember{margin:14px 0 16px}
 .tb-dialog .tb-actions{grid-template-columns:1fr 1fr}
+
+/* Busy feedback, as in the BLE Tester: a working button keeps its colour and says what's happening.
+   With a percentage it fills; without one it pulses. Afterwards it briefly shows how it went. */
+.page-inner.tool-ui button.bt-btn.is-busy{cursor:progress;opacity:1}
+.page-inner.tool-ui button.bt-btn--primary.is-busy{border-color:var(--od-blue);color:var(--od-bezel);background:color-mix(in srgb,var(--od-blue) 40%,var(--od-paper));animation:tb-working 1.6s ease-in-out infinite}
+.page-inner.tool-ui button.bt-btn--primary.is-busy.has-progress{animation:none;background:linear-gradient(to right,var(--od-blue) var(--progress,0%),color-mix(in srgb,var(--od-blue) 22%,var(--od-paper)) var(--progress,0%))}
+.page-inner.tool-ui button.bt-btn--outline.is-busy{border-color:var(--od-blue);color:var(--fg1);background:color-mix(in srgb,var(--od-blue) 6%,transparent);animation:tb-working-soft 1.6s ease-in-out infinite}
+.page-inner.tool-ui button.bt-btn--outline.is-busy.has-progress{animation:none;background:linear-gradient(to right,color-mix(in srgb,var(--od-blue) 28%,transparent) var(--progress,0%),transparent var(--progress,0%))}
+.page-inner.tool-ui button.bt-btn.is-done,.page-inner.tool-ui button.bt-btn.is-done:disabled{background:var(--od-ok);border-color:var(--od-ok);color:#fff}
+.page-inner.tool-ui button.bt-btn.is-failed,.page-inner.tool-ui button.bt-btn.is-failed:disabled{background:transparent;border-color:var(--od-error);color:var(--od-error)}
+@keyframes tb-working{50%{background:color-mix(in srgb,var(--od-blue) 70%,var(--od-paper))}}
+@keyframes tb-working-soft{50%{background:color-mix(in srgb,var(--od-blue) 16%,transparent)}}
+.tb-conn.is-busy .tb-conn__name::before{background:var(--od-warn);animation:tb-busy-dot 1.2s ease-in-out infinite}
+@keyframes tb-busy-dot{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){
+  .page-inner.tool-ui button.bt-btn.is-busy,.tb-conn.is-busy .tb-conn__name::before{animation:none}
+}

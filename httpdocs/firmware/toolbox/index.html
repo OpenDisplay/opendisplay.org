@@ -173,7 +173,7 @@
             <p class="bt-hint" id="tbStartUsbSub">For new displays.</p>
           </div>
           <div class="tb-start__option" id="tbStartBleOption">
-            <button type="button" class="bt-btn bt-btn--outline bt-btn--block" id="tbStartBleBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg><span id="tbStartBleLabel">Connect over Bluetooth</span></button>
+            <button type="button" class="bt-btn bt-btn--outline bt-btn--block" id="tbStartBleBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg><span id="tbStartBleLabel" class="tb-btn-label">Connect over Bluetooth</span></button>
             <p class="bt-hint" id="tbStartBleSub">Already runs OpenDisplay.</p>
           </div>
         </div>
@@ -609,7 +609,62 @@ function addLog(message, type = 'info') {
     logDisplay.removeChild(logDisplay.firstChild);
   }
 }
+// ---- Busy feedback (same language as the BLE Tester) ----
+// A busy button keeps its colour, says what's happening, fills with progress when there is a percentage
+// and pulses when there isn't; afterwards it briefly says how it went.
+function tbButtonLabel(btn) { return btn.querySelector('.tb-btn-label') || btn; }
+function tbSetBusy(btn, label, percent) {
+  if (!btn) return;
+  if (!btn.dataset.idleLabel) btn.dataset.idleLabel = tbButtonLabel(btn).textContent;
+  btn.classList.remove('is-done', 'is-failed');
+  btn.classList.add('is-busy');
+  btn.classList.toggle('has-progress', percent != null);
+  btn.style.setProperty('--progress', (percent || 0) + '%');
+  btn.setAttribute('aria-busy', 'true');
+  btn.disabled = true;
+  if (label) tbButtonLabel(btn).textContent = label;
+}
+function tbClearBusy(btn, result) {
+  if (!btn) return;
+  btn.classList.remove('is-busy', 'has-progress');
+  btn.removeAttribute('aria-busy');
+  btn.style.removeProperty('--progress');
+  const idle = btn.dataset.idleLabel;
+  delete btn.dataset.idleLabel;
+  if (result) {
+    btn.classList.add(result.ok ? 'is-done' : 'is-failed');
+    tbButtonLabel(btn).textContent = result.label;
+    clearTimeout(btn._tbDoneTimer);
+    btn._tbDoneTimer = setTimeout(() => {
+      btn.classList.remove('is-done', 'is-failed');
+      if (idle != null) tbButtonLabel(btn).textContent = idle;
+      btn.disabled = false;
+      if (typeof updateEditorDeviceBar === 'function') updateEditorDeviceBar();
+    }, 1600);
+  } else if (idle != null) {
+    tbButtonLabel(btn).textContent = idle;
+  }
+  btn.disabled = false;
+}
+// The button that shows connection progress right now; the library's stages update its label.
+let tbConnectTarget = null;
+function tbFollowConnection(message) {
+  if (!tbConnectTarget || !tbConnectTarget.classList.contains('is-busy')) return;
+  const name = toolboxDeviceName();
+  const label = /requesting/i.test(message) ? 'Choose your display in the list\u2026'
+    : /reconnecting/i.test(message) ? 'Reconnecting\u2026'
+    : /found|connecting/i.test(message) ? 'Connecting' + (name ? ' to ' + name : '') + '\u2026'
+    : /^connected$/i.test(message) ? 'Connected' + (name ? ' to ' + name : '') + '\u2026'
+    : null;
+  if (label) tbButtonLabel(tbConnectTarget).textContent = label;
+}
+// While the device is working, its card's dot pulses (like the tester's device bar).
+function tbDeviceBusy(on) {
+  const bar = document.getElementById('bleConnectionPanel');
+  if (bar) bar.classList.toggle('is-busy', !!on);
+}
 function setStatus(message, isConnected = false) {
+  tbFollowConnection(message);
   const statusText = document.getElementById('statusText');
   if (!statusText) return;
   // The device bar shows plain words; transfer details stay in the log.
@@ -735,7 +790,16 @@ function preConnect() {
       return;
     }
     ensureToolboxBleLib(namePrefix);
-    bleLib.connect(namePrefix).catch(error => {
+    const connectBtn = document.getElementById('connectbutton');
+    tbConnectTarget = connectBtn;
+    tbSetBusy(connectBtn, 'Choose your display in the list\u2026');
+    bleLib.connect(namePrefix).then(() => {
+      tbConnectTarget = null;
+      tbClearBusy(connectBtn);
+      updateEditorDeviceBar();
+    }).catch(error => {
+      tbConnectTarget = null;
+      tbClearBusy(connectBtn);
       if (error.name === 'NotFoundError' || error.name === 'AbortError') {
         addLog("No device selected/found.");
         document.getElementById('statusText').textContent = 'No device selected.';
@@ -792,8 +856,16 @@ async function editorReadConfig() {
   if (!bleLib || !bleLib.isConnected) return false;
   const status = document.getElementById('statusText');
   const notConfigured = document.getElementById('editorNotConfigured');
-  if (status) status.textContent = 'Reading configuration…';
-  const result = await readDeviceConfig(p => { if (status) status.textContent = 'Reading configuration… ' + p + '%'; });
+  const readBtn = document.getElementById('editorReadBtn');
+  if (status) status.textContent = 'Reading configuration\u2026';
+  tbDeviceBusy(true);
+  tbSetBusy(readBtn, 'Reading\u2026', 0);
+  const result = await readDeviceConfig(p => {
+    if (status) status.textContent = 'Reading configuration\u2026 ' + p + '%';
+    tbSetBusy(readBtn, 'Reading\u2026', p);
+  });
+  tbDeviceBusy(false);
+  tbClearBusy(readBtn, result === 'ok' ? { ok: true, label: 'Read' } : { ok: false, label: 'Failed' });
   if (notConfigured) notConfigured.hidden = result !== 'empty';
   if (status) {
     status.textContent = {
@@ -1388,7 +1460,8 @@ function updateEditorChanges() {
     el.classList.toggle('is-error', !!invalid);
   }
   scheduleEditorBytesRefresh();
-  if (btn) {
+  // A button that's busy or showing how the last action went keeps its label until that clears.
+  if (btn && !btn.classList.contains('is-busy') && !btn.classList.contains('is-done') && !btn.classList.contains('is-failed')) {
     btn.disabled = !connected || !count || !!invalid;
     // Nothing read yet: the whole configuration gets written, so a change count means nothing.
     btn.textContent = count && editorBaseline ? 'Write ' + count + (count === 1 ? ' change' : ' changes') : 'Write to device';
@@ -3410,7 +3483,8 @@ async function startSimpleAutoInstall() {
   updateBackButton();
   setSimpleConfigStatus('', 'busy');
   // The button is the progress indicator: its label says what's happening, its fill how far along.
-  const step = (percent, message) => { updateProgressBar(percent); btn.textContent = message; addLog(message, 'info'); };
+  const step = (percent, message) => { tbSetBusy(btn, message, percent); addLog(message, 'info'); };
+  tbConnectTarget = btn;
   try {
     if (tbSharedConfig) {
       // Write exactly what was shared, even if the editor model changed since,
@@ -3423,8 +3497,9 @@ async function startSimpleAutoInstall() {
       newSetupKey();
       mergeSimpleConfigToFull();
     }
-    step(8, 'Choose your device in the list\u2026');
+    step(8, 'Choose your display in the list\u2026');
     await connectToBleDevice();
+    tbConnectTarget = null;
     step(30, 'Connected to ' + (toolboxDeviceName() || 'the device') + '\u2026');
     await bleLib.delay(3000);
     step(55, 'Writing the settings\u2026');
@@ -3457,8 +3532,9 @@ async function startSimpleAutoInstall() {
       ? 'No device was chosen. Press the button again and pick the device whose name starts with OD.'
       : 'That didn\u2019t work: ' + (error && error.message ? error.message : error) + '. Keep the device close and try again.', 'error');
   } finally {
+    tbConnectTarget = null;
+    tbClearBusy(btn);
     btn.textContent = TOOLBOX_CONFIGURE_BTN_LABEL;
-    updateProgressBar(0);
     updateBackButton();
     updateStepStates();
   }
@@ -4429,13 +4505,14 @@ async function tbConnectBluetooth() {
   const row = document.getElementById('tbStartBleBtn');
   const sub = document.getElementById('tbStartBleLabel');
   const say = (text, kind) => { status.textContent = text; status.className = 'toolbox-status toolbox-status--' + (kind || 'pending'); };
-  row.disabled = true;
-  sub.textContent = 'Choose it in the list\u2026';
+  tbConnectTarget = row;
+  tbSetBusy(row, 'Choose your display in the list\u2026');
   say('');
   try {
     await connectToBleDevice();
   } catch (e) {
-    row.disabled = false;
+    tbClearBusy(row);
+    tbConnectTarget = null;
     updateStartScreen();
     if (e && e.tbBluetoothOff) { say(''); return; }  // the notice at the top explains it
     say(e && e.tbFriendly ? e.message
@@ -4443,17 +4520,18 @@ async function tbConnectBluetooth() {
       : 'Couldn\u2019t connect: ' + (e && e.message ? e.message : e), 'error');
     return;
   }
+  tbConnectTarget = null;
   if (tbSharedConfig) {
-    row.disabled = false;
+    tbClearBusy(row);
     updateStartScreen();
     tbPath = 'ble';
     showScreen('settings');
     return;
   }
-  sub.textContent = 'Reading its settings\u2026';
+  tbSetBusy(row, 'Reading its settings\u2026', 0);
   tbFirmwareVersion = await tbReadFirmwareVersion();
-  const result = await readDeviceConfig();
-  row.disabled = false;
+  const result = await readDeviceConfig(p => tbSetBusy(row, 'Reading its settings\u2026', p));
+  tbClearBusy(row);
   updateStartScreen();
   tbPath = 'ble';
   if (result === 'ok') {
@@ -4610,10 +4688,12 @@ function initToolboxUi() {
   document.getElementById('editorReadBtn').onclick = () => editorReadConfig();
   document.getElementById('editorWriteBtn').onclick = async () => {
     const btn = document.getElementById('editorWriteBtn');
-    btn.disabled = true;
-    btn.textContent = 'Writing\u2026';
+    tbSetBusy(btn, 'Writing\u2026');
+    tbDeviceBusy(true);
     const oldKey = tbSavedKey(toolboxDeviceName());
     const ok = await writeConfig();
+    tbDeviceBusy(false);
+    tbClearBusy(btn, ok ? { ok: true, label: 'Written' } : { ok: false, label: 'Failed' });
     if (ok) {
       const newKey = tbSyncKeyAfterWrite();
       editorMarkClean();
@@ -4626,7 +4706,10 @@ function initToolboxUi() {
     updateEditorChanges();
   };
   document.getElementById('editorRestartBtn').onclick = async () => {
+    const btn = document.getElementById('editorRestartBtn');
+    tbSetBusy(btn, 'Restarting\u2026');
     await reboot();
+    tbClearBusy(btn);
     document.getElementById('editorRestart').hidden = true;
     const status = document.getElementById('statusText');
     if (status) status.textContent = 'Restarting. Reconnect in a few seconds to check the result.';
