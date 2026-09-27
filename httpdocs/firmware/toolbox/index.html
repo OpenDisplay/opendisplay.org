@@ -247,6 +247,11 @@
             </esp-web-install-button>
             <button type="button" id="installNrfBtn" class="bt-btn bt-btn--primary bt-btn--block" style="display: none;">Install firmware</button>
             <button type="button" id="installNrf54Btn" class="bt-btn bt-btn--primary bt-btn--block" style="display: none;">Install firmware</button>
+            <div class="tb-fwver" id="tbFwVersion" hidden>
+              <span id="tbFwVersionText"></span>
+              <button type="button" class="tb-link" id="tbFwVersionMore" hidden>Choose another version</button>
+              <select id="tbFwVersionSelect" aria-label="Firmware version" hidden></select>
+            </div>
           </div>
           <button type="button" class="bt-btn bt-btn--primary bt-btn--block" id="tbNoUsbContinueBtn" hidden>Continue</button>
           <button type="button" class="tb-link tb-skip" id="tbSkipInstallBtn">The firmware is already installed</button>
@@ -2597,6 +2602,7 @@ function initializeSimpleConfigMode() {
   }
   if (simpleConfigInitialized) return;
   simpleConfigInitialized = true;
+  tbInitFirmwareVersionPicker();
   
   // Populate driver board dropdown
   const driverBoardSelect = document.getElementById('driverBoardSelect');
@@ -3103,7 +3109,9 @@ function handleDriverBoardChange() {
       firmwareInstallButton.style.display = 'block';
       installNrfBtn.style.display = 'none';
       if (installNrf54Btn) installNrf54Btn.style.display = 'none';
-      tbSetEspManifest(selectedBoard.installConfig.manifest);
+      // Set once the version is known (tbApplyFirmwareChoice); an update must never get the erasing manifest.
+      if (tbKeepsSettings()) firmwareInstallButton.removeAttribute('manifest');
+      else firmwareInstallButton.setAttribute('manifest', tbSameOriginUrl(selectedBoard.installConfig.manifest));
     } else if (selectedBoard.installConfig.type === 'nrf52840') {
       firmwareInstallButton.style.display = 'none';
       installNrfBtn.style.display = 'block';
@@ -3151,6 +3159,7 @@ function handleDriverBoardChange() {
   } else {
     installButtonContainer.style.display = 'none';
   }
+  tbApplyFirmwareChoice(selectedBoard);
   updateInstallStepForBoard(selectedBoard);
   
   // Filter displays by connector compatibility
@@ -4340,7 +4349,7 @@ function setMode(mode, opts) {
   }
   updateInstallStepForBoard(simpleConfigSelections.driverBoard);
   const board = simpleConfigSelections.driverBoard;
-  if (board && board.installConfig && board.installConfig.type === 'esp32') tbSetEspManifest(board.installConfig.manifest);
+  if (board && board.installConfig && board.installConfig.type === 'esp32') tbApplyFirmwareChoice(board);
   updateSimpleConfigStatus();
   updateLeaveWarning();
   if (mode === 'edit') {
@@ -4745,67 +4754,205 @@ function tbSyncKeyAfterWrite() {
 // ---- Keeping the settings on an ESP32 update ----
 // ESP Web Tools can't tell an update from a new install on OpenDisplay (no Improv), so with our manifests it
 // erases the whole flash first, settings and encryption key included. A new setup may start clean; an update
-// must not. Its manifest asks before erasing instead, and the Toolbox answers "don't erase".
-let tbEspManifestBlob = null;
-let tbEspManifestGen = 0;
+// must not. Its manifest asks before erasing instead (see tbFirmwareSource), and the Toolbox answers "don't erase".
 function tbKeepsSettings() {
   return tbMode === 'update';
-}
-async function tbSetEspManifest(presetUrl) {
-  const btn = document.getElementById('firmwareInstallButton');
-  const gen = ++tbEspManifestGen;
-  // Presets point at https://opendisplay.org/…; from www.opendisplay.org (or a local copy) that is another site, and
-  // ESP Web Tools can't fetch it (no CORS header). Use this site's copy.
-  const url = tbSameOriginUrl(presetUrl);
-  if (!tbKeepsSettings()) {
-    btn.setAttribute('manifest', url);
-    return;
-  }
-  btn.removeAttribute('manifest');
-  const base = new URL(url, location.href);
-  const m = await fetch(base, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
-  if (gen !== tbEspManifestGen) return;
-  if (!m) {
-    btn.setAttribute('manifest', url);
-    return;
-  }
-  m.new_install_prompt_erase = true;
-  m.builds.forEach(b => b.parts.forEach(p => { p.path = new URL(p.path, base).href; }));
-  if (tbEspManifestBlob) URL.revokeObjectURL(tbEspManifestBlob);
-  tbEspManifestBlob = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: 'application/json' }));
-  btn.setAttribute('manifest', tbEspManifestBlob);
 }
 // Answers the dialog's "Erase device?" step. Without this the person sees it with "Erase device" unticked.
 function tbKeepSettingsOnInstall(dialog) {
   if (tbKeepsSettings() && dialog._state === 'ASK_ERASE' && typeof dialog._startInstall === 'function') dialog._startInstall(false);
 }
-// ---- Firmware updates ----
-// The Toolbox hosts the firmware it installs, so "latest" is whatever version it would install for this board.
-const TB_FIRMWARE_REPO_ESP_NRF52 = 'OpenDisplay/Firmware';
-const TB_DEFAULT_ESP_MANIFEST = 'bin/esp32-s3-N16R8_full.json';
-const tbLatestCache = {};
-// Manifests in presets point at opendisplay.org; read the copy this page is served with (same files).
+// ---- Firmware versions ----
+// Versions come from GitHub releases (the API allows CORS). The release files don't, so a version this page doesn't
+// carry itself is fetched through ../fwproxy.php. The copies bundled with the page are used whenever they are the
+// chosen version, and whenever GitHub or the proxy can't be reached.
+const TB_FW_PROXY = '../fwproxy.php';
+const TB_RELEASES_TTL_MS = 60 * 60 * 1000;
+const TB_FW_VERSIONS_SHOWN = 10;
+const TB_BUNDLED_VERSION_FILE = 'bin/firmware-version.json';
+const TB_BUNDLED_NRF54_VERSION_FILE = 'firmware/firmware-nrf54-version.json';
+const tbBundledCache = {};
+const tbReleasesCache = {};
+let tbProxyCheck = null;
+let tbFwBoardId = null;
+let tbFwChoice = null; // the tag picked on the install screen; null means the latest
+let tbFwGeneration = 0;
+let tbFwManifestBlob = null;
+function tbFetchJson(url, opts) {
+  return fetch(url, opts).then(r => r.ok ? r.json() : null).catch(() => null);
+}
+// Manifests in presets point at https://opendisplay.org/…; from www.opendisplay.org (or a local copy) that is another
+// site without CORS, so always use the copy this page is served with (same files).
 function tbSameOriginUrl(url) {
   return String(url || '').replace(/^https:\/\/opendisplay\.org\/firmware\/toolbox\//, '');
 }
-function tbLatestFirmwareVersion(board) {
+function tbNrf54Target(cfg) {
+  return cfg.type === 'nrf54lm20' ? 'nrf54lm20a' : 'nrf54l15';
+}
+// What this page carries for the board: { version, url, manifest (ESP32) }.
+function tbBundledFirmware(cfg) {
+  const key = cfg.type + '|' + (cfg.manifest || '');
+  if (!tbBundledCache[key]) {
+    if (cfg.type === 'esp32') {
+      tbBundledCache[key] = tbFetchJson(tbSameOriginUrl(cfg.manifest), { cache: 'no-cache' })
+        .then(m => m && { version: m.version || null, url: tbSameOriginUrl(cfg.manifest), manifest: m });
+    } else if (cfg.type === 'nrf52840') {
+      tbBundledCache[key] = tbFetchJson(TB_BUNDLED_VERSION_FILE, { cache: 'no-cache' })
+        .then(j => ({ version: (j && j.tag) || null, url: 'firmware/NRF52840.zip' }));
+    } else {
+      tbBundledCache[key] = tbFetchJson(TB_BUNDLED_NRF54_VERSION_FILE, { cache: 'no-cache' })
+        .then(j => ({ version: (j && j.tag) || null, url: 'firmware/' + tbNrf54Target(cfg) + '.hex' }));
+    }
+  }
+  return tbBundledCache[key];
+}
+// The release file the board installs, by tag. ESP32 takes the file its bundled manifest names.
+function tbReleaseAssetName(cfg, bundled, tag) {
+  if (cfg.type === 'esp32') {
+    const part = bundled && bundled.manifest && bundled.manifest.builds && bundled.manifest.builds[0] && bundled.manifest.builds[0].parts[0];
+    return part ? String(part.path).split('/').pop() : null;
+  }
+  if (cfg.type === 'nrf52840') return 'NRF52840.zip';
+  return tbNrf54Target(cfg) + '-' + tag + '.hex';
+}
+function tbRepoName(cfg) {
+  const m = /github\.com\/OpenDisplay\/([^/?#]+)/.exec(cfg.githubRepo || '');
+  return m ? m[1] : null;
+}
+// Published releases, newest first: [{ tag, prerelease, assets }], or null when GitHub can't be reached.
+function tbReleases(repo) {
+  if (!tbReleasesCache[repo]) {
+    tbReleasesCache[repo] = (async () => {
+      const storeKey = 'opendisplay.releases.' + repo;
+      try {
+        const cached = JSON.parse(localStorage.getItem(storeKey) || 'null');
+        if (cached && Date.now() - cached.at < TB_RELEASES_TTL_MS) return cached.list;
+      } catch (e) { /* no storage */ }
+      const raw = await tbFetchJson('https://api.github.com/repos/OpenDisplay/' + repo + '/releases?per_page=30', { headers: { Accept: 'application/vnd.github+json' } });
+      if (!Array.isArray(raw)) return null;
+      const list = raw.filter(r => !r.draft).map(r => ({ tag: r.tag_name, prerelease: !!r.prerelease, assets: (r.assets || []).map(a => a.name) }));
+      try { localStorage.setItem(storeKey, JSON.stringify({ at: Date.now(), list })); } catch (e) { /* no storage */ }
+      return list;
+    })();
+  }
+  return tbReleasesCache[repo];
+}
+function tbProxyAvailable() {
+  if (!tbProxyCheck) {
+    tbProxyCheck = fetch(TB_FW_PROXY + '?selftest=1', { cache: 'no-store' })
+      .then(r => r.ok ? r.text() : '')
+      .then(t => /^php-ok/.test(t) && /curl ok/.test(t))
+      .catch(() => false);
+  }
+  return tbProxyCheck;
+}
+function tbProxyUrl(repo, tag, asset) {
+  const u = new URL(TB_FW_PROXY, location.href);
+  u.searchParams.set('repo', repo);
+  u.searchParams.set('tag', tag);
+  u.searchParams.set('asset', asset);
+  return u.href;
+}
+// Every version that can be installed on this board: { bundled, versions: [{ tag, prerelease, bundled }], latest }.
+async function tbFirmwareOptions(board) {
   const cfg = board && board.installConfig;
-  if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type)) return Promise.resolve(null);
-  let url, pick;
-  if (/Firmware_NRF54/.test(cfg.githubRepo || '')) {
-    url = 'firmware/firmware-nrf54-version.json';
-    pick = (j) => j.tag;
-  } else if ((cfg.githubRepo || '').indexOf(TB_FIRMWARE_REPO_ESP_NRF52) >= 0) {
-    // ESP32 manifests carry the version; nRF52840 is built from the same repo and release.
-    url = cfg.type === 'esp32' && cfg.manifest ? tbSameOriginUrl(cfg.manifest) : TB_DEFAULT_ESP_MANIFEST;
-    pick = (j) => j.version;
-  } else {
-    return Promise.resolve(null);
+  if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type)) return null;
+  const repo = tbRepoName(cfg);
+  const [bundled, releases] = await Promise.all([tbBundledFirmware(cfg), repo ? tbReleases(repo) : null]);
+  const withFile = (releases || []).filter(r => r.assets.includes(tbReleaseAssetName(cfg, bundled, r.tag)));
+  const proxy = withFile.length ? await tbProxyAvailable() : false;
+  const versions = [];
+  if (proxy) withFile.forEach(r => versions.push({ tag: r.tag, prerelease: r.prerelease, bundled: !!bundled && r.tag === bundled.version }));
+  if (bundled && bundled.url && bundled.version && !versions.some(v => v.bundled)) versions.push({ tag: bundled.version, prerelease: false, bundled: true });
+  versions.sort((a, b) => tbCompareVersions(b.tag, a.tag));
+  const stable = versions.find(v => !v.prerelease);
+  const latest = stable ? stable.tag : null;
+  // Recent versions only (old ones may not read today's settings), and pre-releases only when newer than the latest.
+  const shown = versions.filter(v => v.prerelease ? !latest || tbCompareVersions(v.tag, latest) > 0 : true);
+  const cut = shown.filter(v => !v.prerelease).slice(0, TB_FW_VERSIONS_SHOWN).pop();
+  return { cfg, repo, bundled, latest, versions: shown.filter(v => !cut || tbCompareVersions(v.tag, cut.tag) >= 0) };
+}
+// ESP Web Tools reads a manifest: the bundled one, with this version's file (null: the bundled file). An update's
+// manifest asks before erasing, so the settings can be kept.
+function tbEspManifestUrl(options, version, fileUrl) {
+  const base = new URL(tbSameOriginUrl(options.cfg.manifest), location.href);
+  const manifest = JSON.parse(JSON.stringify(options.bundled.manifest));
+  manifest.version = version;
+  manifest.new_install_prompt_erase = tbKeepsSettings();
+  manifest.builds.forEach(build => build.parts.forEach(part => { part.path = fileUrl || new URL(part.path, base).href; }));
+  if (tbFwManifestBlob) URL.revokeObjectURL(tbFwManifestBlob);
+  tbFwManifestBlob = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+  return tbFwManifestBlob;
+}
+// Where the chosen version comes from: { version, url, bundled }.
+function tbFirmwareSource(options, tag) {
+  const want = tag || options.latest;
+  const v = options.versions.find(x => x.tag === want);
+  if (!v || v.bundled) {
+    const b = options.bundled;
+    if (!b) return null;
+    const url = options.cfg.type === 'esp32' && tbKeepsSettings() ? tbEspManifestUrl(options, b.version, null) : b.url;
+    return { version: b.version, url, bundled: true };
   }
-  if (!tbLatestCache[url]) {
-    tbLatestCache[url] = fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => (j && pick(j)) || null).catch(() => null);
+  const cfg = options.cfg;
+  const url = tbProxyUrl(options.repo, v.tag, tbReleaseAssetName(cfg, options.bundled, v.tag));
+  if (cfg.type !== 'esp32') return { version: v.tag, url, bundled: false };
+  return { version: v.tag, url: tbEspManifestUrl(options, v.tag, url), bundled: false };
+}
+// "Latest" is the newest version this page can actually install for the board.
+function tbLatestFirmwareVersion(board) {
+  return tbFirmwareOptions(board).then(o => (o && o.latest) || null).catch(() => null);
+}
+// Points the install button at the chosen version and says which one it installs.
+async function tbApplyFirmwareChoice(board) {
+  const gen = ++tbFwGeneration;
+  const box = document.getElementById('tbFwVersion');
+  const cfg = board && board.installConfig;
+  const id = board ? board.id : null;
+  if (id !== tbFwBoardId) {
+    tbFwBoardId = id;
+    tbFwChoice = null;
+    document.getElementById('tbFwVersionSelect').hidden = true;
   }
-  return tbLatestCache[url];
+  if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type) || !toolboxCanShowUsbInstall(cfg.type)) { box.hidden = true; return; }
+  const options = await tbFirmwareOptions(board);
+  if (gen !== tbFwGeneration) return;
+  const src = options && tbFirmwareSource(options, tbFwChoice);
+  if (!src) { box.hidden = true; return; }
+  if (cfg.type === 'esp32') document.getElementById('firmwareInstallButton').setAttribute('manifest', src.url);
+  else if (cfg.type === 'nrf52840' && nrfInstaller) nrfInstaller.zipPath = src.url;
+  else if (nrf54Installer) nrf54Installer.setHex(src.url);
+  const latest = src.version === options.latest;
+  // "Install the latest firmware" would be wrong for an older pick.
+  if (tbMode === 'update') document.getElementById('toolboxStep2Title').textContent = latest ? 'Install the latest firmware' : 'Install version ' + src.version;
+  document.getElementById('tbFwVersionText').textContent = src.version ? 'Version ' + src.version + (latest ? ', the latest.' : '.') : '';
+  const select = document.getElementById('tbFwVersionSelect');
+  select.innerHTML = '';
+  options.versions.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.tag;
+    opt.textContent = v.tag + (v.tag === options.latest ? ' (latest)' : v.prerelease ? ' (pre-release)' : '');
+    select.appendChild(opt);
+  });
+  select.value = src.version || '';
+  const more = document.getElementById('tbFwVersionMore');
+  more.hidden = options.versions.length < 2 || !select.hidden;
+  document.getElementById('tbFwVersionText').hidden = !select.hidden;
+  box.hidden = !src.version;
+}
+function tbInitFirmwareVersionPicker() {
+  const select = document.getElementById('tbFwVersionSelect');
+  const more = document.getElementById('tbFwVersionMore');
+  more.addEventListener('click', () => {
+    more.hidden = true;
+    document.getElementById('tbFwVersionText').hidden = true;
+    select.hidden = false;
+    select.focus();
+  });
+  select.addEventListener('change', () => {
+    tbFwChoice = select.value || null;
+    tbApplyFirmwareChoice(simpleConfigSelections.driverBoard);
+  });
 }
 function tbCompareVersions(a, b) {
   const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);

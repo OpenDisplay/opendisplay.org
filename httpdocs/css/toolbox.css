@@ -150,6 +150,10 @@
 
 /* Firmware */
 #installButtonContainer esp-web-install-button{display:block}
+.tb-fwver{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin-top:10px;color:var(--fg3);font-family:var(--font-sans);font-size:.9rem}
+.tb-fwver[hidden],.tb-fwver [hidden]{display:none}
+.page-inner.tool-ui .tb-fwver select{flex:1 1 100%;width:100%;min-height:44px;margin-top:4px;font-family:var(--font-sans)!important;font-size:15px!important}
+.page-inner.tool-ui .tb-fwver select[hidden]{display:none}
 .page-inner.tool-ui .tb-link.tb-skip{display:block;margin-top:14px}
 .page-inner.tool-ui .tb-link.tb-skip[hidden]{display:none}
 
