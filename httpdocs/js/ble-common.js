@@ -1290,18 +1290,24 @@ class OpenDisplayBLE {
         if (error && error.message === 'Encryption key required') throw error;
         this.encryptionSession.masterKey = null;
         this.encryptionSession.authenticated = false;
+        this._lastAuthError = error.message;
         this.log(`Authentication failed: ${error.message} — try again`, 'error');
       }
     }
   }
 
   /**
-   * Set encryption master key (prompts user if not provided)
+   * Set encryption master key (asks the user if not provided).
+   * A page can set `requestKey` to an async function(lastError) returning the key text (or null to cancel)
+   * to ask in its own UI; without it, a browser prompt is used.
    */
   async setEncryptionKey(key = null) {
     if (key === null) {
-      // Prompt user for key
-      const keyInput = prompt('Enter encryption key (32 hex characters, e.g., 00112233445566778899AABBCCDDEEFF):');
+      const lastError = this._lastAuthError || null;
+      this._lastAuthError = null;
+      const keyInput = typeof this.requestKey === 'function'
+        ? await this.requestKey(lastError)
+        : prompt('Enter encryption key (32 hex characters, e.g., 00112233445566778899AABBCCDDEEFF):');
       if (!keyInput) {
         throw new Error('Encryption key required');
       }
