@@ -5705,6 +5705,11 @@ const PREMADE_SIMPLE_PRESETS = [
   { stem: 'reterminal-e1001', name: 'ReTerminal E1001', driverBoardId: 'reterminal-e1001', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1002', name: 'ReTerminal E1002', driverBoardId: 'reterminal-e1002', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1004', name: 'ReTerminal E1004', driverBoardId: 'reterminal-e1004', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-5000' },
+  { stem: 'reterminal-e1003', name: 'ReTerminal E1003', driverBoardId: 'reterminal-e1003', displayId: 'seeed-ed103-1872x1404', powerId: 'battery-3000' },
+  { stem: 'reterminal-sticky', name: 'ReTerminal Sticky', driverBoardId: 'reterminal-sticky', displayId: 'ep397-800x480', powerId: 'battery-650' },
+  { stem: 'reterminal-sticky-4gray', name: 'ReTerminal Sticky (4 gray)', driverBoardId: 'reterminal-sticky', displayId: 'ep397-800x480-4gray', powerId: 'battery-650' },
+  { stem: '426kit', name: 'OpenDisplay 4.26" Mono Kit', driverBoardId: 'opendisplay-426-mono-kit', displayId: 'ep426-800x480', powerId: 'battery-2000' },
+  { stem: '73kit', name: 'OpenDisplay 7.3" Color Kit', driverBoardId: 'opendisplay-73-color-kit', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
   { stem: 'ee02', name: 'Seeed EE02', driverBoardId: 'ee02', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-2000' }
 ];
 
