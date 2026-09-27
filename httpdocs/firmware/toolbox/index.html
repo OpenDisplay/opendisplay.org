@@ -1348,6 +1348,23 @@ const EDITOR_FIELD_HELP = {
   friendly_name: 'Shown in apps and Home Assistant.',
   device_location: 'Where the device is, for example Kitchen.'
 };
+// Hardware identifiers (panels, chips, boards, sensors) are what builders look for, so those options
+// lead with the identifier ("ep42_400x300 — WFT0420CZ15"); plain-language choices show just the words.
+const EDITOR_ENUMS_WITH_IDS = /(^|_)ic_type$|^board_type$|^sensor_type$/;
+function editorEnumOptionText(f, entry) {
+  const name = String(entry.name || '');
+  const desc = String(entry.description || '');
+  if (EDITOR_ENUMS_WITH_IDS.test(f.name)) return desc && desc !== name ? name + ' \u2014 ' + desc : name;
+  const text = desc || name;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+// The schema's own field name, next to the plain label: it's what config.yaml and the firmware docs use.
+function editorFieldKey(name) {
+  const key = document.createElement('code');
+  key.className = 'tb-field__key';
+  key.textContent = name;
+  return key;
+}
 function editorFieldHelp(f) {
   if (EDITOR_FIELD_HELP[f.name] != null) return EDITOR_FIELD_HELP[f.name];
   let d = String(f.description || '')
@@ -1393,7 +1410,15 @@ function editorSummary(inst) {
     case '1': parts.push(en('ic_type')); break;
     case '2': parts.push(en('manufacturer_id')); break;
     case '4': parts.push(en('power_mode')); if (num('battery_capacity_mah')) parts.push(num('battery_capacity_mah') + ' mAh'); break;
-    case '32': if (num('pixel_width') && num('pixel_height')) parts.push(num('pixel_width') + ' × ' + num('pixel_height')); parts.push(en('color_scheme')); break;
+    case '32': {
+      // The panel identifier is what builders recognise (e.g. ep73_spectra_800x480).
+      const pf = editorFieldDef(inst.pid, 'panel_ic_type');
+      const pn = pf && pf.enum && pf.enum[num('panel_ic_type')];
+      if (pn && pn.name) parts.push(pn.name);
+      else if (num('pixel_width') && num('pixel_height')) parts.push(num('pixel_width') + ' × ' + num('pixel_height'));
+      parts.push(en('color_scheme'));
+      break;
+    }
     case '33': parts.push(en('led_type')); break;
     case '37': parts.push(en('input_type')); break;
     case '38': if (v('ssid')) parts.push('“' + v('ssid') + '”'); break;
@@ -1401,7 +1426,8 @@ function editorSummary(inst) {
     case '44': parts.push(v('friendly_name') || v('model_name') || ''); break;
   }
   const text = parts.filter(Boolean).join(' · ');
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  // Sentence case for words, but identifiers (ep73_spectra_800x480) keep their spelling.
+  return /^[a-z]+[\s,]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 function editorNormalize(fieldDef, value) {
   if (value === undefined || value === null || value === '') return '';
@@ -1701,6 +1727,7 @@ function renderEditorPair(inst, def, a, b, pair, body, onChange) {
   const label = document.createElement('span');
   label.className = 'tb-field__label';
   label.textContent = pair.label;
+  label.appendChild(editorFieldKey(a.name + ' \u00d7 ' + b.name));
   const help = document.createElement('p');
   help.className = 'tb-field__hint';
   help.textContent = pair.help;
@@ -1737,9 +1764,11 @@ function renderEditorField(inst, def, f, body, onChange, opts) {
   hint.textContent = opts.compact ? '' : editorFieldHelp(f);
   if (opts.compact) {
     row.appendChild(label);
+    if (!opts.srLabel) label.appendChild(editorFieldKey(f.name));
   } else {
     const text = document.createElement('div');
     text.className = 'tb-row__text';
+    label.appendChild(editorFieldKey(f.name));
     text.appendChild(label);
     if (hint.textContent) text.appendChild(hint);
     row.appendChild(text);
@@ -1791,8 +1820,8 @@ function renderEditorField(inst, def, f, body, onChange, opts) {
       Object.keys(f.enum).forEach(k => {
         const o = document.createElement('option');
         o.value = k;
-        const text = String(f.enum[k].description || f.enum[k].name);
-        o.textContent = text.charAt(0).toUpperCase() + text.slice(1);
+        o.textContent = editorEnumOptionText(f, f.enum[k]);
+        o.title = 'Value ' + k;
         control.appendChild(o);
       });
       const n = parseValueToNumber(inst.fields[f.name]);

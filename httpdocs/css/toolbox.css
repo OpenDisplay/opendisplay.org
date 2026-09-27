@@ -618,3 +618,8 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 @media (prefers-reduced-motion:reduce){
   .page-inner.tool-ui button.bt-btn.is-busy,.tb-conn.is-busy .tb-conn__name::before{animation:none}
 }
+
+/* Schema field names next to the plain labels (small, quiet, but always there for builders) */
+.tb-field__key{display:inline-block;margin-left:8px;font-family:var(--font-mono);font-size:.75rem;font-weight:400;color:var(--fg4);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.tb-field--compact .tb-field__key{display:block;margin:1px 0 0;font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page-inner.tool-ui .tb-pins .tb-field__label{white-space:normal}
