@@ -184,8 +184,8 @@
 .tb-key{margin:0 0 24px}
 .tb-key[hidden]{display:none}
 .tb-key__label{margin:0 0 8px;color:var(--fg2);font-family:var(--font-sans);font-size:.9rem}
-.tb-key__row{display:flex;gap:8px;align-items:center}
-.tb-key__value{flex:1;min-width:0;padding:10px 12px;border-radius:8px;background:var(--od-paper-2);font-family:var(--font-mono);font-size:.85rem;line-height:1.5;overflow-wrap:anywhere;user-select:all}
+.tb-key__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.tb-key__value{display:block;padding:10px 12px;border-radius:8px;background:var(--od-paper-2);font-family:var(--font-mono);font-size:.85rem;line-height:1.5;overflow-wrap:anywhere;user-select:all}
 .tb-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
 .tb-actions > .bt-btn{white-space:nowrap}
 .tb-actions > .bt-btn{width:100%}
@@ -594,3 +594,12 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
   background-repeat:no-repeat!important;background-position:right 10px center!important;background-size:16px!important;padding-right:34px!important
 }
 .page-inner.tool-ui select.tb-add{background-position:right 14px center!important}
+
+/* Key dialog: replaces the browser prompt when a locked display needs its key */
+.tb-dialog{width:min(440px,calc(100vw - 32px));padding:16px;border:1px solid var(--od-paper-line);border-radius:14px;background:var(--od-paper);color:var(--fg1);box-shadow:0 20px 50px -12px rgba(11,15,18,.45)}
+.tb-dialog::backdrop{background:rgba(11,15,18,.45)}
+.page-inner.tool-ui .tb-dialog__field{display:flex;flex-direction:column;gap:6px;margin:0;font-family:var(--font-sans);font-size:.9rem;font-weight:600;color:var(--fg1)}
+.page-inner.tool-ui .tb-dialog__field input{width:100%;box-sizing:border-box;min-height:44px!important;font-family:var(--font-mono)!important;font-size:14px!important}
+.tb-dialog .tb-field__error{min-height:0;margin:6px 0 0}
+.page-inner.tool-ui .tb-dialog__remember{margin:14px 0 16px}
+.tb-dialog .tb-actions{grid-template-columns:1fr 1fr}

@@ -327,8 +327,12 @@
         <div class="bt-card__head"><span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><h2 class="tb-screen__title" id="tbDoneTitle">Your display is set up</h2></div>
         <p class="tb-screen__text" id="tbDoneText"></p>
         <div class="tb-key" id="tbDoneKey" hidden>
-          <p class="tb-key__label">Encryption key. Save it: you need it to connect to this device later.</p>
-          <div class="tb-key__row"><code class="tb-key__value" id="tbDoneKeyValue"></code><button type="button" class="bt-btn bt-btn--outline" id="tbDoneKeyCopy">Copy</button></div>
+          <p class="tb-key__label">Encryption key. You need it to connect later. This browser remembers it; keep a copy too.</p>
+          <code class="tb-key__value" id="tbDoneKeyValue"></code>
+          <div class="tb-key__actions">
+            <button type="button" class="bt-btn bt-btn--outline" id="tbDoneKeyCopy">Copy</button>
+            <button type="button" class="bt-btn bt-btn--outline" id="tbDoneKeyDownload">Download</button>
+          </div>
         </div>
         <div class="tb-actions">
           <a class="bt-btn bt-btn--primary" id="tbDoneTesterLink" href="../display/index.html">Send an image</a>
@@ -368,7 +372,7 @@
         </div>
       </div>
       <div class="tb-restart" id="editorRestart" hidden>
-        <span>Written. Restart the device to apply the new settings.</span>
+        <span id="editorRestartText">Written. Restart the device to apply the new settings.</span>
         <button type="button" class="bt-btn bt-btn--outline" id="editorRestartBtn">Restart device</button>
       </div>
 
@@ -399,6 +403,24 @@
         </div>
       </details>
     </div>
+
+    <dialog class="tb-dialog" id="tbKeyDialog" aria-labelledby="tbKeyDialogTitle">
+      <form method="dialog" id="tbKeyForm">
+        <div class="bt-card__head"><span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span><h2 id="tbKeyDialogTitle">This display is locked</h2><p id="tbKeyDialogText">Enter its encryption key to continue.</p></div>
+        <label class="tb-dialog__field" for="tbKeyInput">Encryption key
+          <input type="text" id="tbKeyInput" class="tb-mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="32 hex characters" />
+        </label>
+        <p class="tb-field__error" id="tbKeyError" role="alert"></p>
+        <label class="tb-switch tb-dialog__remember">
+          <input type="checkbox" role="switch" id="tbKeyRemember" checked />
+          <span class="tb-switch__text"><span class="tb-switch__title">Remember it in this browser</span></span>
+        </label>
+        <div class="tb-actions">
+          <button type="button" class="bt-btn bt-btn--outline" id="tbKeyCancel">Cancel</button>
+          <button type="submit" class="bt-btn bt-btn--primary" id="tbKeyUnlock">Unlock</button>
+        </div>
+      </form>
+    </dialog>
 
     <details class="tb-fold tb-logfold" id="statusDisplay">
       <summary>Log</summary>
@@ -642,6 +664,7 @@ function ensureToolboxBleLib(namePrefix) {
       setStatus(message, isConnected);
     }
   });
+  bleLib.requestKey = tbAskForKey;
   return bleLib;
 }
 function preConnect() {
@@ -1872,7 +1895,12 @@ document.getElementById('shareConfigBtn').onclick = ()=>{
     tbFlash('Nothing to share yet: read a device or start from a known board.');
     return;
   }
+  // Leave the key out: whoever applies the link gets a fresh key for their own display.
+  const sec = instances.packets.find(p => String(p.pid) === '39');
+  const realKey = sec ? sec.fields.encryption_key : null;
+  if (sec) sec.fields.encryption_key = '0'.repeat(32);
   const packetBytes = collectPacketBytes();
+  if (sec) sec.fields.encryption_key = realKey;
   if (!packetBytes) return;
   const url = new URL(window.location);
   ['mode', 'driver', 'display', 'power', 'simple', 'device', 'filter', 'key'].forEach(k => url.searchParams.delete(k));
@@ -2181,11 +2209,11 @@ function getEncryptionKeyFromUrl() {
 async function ensureAuthenticatedOnConnect() {
   if (!bleLib || !bleLib.isConnected) return;
   try {
-    // Only authenticate automatically if a key is provided in the URL.
-    // If encryption is required, we'll prompt on-demand when an operation fails.
-    const urlKey = getEncryptionKeyFromUrl();
-    if (!urlKey) return;
-    const needsAuth = await bleLib.setEncryptionKey(urlKey);
+    // Authenticate right away only with a key we already know (remembered or from the link).
+    // Otherwise the key is asked for when an operation needs it.
+    const knownKey = tbKnownKey();
+    if (!knownKey) return;
+    const needsAuth = await bleLib.setEncryptionKey(knownKey);
     if (!needsAuth) return;
     await bleLib.authenticate();
     addLog('Authenticated (encryption enabled).', 'success');
@@ -2199,9 +2227,72 @@ function isAuthError(error) {
   return OpenDisplayBLE.isAuthError(error);
 }
 
+// ---- Encryption keys ----
+// Keys are remembered per device name in this browser, so a locked display isn't locked out of the Toolbox.
+const TB_KEY_STORE = 'opendisplay.deviceKeys';
+function tbLoadKeys() {
+  try { return JSON.parse(localStorage.getItem(TB_KEY_STORE) || '{}') || {}; } catch (e) { return {}; }
+}
+function tbSavedKey(name) { return name ? (tbLoadKeys()[name] || '') : ''; }
+function tbRememberKey(name, hex) {
+  if (!name || !/^[0-9a-f]{32}$/i.test(hex || '')) return;
+  try { const keys = tbLoadKeys(); keys[name] = hex.toLowerCase(); localStorage.setItem(TB_KEY_STORE, JSON.stringify(keys)); } catch (e) { /* private mode */ }
+}
+function tbForgetKey(name) {
+  if (!name) return;
+  try { const keys = tbLoadKeys(); delete keys[name]; localStorage.setItem(TB_KEY_STORE, JSON.stringify(keys)); } catch (e) { /* private mode */ }
+}
+function tbRandomKeyHex() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+// A key this browser remembers for the connected display wins; a key from the link (?key=) comes next.
+function tbKnownKey() {
+  return tbSavedKey(toolboxDeviceName()) || getEncryptionKeyFromUrl();
+}
+let tbRememberEnteredKey = true;
+// Replaces the browser prompt: the BLE library calls this when it needs a key (again, if the last one was wrong).
+function tbAskForKey(lastError) {
+  const dialog = document.getElementById('tbKeyDialog');
+  const input = document.getElementById('tbKeyInput');
+  const error = document.getElementById('tbKeyError');
+  const name = toolboxDeviceName();
+  document.getElementById('tbKeyDialogText').textContent = (name ? name + ' uses' : 'This display uses') + ' encryption. Enter its key to continue.';
+  error.textContent = lastError ? 'That key didn\u2019t work. Check it and try again.' : '';
+  input.value = '';
+  return new Promise(resolve => {
+    const finish = (value) => {
+      document.getElementById('tbKeyForm').onsubmit = null;
+      document.getElementById('tbKeyCancel').onclick = null;
+      dialog.oncancel = null;
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
+    document.getElementById('tbKeyForm').onsubmit = (e) => {
+      e.preventDefault();
+      const hex = input.value.replace(/[^0-9a-f]/gi, '');
+      if (hex.length !== 32) { error.textContent = 'The key is 32 hex characters (0-9, a-f).'; input.focus(); return; }
+      tbRememberEnteredKey = document.getElementById('tbKeyRemember').checked;
+      finish(hex);
+    };
+    document.getElementById('tbKeyCancel').onclick = () => finish(null);
+    dialog.oncancel = (e) => { e.preventDefault(); finish(null); };
+    dialog.showModal();
+    input.focus();
+  });
+}
+// After a successful unlock, keep the key that worked (if the user allowed it).
+function tbRememberWorkingKey() {
+  const key = bleLib && bleLib.encryptionSession && bleLib.encryptionSession.masterKey;
+  if (!key || !tbRememberEnteredKey) return;
+  tbRememberKey(toolboxDeviceName(), Array.from(key, b => b.toString(16).padStart(2, '0')).join(''));
+}
+
 async function ensureAuthenticatedOnDemand() {
   if (!bleLib || !bleLib.isConnected) throw new Error('Not connected');
-  await bleLib.ensureAuthenticated(getEncryptionKeyFromUrl);
+  await bleLib.ensureAuthenticated(tbKnownKey);
+  tbRememberWorkingKey();
 }
 function isToolboxEncodedConfigParam(configParamTrimmed) {
   return configParamTrimmed.length > 50 &&
@@ -3264,8 +3355,11 @@ async function startSimpleAutoInstall() {
   const step = (percent, message) => { updateProgressBar(percent); btn.textContent = message; addLog(message, 'info'); };
   try {
     if (tbSharedConfig) {
-      // Write exactly what was shared, even if the editor model changed since.
+      // Write exactly what was shared, even if the editor model changed since,
+      // except the key: every display set up from a shared link gets its own.
       parseRawBytes(tbSharedConfig);
+      const sec = instances.packets.find(p => String(p.pid) === '39');
+      if (sec && configEncryptionEnabled()) sec.fields.encryption_key = tbRandomKeyHex();
       lastAutoInstallRedirectKeyHex = configKeyHex() || null;
     } else {
       newSetupKey();
@@ -3277,6 +3371,7 @@ async function startSimpleAutoInstall() {
     await bleLib.delay(3000);
     step(55, 'Writing the settings\u2026');
     await writeConfigToDevice();
+    tbSyncKeyAfterWrite();
     await bleLib.delay(3000);
     step(85, 'Restarting the device\u2026');
     await reboot();
@@ -4238,7 +4333,9 @@ function tbConfigFacts() {
   if (disp) facts.push(['Display', editorSummary(disp)]);
   const pwr = find('4');
   if (pwr) facts.push(['Power', editorSummary(pwr)]);
-  facts.push(['Encryption', configKeyHex() ? 'On' : 'Off']);
+  facts.push(['Encryption', !configEncryptionEnabled() ? 'Off'
+    : tbSharedConfig ? 'On, with a new key for each display'
+    : tbSavedKey(toolboxDeviceName()) ? 'On, key saved in this browser' : 'On']);
   const wifi = find('38');
   if (wifi && String(wifi.fields.ssid || '').trim()) facts.push(['Wi-Fi', String(wifi.fields.ssid).trim()]);
   return facts;
@@ -4336,7 +4433,20 @@ function presetSelectionFromConfig() {
 function configKeyHex() {
   const sec = instances.packets.find(p => String(p.pid) === '39');
   if (!sec || !parseValueToNumber(sec.fields.encryption_enabled)) return '';
-  return String(sec.fields.encryption_key || '').replace(/0x|[^0-9a-f]/gi, '');
+  const hex = String(sec.fields.encryption_key || '').replace(/0x|[^0-9a-f]/gi, '');
+  // The firmware treats an all-zero key as "encryption off".
+  return /^0*$/.test(hex) ? '' : hex;
+}
+function configEncryptionEnabled() {
+  const sec = instances.packets.find(p => String(p.pid) === '39');
+  return !!(sec && parseValueToNumber(sec.fields.encryption_enabled));
+}
+// Whatever key the device now has is the one to remember; no key means nothing to remember.
+function tbSyncKeyAfterWrite() {
+  const name = toolboxDeviceName();
+  const key = configKeyHex();
+  if (key) tbRememberKey(name, key); else tbForgetKey(name);
+  return key;
 }
 function renderDeviceHome() {
   const sel = presetSelectionFromConfig();
@@ -4421,17 +4531,32 @@ function initToolboxUi() {
       setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
     }).catch(() => {});
   };
+  document.getElementById('tbDoneKeyDownload').onclick = () => {
+    const key = document.getElementById('tbDoneKeyValue').textContent;
+    const name = toolboxDeviceName() || 'opendisplay';
+    const blob = new Blob(['OpenDisplay encryption key\nDevice: ' + name + '\nKey: ' + key + '\n'], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name + '-key.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
   document.getElementById('editorGoSetupBtn').onclick = () => setMode('setup', { push: true });
   document.getElementById('editorReadBtn').onclick = () => editorReadConfig();
   document.getElementById('editorWriteBtn').onclick = async () => {
     const btn = document.getElementById('editorWriteBtn');
     btn.disabled = true;
     btn.textContent = 'Writing\u2026';
+    const oldKey = tbSavedKey(toolboxDeviceName());
     const ok = await writeConfig();
     if (ok) {
+      const newKey = tbSyncKeyAfterWrite();
       editorMarkClean();
       renderEditor();
       document.getElementById('editorRestart').hidden = false;
+      document.getElementById('editorRestartText').textContent = newKey && newKey !== oldKey
+        ? 'Written. After the restart it uses the new encryption key; this browser remembers it.'
+        : 'Written. Restart the device to apply the new settings.';
     }
     updateEditorChanges();
   };
