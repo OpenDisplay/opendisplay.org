@@ -4574,7 +4574,7 @@ async function tbConnectBluetooth() {
     if (e && e.tbBluetoothOff) { say(''); return; }  // the notice at the top explains it
     say(e && e.tbFriendly ? e.message
       : /no device selected|cancel/i.test(e && e.message || '') ? 'No display was chosen. Try again and pick the one whose name starts with OD.'
-      : 'Couldn\u2019t connect: ' + (e && e.message ? e.message : e), 'error');
+      : 'Couldn\u2019t reach the display. Make sure it\u2019s on and nearby, then try again. If that keeps failing, restart it.', 'error');
     return;
   }
   tbConnectTarget = null;
