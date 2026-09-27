@@ -663,6 +663,11 @@ ble_proto:
           64:
             name: EP75YR_800x480
             description: EP75YR_800x480
+
+          # 65 is reserved in the firmware (OD_PANEL_IC_*).
+          66:
+            name: ep133a_spectra_1200x1600
+            description: T133A01 Spectra 6 13.3" dual-controller (Seeed reTerminal E1004)
           67:
             name: ep154_200x200_4gray
             description: Waveshare 1.54"
