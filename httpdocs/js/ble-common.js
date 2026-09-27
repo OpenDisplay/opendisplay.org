@@ -5893,9 +5893,15 @@ const OpenDisplayBrowser = {
     }
     return 'Use Chrome or Edge on desktop or Android. On iPhone or iPad, use Bluefy for Bluetooth.';
   },
-  async ensureWebBluetoothAvailable() {
+  /**
+   * Resolves false (after telling the user) when Web Bluetooth can't be used right now.
+   * Pass { notify(message, reason) } to show it in the page's own UI; reason is 'unsupported' or
+   * 'adapter-off'. Without it, a browser alert is used.
+   */
+  async ensureWebBluetoothAvailable(opts = {}) {
+    const notify = typeof opts.notify === 'function' ? opts.notify : (message) => alert(message);
     if (!this.isWebBluetoothSupported()) {
-      alert(this.webBluetoothUnsupportedMessage());
+      notify(this.webBluetoothUnsupportedMessage(), 'unsupported');
       return false;
     }
     // On iOS/Bluefy getAvailability() is unreliable — it can resolve false even
@@ -5906,7 +5912,7 @@ const OpenDisplayBrowser = {
       try {
         const available = await navigator.bluetooth.getAvailability();
         if (!available) {
-          alert(this.webBluetoothAdapterUnavailableMessage());
+          notify(this.webBluetoothAdapterUnavailableMessage(), 'adapter-off');
           return false;
         }
       } catch (e) {
