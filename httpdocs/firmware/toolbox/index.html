@@ -3088,7 +3088,7 @@ function handleDriverBoardChange() {
       firmwareInstallButton.style.display = 'block';
       installNrfBtn.style.display = 'none';
       if (installNrf54Btn) installNrf54Btn.style.display = 'none';
-      firmwareInstallButton.setAttribute('manifest', selectedBoard.installConfig.manifest);
+      tbSetEspManifest(selectedBoard.installConfig.manifest);
     } else if (selectedBoard.installConfig.type === 'nrf52840') {
       firmwareInstallButton.style.display = 'none';
       installNrfBtn.style.display = 'block';
@@ -3374,7 +3374,7 @@ function updateSimpleConfigStatus() {
     setSimpleConfigStatus('Done.', 'success');
   } else if (missing.length > 0 && !tbSharedConfig) {
     setSimpleConfigStatus('Choose ' + missing.join(' and ') + ' first.', 'pending');
-  } else if (!toolboxFirmwareInstalled && !toolboxSkipsUsbForSelectedBoard()) {
+  } else if (!toolboxFirmwareInstalled && !toolboxSkipsUsbForSelectedBoard() && tbPath !== 'ble' && !(bleLib && bleLib.isConnected)) {
     setSimpleConfigStatus('Install the firmware first (step 2), or skip it if it\u2019s already installed.', 'pending');
   } else if (!toolboxCanUseBluetooth()) {
     setSimpleConfigStatus(tbBluetoothOff ? 'Turn on Bluetooth to continue.' : 'This browser can\u2019t use Bluetooth. See the note at the top of the page.', 'pending');
@@ -3418,17 +3418,29 @@ function tbContinueSetup() {
 function initToolboxInstallTracking() {
   if (window.__tbInstallTracking) return;
   window.__tbInstallTracking = true;
-  // ESP Web Tools: the dialog it appends to <body> emits state-changed with state "finished".
+  // ESP Web Tools appends its dialog to <body>. It sends no event when an install finishes and keeps the
+  // progress in the dialog's _installState, so watch that while the dialog is open.
   new MutationObserver(function(records) {
     records.forEach(function(r) {
       r.addedNodes.forEach(function(node) {
         if (node.nodeName !== 'EWT-INSTALL-DIALOG' || node.__tbTracked) return;
         node.__tbTracked = true;
-        node.addEventListener('state-changed', function(e) {
-          const state = e.detail && (e.detail.state || e.detail);
-          if (state === 'finished') markToolboxFirmwareInstalled();
+        let finished = false;
+        const watch = setInterval(function() {
+          if (!node.isConnected) { clearInterval(watch); return; }
+          tbKeepSettingsOnInstall(node);
+          const st = node._installState;
+          if (!finished && st && st.state === 'finished') {
+            finished = true;
+            markToolboxFirmwareInstalled();
+          }
+        }, 300);
+        node.addEventListener('closed', function() {
+          clearInterval(watch);
+          const st = node._installState;
+          if (!finished && st && st.state === 'finished') markToolboxFirmwareInstalled();
+          tbContinueSetup();
         });
-        node.addEventListener('closed', tbContinueSetup);
       });
     });
   }).observe(document.body, { childList: true });
@@ -4236,6 +4248,8 @@ function setMode(mode, opts) {
     document.getElementById('tbGoSetupBtn').hidden = mode !== 'update';
   }
   updateInstallStepForBoard(simpleConfigSelections.driverBoard);
+  const board = simpleConfigSelections.driverBoard;
+  if (board && board.installConfig && board.installConfig.type === 'esp32') tbSetEspManifest(board.installConfig.manifest);
   updateSimpleConfigStatus();
   updateLeaveWarning();
   if (mode === 'edit') {
@@ -4633,6 +4647,40 @@ function tbSyncKeyAfterWrite() {
   const key = configKeyHex();
   if (key) tbRememberKey(name, key); else tbForgetKey(name);
   return key;
+}
+// ---- Keeping the settings on an ESP32 update ----
+// ESP Web Tools can't tell an update from a new install on OpenDisplay (no Improv), so with our manifests it
+// erases the whole flash first, settings and encryption key included. A new setup may start clean; an update
+// must not. Its manifest asks before erasing instead, and the Toolbox answers "don't erase".
+let tbEspManifestBlob = null;
+let tbEspManifestGen = 0;
+function tbKeepsSettings() {
+  return tbMode === 'update';
+}
+async function tbSetEspManifest(url) {
+  const btn = document.getElementById('firmwareInstallButton');
+  const gen = ++tbEspManifestGen;
+  if (!tbKeepsSettings()) {
+    btn.setAttribute('manifest', url);
+    return;
+  }
+  btn.removeAttribute('manifest');
+  const base = new URL(tbSameOriginUrl(url), location.href);
+  const m = await fetch(base, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (gen !== tbEspManifestGen) return;
+  if (!m) {
+    btn.setAttribute('manifest', url);
+    return;
+  }
+  m.new_install_prompt_erase = true;
+  m.builds.forEach(b => b.parts.forEach(p => { p.path = new URL(p.path, base).href; }));
+  if (tbEspManifestBlob) URL.revokeObjectURL(tbEspManifestBlob);
+  tbEspManifestBlob = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: 'application/json' }));
+  btn.setAttribute('manifest', tbEspManifestBlob);
+}
+// Answers the dialog's "Erase device?" step. Without this the person sees it with "Erase device" unticked.
+function tbKeepSettingsOnInstall(dialog) {
+  if (tbKeepsSettings() && dialog._state === 'ASK_ERASE' && typeof dialog._startInstall === 'function') dialog._startInstall(false);
 }
 // ---- Firmware updates ----
 // The Toolbox hosts the firmware it installs, so "latest" is whatever version it would install for this board.
