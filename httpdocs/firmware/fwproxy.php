@@ -19,6 +19,9 @@ const GITHUB_ORG = 'OpenDisplay';
 // Repos whose release assets we serve.
 const ALLOWED_REPOS = ['Firmware', 'Firmware_NRF', 'Firmware_NRF54', 'Firmware_Silabs'];
 
+// A notice printed into the response would corrupt the firmware file; log only.
+ini_set('display_errors', '0');
+
 header('X-Content-Type-Options: nosniff');
 
 if (isset($_GET['selftest'])) {
@@ -29,9 +32,12 @@ if (isset($_GET['selftest'])) {
     exit;
 }
 
-$repo  = isset($_GET['repo'])  ? (string) $_GET['repo']  : '';
-$tag   = isset($_GET['tag'])   ? (string) $_GET['tag']   : '';
-$asset = isset($_GET['asset']) ? (string) $_GET['asset'] : '';
+function query_string($name) {
+    return isset($_GET[$name]) && is_string($_GET[$name]) ? $_GET[$name] : '';
+}
+$repo  = query_string('repo');
+$tag   = query_string('tag');
+$asset = query_string('asset');
 
 // --- validate -------------------------------------------------------------
 if (!in_array($repo, ALLOWED_REPOS, true)) {
@@ -73,7 +79,6 @@ curl_setopt_array($ch, [
 ]);
 $data = curl_exec($ch);
 $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-curl_close($ch);
 
 if ($data === false || $code >= 400) {
     http_response_code($code === 404 ? 404 : 502);
