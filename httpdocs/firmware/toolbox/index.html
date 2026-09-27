@@ -765,7 +765,9 @@ async function readDeviceConfig(onProgress) {
   const load = (configBytes) => {
     if (!configBytes || configBytes.length === 0) throw new Error('empty configuration');
     parseRawBytes(configBytes);
+    // parseRawBytes already rendered against the previous read's baseline; render again against this one.
     editorMarkClean();
+    renderEditor();
     addLog('Config loaded (' + configBytes.length + ' bytes)', 'success');
     return 'ok';
   };
