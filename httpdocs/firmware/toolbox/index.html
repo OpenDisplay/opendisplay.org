@@ -2627,6 +2627,11 @@ function initializeSimpleConfigMode() {
     syncEncryptionOptionUi();
   }
   initEspDeepSleepEditor();
+  document.querySelectorAll('#simpleConfigPanel input[type=range]').forEach(el => {
+    tbSyncSliderFill(el);
+    el.addEventListener('input', () => tbSyncSliderFill(el));
+    el.addEventListener('change', () => tbSyncSliderFill(el));
+  });
   initWifiOptionUi();
   initToolboxInstallTracking();
   document.getElementById('simpleAutoInstallBtn').onclick = startSimpleAutoInstall;
@@ -2661,6 +2666,12 @@ function updateOptionsSummary() {
   el.textContent = parts.join(', ');
 }
 
+// Sliders show how far they are set (the track fill reads --fill).
+function tbSyncSliderFill(el) {
+  if (!el) return;
+  const min = +el.min || 0, max = +el.max || 100;
+  el.style.setProperty('--fill', ((+el.value - min) / Math.max(max - min, 1) * 100) + '%');
+}
 const ESP_DEEP_SLEEP_MAX_SECONDS = 12 * 60 * 60;
 const ESP_DEEP_SLEEP_MAX_MINUTES = ESP_DEEP_SLEEP_MAX_SECONDS / 60;
 
@@ -2947,6 +2958,7 @@ function setEspDeepSleepFromMinutes(minutes) {
   if (!Number.isFinite(min) || min < 0) min = 0;
   min = Math.min(min, ESP_DEEP_SLEEP_MAX_MINUTES);
   slider.value = String(min * 60);
+  tbSyncSliderFill(slider);
   updateEspDeepSleepLabel();
 }
 
@@ -3011,6 +3023,7 @@ function updateEspDeepSleepVisibility(board) {
   group.style.display = show ? 'block' : 'none';
   if (!show) {
     slider.value = '0';
+    tbSyncSliderFill(slider);
     const btn = document.getElementById('espDeepSleepValue');
     const input = document.getElementById('espDeepSleepMinutesInput');
     if (input) input.style.display = 'none';
@@ -4269,6 +4282,7 @@ let tbCameFromParts = false;
 function showScreen(name, opts) {
   opts = opts || {};
   tbScreen = name;
+  document.body.dataset.tbScreen = name;
   document.querySelectorAll('#simpleConfigPanel .tb-screen').forEach(sec => { sec.hidden = sec.dataset.screen !== name; });
   if (name === 'start' && bleLib && bleLib.isConnected && !configureRunning) bleLib.disconnect();
   const order = tbScreenOrder();

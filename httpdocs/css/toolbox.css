@@ -623,3 +623,25 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 .tb-field__key{display:inline-block;margin-left:8px;font-family:var(--font-mono);font-size:.75rem;font-weight:400;color:var(--fg4);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .tb-field--compact .tb-field__key{display:block;margin:1px 0 0;font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .page-inner.tool-ui .tb-pins .tb-field__label{white-space:normal}
+.tb-other:not(:has(> :not([hidden]))){display:none}
+/* The generic input styles (border, padding, height) also hit range inputs; keep sliders native. */
+/* Chrome draws the unfilled track dark for light accent colours, so draw the slider ourselves:
+   thin paper track, blue up to the value (--fill, set by the page), blue thumb. */
+.page-inner.tool-ui input[type=range]{-webkit-appearance:none;appearance:none;min-height:0!important;height:24px;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;cursor:pointer}
+.page-inner.tool-ui input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--od-blue) var(--fill,0%),var(--od-paper-3) var(--fill,0%))}
+.page-inner.tool-ui input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--od-blue) var(--fill,0%),var(--od-paper-3) var(--fill,0%))}
+.page-inner.tool-ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-7px;border-radius:50%;background:var(--od-blue);border:2px solid var(--od-white);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.page-inner.tool-ui input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--od-blue);border:2px solid var(--od-white);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.page-inner.tool-ui input[type=range]:focus-visible{outline:none}
+.page-inner.tool-ui input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:var(--shadow-focus)}
+
+/* Wide screens: the device's page goes two-column like the BLE Tester once connected
+   (the display card on the left, settings and firmware on the right). */
+@media (min-width:1024px){
+  body[data-tb-screen="home"]:not([data-tb-mode="edit"]).page-inner.tool-ui .tool-page > .container{max-width:1180px}
+  .tb-home:not([hidden]){display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:16px;align-items:start}
+  .tb-home > .tb-conn{grid-column:1 / -1}
+  .tb-home > .bt-card:nth-of-type(2){grid-column:1;grid-row:2 / span 2}
+  .tb-home > .bt-card:nth-of-type(3){grid-column:2;grid-row:2}
+  .tb-home > .bt-card:nth-of-type(4){grid-column:2;grid-row:3}
+}
