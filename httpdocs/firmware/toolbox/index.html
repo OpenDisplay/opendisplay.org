@@ -149,6 +149,9 @@
   <p class="tb-lead" id="tbLead">Install and set up your display.</p>
 </div>
 <div id="tbBrowserNotice" class="bt-notice" role="alert" hidden></div>
+<div id="tbBluetoothNotice" class="bt-notice" role="status" hidden>
+  <p><strong>Bluetooth is off.</strong> <span id="tbBluetoothNoticeText">Turn it on in your system settings to connect.</span></p>
+</div>
 
     <div class="tb-wizard" id="simpleConfigPanel" style="display: none;">
       <div class="tb-top" id="tbNav">
@@ -465,7 +468,33 @@ function toolboxCanShowUsbInstall(installType) {
 }
 
 function toolboxCanUseBluetooth() {
-  return !window.OpenDisplayBrowser || window.OpenDisplayBrowser.isWebBluetoothSupported();
+  return (!window.OpenDisplayBrowser || window.OpenDisplayBrowser.isWebBluetoothSupported()) && !tbBluetoothOff;
+}
+// Bluetooth switched off (or blocked for the site) is a state, not an error: say so once at the top,
+// disable what needs it, and recover by itself when it comes back.
+let tbBluetoothOff = false;
+async function tbWatchBluetooth() {
+  const b = window.OpenDisplayBrowser;
+  const bt = navigator.bluetooth;
+  // getAvailability() is unreliable on iOS/Bluefy; there the device list itself reports problems.
+  if (!bt || typeof bt.getAvailability !== 'function' || (b && (b.isIOS() || b.isBluefy()))) return;
+  const apply = (available) => { tbSetBluetoothOff(!available); };
+  try { apply(await bt.getAvailability()); } catch (e) { /* unknown: assume usable */ }
+  bt.addEventListener('availabilitychanged', (e) => apply(!!e.value));
+}
+function tbSetBluetoothOff(off) {
+  tbBluetoothOff = off;
+  const notice = document.getElementById('tbBluetoothNotice');
+  const b = window.OpenDisplayBrowser;
+  if (notice) {
+    notice.hidden = !off;
+    document.getElementById('tbBluetoothNoticeText').textContent = 'Turn it on in your system settings to connect.'
+      + (b && b.isChromium && b.isChromium() ? ' If it\u2019s already on, allow Bluetooth for this site in ' + (b.isEdge && b.isEdge() ? 'Edge' : 'Chrome') + '\u2019s site settings.' : '');
+  }
+  if (typeof updateStartScreen === 'function' && document.getElementById('tbStartBleBtn')) updateStartScreen();
+  updateStepStates();
+  updateSimpleConfigStatus();
+  updateEditorDeviceBar();
 }
 // Board types this page has a USB installer for; everything else is flashed another way.
 const TOOLBOX_USB_INSTALL_TYPES = ['esp32', 'nrf52840', 'nrf54l15', 'nrf54lm20'];
@@ -491,7 +520,10 @@ async function ensureWebBluetoothAvailable() {
   tbBluetoothProblem = '';
   if (window.OpenDisplayBrowser && typeof window.OpenDisplayBrowser.ensureWebBluetoothAvailable === 'function') {
     return window.OpenDisplayBrowser.ensureWebBluetoothAvailable({
-      notify: (message, reason) => { tbBluetoothProblem = tbBluetoothProblemText(reason); }
+      notify: (message, reason) => {
+        tbBluetoothProblem = tbBluetoothProblemText(reason);
+        if (reason === 'adapter-off') tbSetBluetoothOff(true);
+      }
     });
   }
   if (window.OpenDisplayBrowser && window.OpenDisplayBrowser.isWebBluetoothSupported()) {
@@ -598,6 +630,7 @@ function updateEditorDeviceBar() {
   if (btn) {
     btn.textContent = connected ? 'Disconnect' : 'Connect';
     btn.className = 'bt-btn ' + (connected ? 'bt-btn--outline' : 'bt-btn--primary bt-btn--block');
+    btn.disabled = !connected && !toolboxCanUseBluetooth();
   }
   if (bar) bar.classList.toggle('is-connected', connected);
   // Write and read only mean something with a device on the other end.
@@ -614,7 +647,8 @@ function updateEditorDeviceBar() {
     if (nc) nc.hidden = true;
     const status = document.getElementById('statusText');
     if (status && !status.classList.contains('is-error')) {
-      status.textContent = instances.packets && instances.packets.length && !editorBaseline
+      status.textContent = tbBluetoothOff ? 'Turn on Bluetooth to connect.'
+        : instances.packets && instances.packets.length && !editorBaseline
         ? 'Connect a device to write this configuration.'
         : 'Connect to read the device\u2019s configuration.';
     }
@@ -689,6 +723,7 @@ function preConnect() {
   } else {
     void (async () => {
     if (!(await ensureWebBluetoothAvailable())) {
+      if (tbBluetoothOff) return;  // the notice at the top explains it; the button is now disabled
       const status = document.getElementById('statusText');
       if (status) { status.textContent = tbBluetoothProblem || tbBluetoothProblemText('unsupported'); status.className = 'tb-devbar__status is-error'; }
       return;
@@ -2353,6 +2388,7 @@ function connectToBleDevice(useCachedDevice = false) {
     if (!ok) {
       const err = new Error(tbBluetoothProblem || tbBluetoothProblemText('unsupported'));
       err.tbFriendly = true;
+      err.tbBluetoothOff = tbBluetoothOff;
       reject(err);
       return;
     }
@@ -3224,7 +3260,7 @@ function updateSimpleConfigStatus() {
   } else if (!toolboxFirmwareInstalled && !toolboxSkipsUsbForSelectedBoard()) {
     setSimpleConfigStatus('Install the firmware first (step 2), or skip it if it\u2019s already installed.', 'pending');
   } else if (!toolboxCanUseBluetooth()) {
-    setSimpleConfigStatus('This browser can\u2019t use Bluetooth. See the note at the top of the page.', 'pending');
+    setSimpleConfigStatus(tbBluetoothOff ? 'Turn on Bluetooth to continue.' : 'This browser can\u2019t use Bluetooth. See the note at the top of the page.', 'pending');
   } else {
     // The "Almost done" callout already says this after an install.
     const callout = document.getElementById('tbAlmostDone');
@@ -3257,7 +3293,7 @@ function markToolboxFirmwareInstalled(opts) {
 }
 // Web Bluetooth only opens its device list in response to a click; the click that closes the installer counts.
 function tbContinueSetup() {
-  if (!tbAutoSetupPending) return;
+  if (!tbAutoSetupPending || !toolboxCanUseBluetooth()) return;
   tbAutoSetupPending = false;
   if (tbMode === 'setup' && tbScreen === 'settings' && !configureRunning) startSimpleAutoInstall();
 }
@@ -3410,6 +3446,7 @@ async function startSimpleAutoInstall() {
     addLog('Configure failed: ' + (error && error.message ? error.message : error), 'error');
     tbShowLog = true;
     document.getElementById('statusDisplay').hidden = false;
+    if (error && error.tbBluetoothOff) { updateSimpleConfigStatus(); return; }  // the notice at the top explains it
     setSimpleConfigStatus(error && error.tbFriendly
       ? error.message
       : needsClick
@@ -4279,7 +4316,8 @@ function updateStartScreen() {
   ble.classList.toggle('bt-btn--primary', !usbFirst);
   ble.classList.toggle('bt-btn--outline', usbFirst);
   document.getElementById('tbStartBleLabel').textContent = 'Connect over Bluetooth';
-  document.getElementById('tbStartBleSub').textContent = bleOk ? 'Already runs OpenDisplay.' : 'This browser can\u2019t use Bluetooth.';
+  document.getElementById('tbStartBleSub').textContent = bleOk ? 'Already runs OpenDisplay.'
+    : tbBluetoothOff ? 'Turn on Bluetooth to connect.' : 'This browser can\u2019t use Bluetooth.';
   document.getElementById('tbStartUsbSub').textContent = usbOk ? 'For new displays.' : 'Needs Chrome or Edge on a computer.';
 }
 // In setup, installing continues straight into Bluetooth setup, so say so and offer the options before it starts.
@@ -4397,6 +4435,7 @@ async function tbConnectBluetooth() {
   } catch (e) {
     row.disabled = false;
     updateStartScreen();
+    if (e && e.tbBluetoothOff) { say(''); return; }  // the notice at the top explains it
     say(e && e.tbFriendly ? e.message
       : /no device selected|cancel/i.test(e && e.message || '') ? 'No display was chosen. Try again and pick the one whose name starts with OD.'
       : 'Couldn\u2019t connect: ' + (e && e.message ? e.message : e), 'error');
@@ -4593,6 +4632,7 @@ function initToolboxUi() {
 }
 initToolboxUi();
 loadYamlFromFile();
+tbWatchBluetooth();
 </script>
 
     </div>
