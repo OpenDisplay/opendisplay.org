@@ -476,9 +476,23 @@ function toolboxSkipsUsbForSelectedBoard() {
   return !toolboxCanShowUsbInstall(board.installConfig.type);
 }
 
+// Why Bluetooth can't be used right now, in the Toolbox's words (shown inline, not as a pop-up).
+let tbBluetoothProblem = '';
+function tbBluetoothProblemText(reason) {
+  const b = window.OpenDisplayBrowser;
+  if (reason === 'adapter-off') {
+    return 'Bluetooth is off or not available. Turn it on in your system settings'
+      + (b && b.isChromium && b.isChromium() ? ' and allow it for this site in ' + (b.isEdge && b.isEdge() ? 'Edge' : 'Chrome') + '\u2019s site settings' : '')
+      + ', then try again.';
+  }
+  return 'This browser can\u2019t use Bluetooth. Use Chrome or Edge, or Bluefy on iPhone and iPad.';
+}
 async function ensureWebBluetoothAvailable() {
+  tbBluetoothProblem = '';
   if (window.OpenDisplayBrowser && typeof window.OpenDisplayBrowser.ensureWebBluetoothAvailable === 'function') {
-    return window.OpenDisplayBrowser.ensureWebBluetoothAvailable();
+    return window.OpenDisplayBrowser.ensureWebBluetoothAvailable({
+      notify: (message, reason) => { tbBluetoothProblem = tbBluetoothProblemText(reason); }
+    });
   }
   if (window.OpenDisplayBrowser && window.OpenDisplayBrowser.isWebBluetoothSupported()) {
     return true;
@@ -674,7 +688,11 @@ function preConnect() {
     bleLib.disconnect();
   } else {
     void (async () => {
-    if (!(await ensureWebBluetoothAvailable())) return;
+    if (!(await ensureWebBluetoothAvailable())) {
+      const status = document.getElementById('statusText');
+      if (status) { status.textContent = tbBluetoothProblem || tbBluetoothProblemText('unsupported'); status.className = 'tb-devbar__status is-error'; }
+      return;
+    }
     const namePrefix = document.getElementById('namePrefix').value.trim();
     if (!namePrefix) {
       addLog("Error: Device filter needed.", 'error');
@@ -2333,7 +2351,9 @@ function connectToBleDevice(useCachedDevice = false) {
   return new Promise((resolve, reject) => {
     void ensureWebBluetoothAvailable().then((ok) => {
     if (!ok) {
-      reject(new Error('Web Bluetooth not available'));
+      const err = new Error(tbBluetoothProblem || tbBluetoothProblemText('unsupported'));
+      err.tbFriendly = true;
+      reject(err);
       return;
     }
     if (bleLib && bleLib.isConnected) {
@@ -3390,7 +3410,9 @@ async function startSimpleAutoInstall() {
     addLog('Configure failed: ' + (error && error.message ? error.message : error), 'error');
     tbShowLog = true;
     document.getElementById('statusDisplay').hidden = false;
-    setSimpleConfigStatus(needsClick
+    setSimpleConfigStatus(error && error.tbFriendly
+      ? error.message
+      : needsClick
       ? 'Press the button to finish setting it up.'
       : cancelled
       ? 'No device was chosen. Press the button again and pick the device whose name starts with OD.'
@@ -4375,7 +4397,9 @@ async function tbConnectBluetooth() {
   } catch (e) {
     row.disabled = false;
     updateStartScreen();
-    say(/no device selected|cancel/i.test(e && e.message || '') ? 'No display was chosen. Try again and pick the one whose name starts with OD.' : 'Couldn\u2019t connect: ' + (e && e.message ? e.message : e), 'error');
+    say(e && e.tbFriendly ? e.message
+      : /no device selected|cancel/i.test(e && e.message || '') ? 'No display was chosen. Try again and pick the one whose name starts with OD.'
+      : 'Couldn\u2019t connect: ' + (e && e.message ? e.message : e), 'error');
     return;
   }
   if (tbSharedConfig) {
