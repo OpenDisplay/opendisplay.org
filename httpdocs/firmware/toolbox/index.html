@@ -4591,6 +4591,63 @@ function tbSyncKeyAfterWrite() {
   if (key) tbRememberKey(name, key); else tbForgetKey(name);
   return key;
 }
+// ---- Firmware updates ----
+// The Toolbox hosts the firmware it installs, so "latest" is whatever version it would install for this board.
+const TB_FIRMWARE_REPO_ESP_NRF52 = 'OpenDisplay/Firmware';
+const TB_DEFAULT_ESP_MANIFEST = 'bin/esp32-s3-N16R8_full.json';
+const tbLatestCache = {};
+// Manifests in presets point at opendisplay.org; read the copy this page is served with (same files).
+function tbSameOriginUrl(url) {
+  return String(url || '').replace(/^https:\/\/opendisplay\.org\/firmware\/toolbox\//, '');
+}
+function tbLatestFirmwareVersion(board) {
+  const cfg = board && board.installConfig;
+  if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type)) return Promise.resolve(null);
+  let url, pick;
+  if (/Firmware_NRF54/.test(cfg.githubRepo || '')) {
+    url = 'firmware/firmware-nrf54-version.json';
+    pick = (j) => j.tag;
+  } else if ((cfg.githubRepo || '').indexOf(TB_FIRMWARE_REPO_ESP_NRF52) >= 0) {
+    // ESP32 manifests carry the version; nRF52840 is built from the same repo and release.
+    url = cfg.type === 'esp32' && cfg.manifest ? tbSameOriginUrl(cfg.manifest) : TB_DEFAULT_ESP_MANIFEST;
+    pick = (j) => j.version;
+  } else {
+    return Promise.resolve(null);
+  }
+  if (!tbLatestCache[url]) {
+    tbLatestCache[url] = fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => (j && pick(j)) || null).catch(() => null);
+  }
+  return tbLatestCache[url];
+}
+function tbCompareVersions(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+// latest: null while unknown (or not checkable), otherwise the version this page would install.
+function renderFirmwareCard(board, latest) {
+  const text = document.getElementById('tbHomeFwText');
+  const btn = document.getElementById('tbHomeUpdateBtn');
+  const current = tbFirmwareVersion;
+  const newer = !!(latest && current && tbCompareVersions(latest, current) > 0);
+  if (newer) {
+    text.textContent = 'Version ' + current + '. Version ' + latest + ' is available; updating keeps the settings.';
+  } else if (latest && current) {
+    text.textContent = 'Version ' + current + ', the latest.';
+  } else {
+    text.textContent = (current ? 'Version ' + current + '. ' : '') + 'Updating keeps the settings.';
+  }
+  btn.textContent = newer ? 'Update to ' + latest : 'Update the firmware';
+  btn.classList.toggle('bt-btn--primary', newer);
+  btn.classList.toggle('bt-btn--outline', !newer);
+  document.getElementById('toolboxHome').classList.toggle('has-update', newer);
+  // Also say it at the top, where it's seen without scrolling to the Firmware card.
+  document.getElementById('tbHomeMeta').textContent = [configKeyHex() ? 'Encrypted' : '', newer ? 'Update available' : ''].filter(Boolean).join(' \u00b7 ');
+}
 function renderDeviceHome() {
   const sel = presetSelectionFromConfig();
   if (sel) applySimpleSelection({ driverBoardId: sel.driverBoard.id, displayId: sel.display && sel.display.id, powerId: sel.power && sel.power.id });
@@ -4600,7 +4657,15 @@ function renderDeviceHome() {
   document.getElementById('tbHomeTitle').textContent = (sel && knownDeviceLabel()) || model || 'Your display';
   document.getElementById('tbHomeName').textContent = name || 'Connected';
   document.getElementById('tbHomeMeta').textContent = configKeyHex() ? 'Encrypted' : '';
-  document.getElementById('tbHomeFwText').textContent = (tbFirmwareVersion ? 'Version ' + tbFirmwareVersion + '. ' : '') + 'Updating keeps the settings.';
+  document.getElementById('toolboxHome').classList.remove('has-update');
+  renderFirmwareCard(sel && sel.driverBoard, null);
+  if (sel && sel.driverBoard && tbFirmwareVersion) {
+    const board = sel.driverBoard;
+    tbLatestFirmwareVersion(board).then(latest => {
+      // Only if the page still shows this device.
+      if (tbScreen === 'home' && simpleConfigSelections.driverBoard === board) renderFirmwareCard(board, latest);
+    });
+  }
   renderFacts(document.getElementById('tbHomeFacts'), tbConfigFacts());
   const key = configKeyHex();
   const params = new URLSearchParams();
