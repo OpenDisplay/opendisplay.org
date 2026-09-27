@@ -1,164 +1,339 @@
-/* OpenDisplay Toolbox — page-specific styles (tool-ui base in tool-ui.css) */
-.toolbox-intro{
-  max-width:52ch;
-  margin:0 0 24px;
-  text-align:left;
+/* OpenDisplay Toolbox. Base form styles come from tool-ui.css; tool-ui.css styles every <button>,
+   so the rules here are prefixed with .tool-ui / .page-inner to win.
+   Look: content sits on the page, no boxes in boxes. Lists are divided by hairlines, secondary
+   actions are quiet text, and blue is only for the one thing to do next. */
+
+/* Page frame: same header and card language as the BLE Tester (firmware/display). Once both pages
+   are on main, the shared rules (bt-card, bt-btn, bt-notice, bt-hint) should move to one stylesheet. */
+.page-inner.tool-ui .tool-page > .container{max-width:760px}
+.tb-hero{margin:0 0 16px}
+.page-inner.tool-ui .tb-hero h1{margin:0 0 6px;font-family:var(--font-sans);font-size:2rem;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.tb-lead{margin:0;max-width:46ch;color:var(--fg2);font-family:var(--font-sans);font-size:1.02rem;line-height:1.45}
+.page-inner.tool-ui .tb-back--editor[hidden]{display:none}
+
+/* Cards (BLE Tester) */
+.page-inner.tool-ui .tool-page .bt-card{margin:0 0 14px;padding:16px}
+.bt-card__head{display:grid;grid-template-columns:36px 1fr;column-gap:12px;align-items:center;margin:0 0 14px}
+.bt-card__head > h2{grid-column:2;grid-row:1}
+.bt-card__head > p{grid-column:1 / -1;margin:0;color:var(--fg2);font-family:var(--font-sans);font-size:.95rem;line-height:1.45}
+.bt-card__head > p:first-of-type{margin-top:10px}
+.page-inner.tool-ui .bt-card__head h2{margin:0;font-family:var(--font-sans);font-size:1.25rem;font-weight:600;letter-spacing:-.01em;line-height:1.3;color:var(--fg1)}
+.bt-card__icon{grid-row:1;grid-column:1;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--od-blue) 12%,transparent);color:var(--od-blue-ink)}
+.bt-card__icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tb-done .bt-card__icon{background:color-mix(in srgb,var(--od-ok) 14%,transparent);color:var(--od-ok)}
+.bt-hint{margin:8px 0 0;max-width:52ch;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem;line-height:1.45}
+.tool-ui .bt-btn > svg{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Floating device card (BLE Tester's device bar) */
+.page-inner.tool-ui .tool-page .tb-conn{
+  display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:10px 14px;position:sticky;top:8px;z-index:20;
+  background:color-mix(in srgb,var(--od-paper) 97%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  box-shadow:0 6px 20px -10px rgba(11,15,18,.35)
 }
-.toolbox-requirements{
-  margin:0;
-  padding:0;
-  list-style:none;
-  font-size:0.875rem;
-  line-height:1.5;
-  color:var(--muted-foreground);
+.tb-conn__id{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tb-conn__name{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:1.05rem;font-weight:600;color:var(--fg1)}
+.tb-conn__name::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--od-ok);flex-shrink:0}
+.tb-conn__name:empty{display:none}
+.tb-conn__meta{padding-left:16px;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem}
+.tb-conn__meta:empty{display:none}
+.tool-ui .bt-btn.tb-conn__btn{min-height:36px;padding:0 12px;font-size:14px}
+
+/* Buttons (same as the BLE Tester) */
+.tool-ui .bt-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;
+  min-height:44px;padding:0 16px;margin:0;border-radius:10px;
+  font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.2;text-align:center;text-decoration:none;
+  cursor:pointer;box-shadow:none;transform:none
 }
-.toolbox-requirements li{margin:4px 0}
-.toolbox-requirements a{color:var(--accent);text-decoration:underline}
-.toolbox-ios-banner{
-  margin:0 0 16px;
-  padding:12px 14px;
-  border-radius:8px;
-  border:1px solid var(--border-color);
-  background:var(--card-background);
-  font-size:14px;
-  line-height:1.45;
+.tool-ui .bt-btn:hover,.tool-ui .bt-btn:active{transform:none;box-shadow:none}
+.tool-ui .bt-btn--primary{background:var(--od-blue);border:1.5px solid var(--od-blue);color:var(--od-bezel)}
+.tool-ui .bt-btn--primary:hover{background:#33ccff;border-color:#33ccff;color:var(--od-bezel)}
+.tool-ui .bt-btn--outline{background:transparent;border:1.5px solid var(--od-ink-line);color:var(--fg1)}
+.tool-ui .bt-btn--outline:hover{background:var(--od-paper-2);border-color:var(--fg1);color:var(--fg1)}
+.tool-ui .bt-btn--quiet{background:transparent;border:1.5px solid transparent;color:var(--fg3)}
+.tool-ui .bt-btn--quiet:hover{background:var(--od-paper-2);color:var(--fg1)}
+.tool-ui .bt-btn--danger{background:transparent;border:1.5px solid color-mix(in srgb,var(--od-error) 45%,transparent);color:var(--od-error)}
+.tool-ui .bt-btn--danger:hover{background:color-mix(in srgb,var(--od-error) 8%,transparent);border-color:var(--od-error)}
+.tool-ui .bt-btn--block{width:100%}
+.page-inner.tool-ui .bt-btn[hidden]{display:none}
+.tool-ui button.bt-btn:disabled{background:var(--od-paper-2);border-color:var(--od-paper-line);color:var(--fg4);cursor:not-allowed}
+.tool-ui .bt-btn:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+
+/* Notices */
+.bt-notice{margin:0 0 14px;padding:12px 14px;border-left:3px solid var(--od-warn);border-radius:0 10px 10px 0;background:var(--od-paper-2);font-family:var(--font-sans);font-size:.95rem;line-height:1.45}
+.bt-notice p{margin:0 0 8px}
+.bt-notice p:last-child{margin-bottom:0}
+.bt-notice a{color:var(--od-blue-ink)}
+.bt-notice[hidden]{display:none}
+
+.tb-toast{
+  position:fixed;left:50%;bottom:20px;z-index:2000;max-width:min(520px,calc(100vw - 32px));
+  padding:12px 16px;border-radius:10px;background:var(--od-bezel);color:#fff;
+  font-family:var(--font-sans);font-size:.95rem;line-height:1.4;box-shadow:var(--shadow-2);
+  transform:translate(-50%,12px);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s
 }
-.toolbox-ios-banner a{color:var(--accent);text-decoration:underline}
-.toolbox-step{
-  margin-bottom:28px;
-  padding-bottom:0;
-  scroll-margin-top:16px;
+.tb-toast.is-visible{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.tb-toast--error{border-left:4px solid var(--od-error)}
+.tb-toast--success{border-left:4px solid var(--od-ok)}
+.tb-toast--info{border-left:4px solid var(--od-blue)}
+@media (prefers-reduced-motion:reduce){.tb-toast{transition:none}}
+
+/* Wizard: each step is a card */
+.tb-top{margin:0 0 8px}
+.tb-top[hidden]{display:none}
+.page-inner.tool-ui .tb-back{
+  display:inline-flex;align-items:center;gap:2px;margin:0 0 0 -6px;padding:4px 8px 4px 2px;min-height:32px;
+  background:transparent;border:0;border-radius:8px;color:var(--fg2);font-family:var(--font-sans);font-size:.9rem;font-weight:500;box-shadow:none;transform:none
 }
-.toolbox-step:last-child{margin-bottom:0}
-.toolbox-step--more{padding-bottom:0;margin-bottom:16px}
-.toolbox-step__title{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  margin:0 0 8px;
-  font-size:1.05rem;
-  font-weight:600;
-  color:var(--foreground);
-  font-family:var(--font-sans);
+.page-inner.tool-ui .tb-back:hover{background:var(--od-paper-2);color:var(--fg1);transform:none}
+.page-inner.tool-ui .tb-back:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+.tb-back svg,.tb-device__chev{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.page-inner.tool-ui .tb-back--editor{margin:0 0 8px -6px}
+.tb-screen[hidden]{display:none}
+.bt-card__head > .tb-context{color:var(--fg3);font-size:.85rem}
+.bt-card__head > .tb-context:first-of-type{margin-top:4px}
+.tb-context:empty{display:none}
+.tb-screen__text{margin:0 0 14px;max-width:56ch;color:var(--fg2);font-family:var(--font-sans);font-size:.95rem;line-height:1.5}
+.tb-screen__text a{color:var(--od-blue-ink)}
+.tb-screen__text[hidden]{display:none}
+/* One rule for button widths. Inside a card, actions span the card (pairs share it in equal columns,
+   like the BLE Tester's card actions). Outside cards, every main button has the same width. */
+.tb-start .bt-btn,.tool-ui .tb-devbar:not(.is-connected) #connectbutton{width:100%}
+@media (min-width:641px){.tb-start .bt-btn,.tool-ui .tb-devbar:not(.is-connected) #connectbutton{max-width:360px}}
+.tb-start__option + .tb-start__option{margin-top:18px}
+.tb-start .bt-btn{display:flex}
+
+/* Device list: one column, hairline rows */
+.tb-devices{border-top:1px solid var(--od-paper-line)}
+.page-inner.tool-ui .tb-device{
+  display:flex;align-items:center;gap:14px;width:100%;margin:0;padding:10px 4px;min-height:68px;box-sizing:border-box;
+  background:transparent;border:0;border-bottom:1px solid var(--od-paper-line);border-radius:0;color:var(--fg1);
+  font-family:var(--font-sans);text-align:left;box-shadow:none;transform:none
 }
-.toolbox-step__num{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:26px;
-  height:26px;
-  border-radius:50%;
-  background:var(--accent);
-  color:var(--accent-button);
-  font-size:0.8rem;
-  font-weight:700;
-  flex-shrink:0;
+.page-inner.tool-ui .tb-device:hover{background:var(--od-paper-2);transform:none}
+.page-inner.tool-ui .tb-device:hover .tb-device__chev{color:var(--fg1)}
+.page-inner.tool-ui .tb-device:focus-visible{outline:none;box-shadow:inset 0 0 0 2px color-mix(in oklab,var(--od-blue) 60%,transparent)}
+.tb-device__img{flex-shrink:0;width:64px;height:48px;border-radius:6px;overflow:hidden;background:var(--od-paper-2)}
+.tb-device__img img{display:block;width:100%;height:100%;object-fit:cover}
+.tb-device__text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.tb-device__name{font-size:1rem;font-weight:600;line-height:1.3}
+.tb-device__sub{color:var(--fg3);font-size:.875rem;font-weight:400;line-height:1.35}
+.tb-device__sub:empty{display:none}
+.tb-device__chev{color:var(--fg4)}
+.page-inner.tool-ui .tb-device--plain{min-height:56px}
+.tb-other{display:flex;flex-wrap:wrap;gap:4px 20px;margin-top:28px}
+.page-inner.tool-ui .tb-link{
+  display:inline;margin:0;padding:4px 0;min-height:0;background:transparent;border:0;border-radius:4px;box-shadow:none;transform:none;
+  color:var(--fg3);font-family:var(--font-sans);font-size:.9rem;font-weight:500;text-align:left;
+  text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--od-paper-line)
 }
-.toolbox-step__hint{
-  margin:0 0 14px;
-  font-size:0.875rem;
-  line-height:1.45;
-  color:var(--muted-foreground);
+.page-inner.tool-ui .tb-link:hover{background:transparent;color:var(--fg1);text-decoration-color:currentColor;transform:none}
+.page-inner.tool-ui .tb-link:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+.page-inner.tool-ui .tb-link[hidden]{display:none}
+
+/* Entry choices and the device's own page */
+.page-inner.tool-ui .tb-device:disabled{background:transparent;color:var(--fg4);cursor:not-allowed}
+.page-inner.tool-ui .tb-device:disabled .tb-device__chev{visibility:hidden}
+.tb-facts{margin:0 0 24px;font-family:var(--font-sans)}
+.tb-facts > div{display:flex;gap:16px;padding:9px 0;border-bottom:1px solid var(--od-paper-line)}
+.tb-facts > div:first-child{border-top:1px solid var(--od-paper-line)}
+.tb-facts dt{flex:0 0 7.5rem;color:var(--fg3);font-size:.9rem}
+.tb-facts dd{flex:1;min-width:0;margin:0;color:var(--fg1);font-size:.95rem}
+
+.page-inner.tool-ui .tb-link.tb-card-link{display:block;margin-top:10px}
+#tbStartStatus{margin-top:14px}
+
+/* Parts */
+.tb-parts{display:flex;flex-direction:column;gap:18px;margin:0 0 28px}
+.page-inner.tool-ui .tb-parts__field{display:flex;flex-direction:column;gap:6px;margin:0;font-family:var(--font-sans);font-size:.9rem;font-weight:600;color:var(--fg1)}
+.page-inner.tool-ui .tb-parts__field select{width:100%;min-width:0;min-height:44px;font-family:var(--font-sans)!important;font-size:15px!important}
+
+/* Firmware */
+#installButtonContainer esp-web-install-button{display:block}
+.page-inner.tool-ui .tb-link.tb-skip{display:block;margin-top:14px}
+.page-inner.tool-ui .tb-link.tb-skip[hidden]{display:none}
+
+/* Folds: a quiet disclosure line, no box */
+.tb-fold{margin:24px 0 0;border-top:1px solid var(--od-paper-line)}
+.tb-fold > summary{
+  display:flex;align-items:center;gap:10px;min-height:48px;cursor:pointer;list-style:none;
+  font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)
 }
-.toolbox-step__hint--presets{
-  font-weight:500;
-  color:var(--foreground);
+.tb-fold > summary::-webkit-details-marker{display:none}
+.tb-fold > summary::after{content:'';width:7px;height:7px;margin-left:auto;margin-right:4px;border-right:2px solid var(--fg3);border-bottom:2px solid var(--fg3);transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+.tb-fold[open] > summary::after{transform:rotate(-135deg) translateY(-2px)}
+.tb-fold > summary:focus-visible{outline:none;box-shadow:var(--shadow-focus);border-radius:6px}
+.tb-fold__hint{color:var(--fg3);font-weight:400;font-size:.875rem}
+.tb-fold__body{padding:4px 0 8px}
+.tb-fold__body > .bt-btn:last-child{margin-top:8px}
+@media (prefers-reduced-motion:reduce){.tb-fold > summary::after{transition:none}}
+
+/* Settings */
+.tb-callout{margin:0 0 20px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--od-blue) 10%,var(--od-paper));font-family:var(--font-sans);font-size:.95rem;line-height:1.5;color:var(--fg1)}
+.tb-callout[hidden]{display:none}
+.toolbox-status{margin:14px 0 0;color:var(--fg2);font-family:var(--font-sans);font-size:.95rem;line-height:1.5}
+.toolbox-status:empty{display:none}
+.toolbox-status--pending{color:var(--fg3)}
+.toolbox-status--success{color:var(--od-ok);font-weight:600}
+.toolbox-status--error{color:var(--od-error)}
+.tool-ui #simpleAutoInstallBtn.is-busy{opacity:1;color:var(--od-bezel);border-color:var(--od-blue);cursor:progress;
+  background:linear-gradient(to right,var(--od-blue) var(--progress,0%),color-mix(in srgb,var(--od-blue) 22%,var(--od-paper)) var(--progress,0%))}
+.encryption-hint{margin:6px 0 0;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem;line-height:1.45}
+
+/* Done */
+.tb-key{margin:0 0 24px}
+.tb-key[hidden]{display:none}
+.tb-key__label{margin:0 0 8px;color:var(--fg2);font-family:var(--font-sans);font-size:.9rem}
+.tb-key__row{display:flex;gap:8px;align-items:center}
+.tb-key__value{flex:1;min-width:0;padding:10px 12px;border-radius:8px;background:var(--od-paper-2);font-family:var(--font-mono);font-size:.85rem;line-height:1.5;overflow-wrap:anywhere;user-select:all}
+.tb-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.tb-actions > .bt-btn{white-space:nowrap}
+.tb-actions > .bt-btn{width:100%}
+
+/* Editor: device card. Disconnected it's just the big Connect button, like the BLE Tester. */
+.page-inner.tool-ui .tool-page .tb-devbar{flex-direction:column;align-items:stretch}
+.tb-devbar__row{display:flex;align-items:center;gap:12px}
+.tb-devbar__id{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tb-devbar__status{font-family:var(--font-sans);font-size:.85rem;color:var(--fg3)}
+.tb-devbar__status.is-error{color:var(--od-error)}
+.tb-devbar__status:empty{display:none}
+.page-inner.tool-ui .tool-page .tb-devbar:not(.is-connected){position:static;padding:0;background:none;border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.tb-devbar:not(.is-connected) .tb-devbar__row{flex-direction:column-reverse;align-items:stretch;gap:8px}
+.tool-ui .tb-devbar.is-connected #connectbutton{min-height:36px;padding:0 12px;font-size:14px}
+.tb-devbar .tb-editor-toolbar__main{padding-top:10px;border-top:1px solid var(--od-paper-line)}
+.tb-inline-notice{margin:12px 0 0}
+
+/* Editor: actions */
+.tb-editor-toolbar{display:flex;flex-direction:column;gap:12px;margin:0 0 14px}
+.page-inner.tool-ui .tool-page .tb-devbar .tb-editor-toolbar__main{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tb-editor-toolbar__main[hidden]{display:none!important}
+.tb-editor-toolbar__main .bt-btn{width:100%;padding:0 12px;white-space:nowrap}
+.tb-editor-toolbar__main .tb-changes{grid-column:1 / -1}
+.tb-changes{color:var(--fg3);font-family:var(--font-sans);font-size:.875rem}
+.tb-changes:empty{display:none}
+.tb-changes.is-error{color:var(--od-error)}
+.tb-editor-toolbar__more{display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px}
+.tool-ui .tb-editor-toolbar__more .bt-btn{min-height:32px;padding:0;border:0;background:transparent;color:var(--fg3);font-size:.9rem;font-weight:500}
+.tool-ui .tb-editor-toolbar__more .bt-btn:hover{background:transparent;color:var(--fg1);text-decoration:underline;text-underline-offset:3px}
+.page-inner.tool-ui .tb-inline-select{display:flex;align-items:center;gap:6px;margin:0;font-family:var(--font-sans);font-size:.9rem;font-weight:500;color:var(--fg3)}
+.page-inner.tool-ui .tb-inline-select select{min-width:0!important;min-height:32px;padding:2px 28px 2px 8px!important;border-color:var(--od-paper-line)!important;background-color:transparent!important;font-family:var(--font-sans)!important;font-size:.9rem!important}
+.tb-restart{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 24px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--od-ok) 9%,var(--od-paper));font-family:var(--font-sans);font-size:.95rem}
+.tb-restart > span{flex:1 1 220px}
+.tb-restart[hidden]{display:none}
+
+/* Editor: one card per packet, like the BLE Tester's feature cards */
+.tb-editor-empty{margin:0 0 16px;color:var(--fg3);font-family:var(--font-sans)}
+.tb-packet.is-changed .tb-packet__name::after{content:'';display:inline-block;width:7px;height:7px;margin-left:8px;border-radius:50%;background:var(--od-blue);vertical-align:middle}
+.bt-card__head > .tb-packet__summary{color:var(--fg3);font-size:.9rem}
+.bt-card__head > .tb-packet__summary:first-of-type{margin-top:4px}
+.bt-card__head > .tb-packet__summary:empty{display:none}
+.tool-ui .bt-btn.tb-packet__remove{display:block;margin-top:10px;min-height:28px;padding:0;border:0;background:transparent;color:var(--fg3);font-size:.9rem;font-weight:500}
+.tool-ui .bt-btn.tb-packet__remove:hover{background:transparent;color:var(--od-error);text-decoration:underline;text-underline-offset:3px}
+.tb-add-row{margin:4px 0 14px}
+.page-inner.tool-ui select.tb-add{
+  width:100%;min-height:44px!important;padding:8px 36px 8px 14px!important;border:1.5px dashed var(--od-ink-line)!important;border-radius:14px!important;background-color:transparent!important;
+  color:var(--od-blue-ink)!important;font-family:var(--font-sans)!important;font-size:.95rem!important;font-weight:600;cursor:pointer
 }
-.toolbox-or{
-  margin:16px 0 12px;
-  font-size:0.8rem;
-  font-weight:600;
-  letter-spacing:0.04em;
-  text-transform:uppercase;
-  color:var(--muted-foreground);
-  text-align:center;
+
+/* Editor: a settings list. Name and help on the left, the control on the right;
+   long choices, text and keys get the whole row under their description. */
+.tb-fields{border-top:1px solid var(--od-paper-line)}
+.tb-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,190px);column-gap:16px;row-gap:8px;align-items:center;padding:12px 0;border-bottom:1px solid var(--od-paper-line)}
+.tb-row--wide,.tb-row.tb-field--pair{grid-template-columns:minmax(0,1fr)}
+@media (min-width:641px){.tb-row.tb-field--pair{grid-template-columns:minmax(0,1fr) auto}}
+.tb-row > .tb-field__error{grid-column:1 / -1;margin:0}
+.tb-row__text{min-width:0}
+.page-inner.tool-ui .tb-row .tb-field__label{display:block;margin:0;font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)}
+.tb-row .tb-field__hint{margin:2px 0 0;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem;line-height:1.4}
+.page-inner.tool-ui .tb-field--compact .tb-field__label{display:block;margin:0 0 4px;font-family:var(--font-sans);font-size:.8rem;font-weight:500;color:var(--fg2)}
+.tb-field.is-changed .tb-field__label::after{content:'';display:inline-block;width:6px;height:6px;margin-left:6px;border-radius:50%;background:var(--od-blue);vertical-align:middle}
+.page-inner.tool-ui .tb-field input:not([type=checkbox]),.page-inner.tool-ui .tb-field select{width:100%;box-sizing:border-box;min-height:40px!important;padding:6px 10px!important;font-family:var(--font-sans)!important;font-size:15px!important}
+.page-inner.tool-ui .tb-field select{padding-right:32px!important}
+.page-inner.tool-ui .tb-field input.tb-mono{font-family:var(--font-mono)!important;font-size:13px!important}
+.tb-field__error{margin:4px 0 0;color:var(--od-error);font-family:var(--font-sans);font-size:.85rem;font-weight:500}
+.tb-field__error:empty{display:none}
+#builderUI .tb-field.is-invalid input,#builderUI .tb-field.is-invalid > select{border-color:var(--od-error)!important}
+.tb-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Buttons and inputs as one table */
+.tb-inputs{margin:16px 0 0}
+.tb-inputs__table{width:100%;border-collapse:collapse;font-family:var(--font-sans);font-size:.85rem}
+.tb-inputs__table th,.tb-inputs__table td{padding:6px 4px;text-align:center;border-bottom:1px solid var(--od-paper-line)}
+.tb-inputs__table thead th{color:var(--fg3);font-weight:600;font-size:.8rem;white-space:nowrap}
+.tb-inputs__table tbody th{color:var(--fg2);font-weight:600;width:2.5rem}
+.tb-inputs__table tr[hidden]{display:none}
+.tb-inputs__table td:nth-child(2){width:5.5rem}
+.tb-inputs__table .tb-field{padding:0}
+.tb-inputs__table input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--od-blue);cursor:pointer}
+@media (max-width:480px){.tb-inputs__table thead th{font-size:.7rem;white-space:normal}}
+
+/* Width × height */
+.tb-pair{display:flex;align-items:center;gap:8px}
+.tb-pair > .tb-field{flex:1;min-width:0;padding:0}
+@media (min-width:641px){.tb-pair > .tb-field{flex:0 0 96px}}
+.tb-pair__sep,.tb-pair__unit{color:var(--fg3);font-family:var(--font-sans);font-size:.9rem}
+.tb-field--pair > .tb-field__error{display:none}
+/* Pins */
+.tb-pins{margin:0}
+.tb-pins__hint{margin:0 0 2px;color:var(--fg3);font-family:var(--font-sans);font-size:.85rem}
+.tb-pins__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:0 10px}
+.tb-pins .tb-field{padding-top:8px}
+.page-inner.tool-ui .tb-pins .tb-field__label{margin:0 0 4px;font-size:.8rem;font-weight:500;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page-inner.tool-ui .tb-pins .tb-field input{font-variant-numeric:tabular-nums}
+/* Pins and "More settings": quiet disclosure lines at the bottom of a card */
+.tb-allfields{margin:14px 0 0;border-top:1px solid var(--od-paper-line)}
+.tb-fields + .tb-allfields{margin-top:0;border-top:0}
+.tb-inputs + .tb-allfields{margin-top:16px}
+.tb-allfields + .tb-allfields{margin-top:0}
+.tb-allfields > summary{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer;list-style:none;color:var(--fg2);font-family:var(--font-sans);font-size:.9rem;font-weight:600}
+.tb-allfields > summary::-webkit-details-marker{display:none}
+.tb-allfields > summary::after{content:'';width:6px;height:6px;margin-left:auto;margin-right:4px;border-right:2px solid var(--fg4);border-bottom:2px solid var(--fg4);transform:rotate(45deg) translateY(-2px)}
+.tb-allfields[open] > summary::after{transform:rotate(-135deg) translateY(-2px)}
+.tb-allfields > summary:hover{color:var(--fg1)}
+.tb-allfields[open]{padding-bottom:8px}
+.tb-allfields > .tb-fields{margin-top:0}
+.tb-bits{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px 12px}
+.page-inner.tool-ui .tb-bit{display:flex;align-items:flex-start;gap:8px;margin:0;padding:5px 0;font-family:var(--font-sans);font-size:.9rem;font-weight:400;color:var(--fg1);cursor:pointer}
+.tb-bit input{width:18px;height:18px;margin:1px 0 0;flex-shrink:0;accent-color:var(--od-blue)}
+
+/* Developer and log folds */
+.page-inner.tool-ui .tb-sub{margin:16px 0 6px;font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)}
+.tb-devfold .tb-fold__body > div + div{margin-top:8px}
+.page-inner.tool-ui #yamlInput{width:100%;min-height:220px;box-sizing:border-box;padding:10px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.45;resize:vertical}
+.tb-inline-field{display:flex;flex-direction:column;gap:6px;margin-top:16px}
+.page-inner.tool-ui .tb-inline-field label{margin:0;font-family:var(--font-sans);font-size:.9rem}
+.tb-logfold{margin-top:32px}
+.tb-logfold[hidden]{display:none}
+.tb-logfold .log-display{max-height:260px}
+.tb-logfold .log-display:empty::before{content:'Nothing logged yet.';color:var(--fg4);font-family:var(--font-sans)}
+
+/* Option widgets on the settings screen */
+.tb-option{margin:0 0 16px}
+.page-inner.tool-ui .tb-switch{display:flex;align-items:flex-start;gap:12px;margin:0;cursor:pointer;font-family:var(--font-sans);font-weight:400}
+.tb-switch input,.button-feedback-check input{
+  -webkit-appearance:none;appearance:none;position:relative;flex-shrink:0;width:44px;height:26px;margin:0;
+  border-radius:999px;background:var(--od-paper-3);cursor:pointer;transition:background .15s
 }
-.toolbox-checklist{
-  margin:0 0 14px;
-  padding:10px 12px;
-  list-style:none;
-  background:var(--card-background);
-  border:1px solid var(--border-color);
-  border-radius:8px;
-  font-size:0.875rem;
+.tb-switch input::after,.button-feedback-check input::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
+.tb-switch input:checked,.button-feedback-check input:checked{background:var(--od-blue)}
+.tb-switch input:checked::after,.button-feedback-check input:checked::after{transform:translateX(18px)}
+.tb-switch input:disabled{opacity:.6;cursor:not-allowed}
+.tb-switch input:focus-visible,.button-feedback-check input:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+@media (prefers-reduced-motion:reduce){.tb-switch input,.tb-switch input::after{transition:none}}
+.tb-switch__text{display:flex;flex-direction:column;gap:2px;padding-top:2px}
+.tb-switch__title{font-size:.95rem;font-weight:600;color:var(--fg1)}
+.tb-switch__hint{font-size:.85rem;line-height:1.4;color:var(--fg3)}
+.tb-switch__hint:empty{display:none}
+.esp-deep-sleep-option{margin:0 0 16px}
+.page-inner.tool-ui .esp-deep-sleep-option > label{display:block;margin:0 0 8px;font-family:var(--font-sans);font-size:.95rem;font-weight:600;color:var(--fg1)}
+.esp-deep-sleep-row input[type=range]{accent-color:var(--od-blue)}
+.page-inner.tool-ui .esp-deep-sleep-value{
+  min-width:4.5em;min-height:34px;margin:0;padding:4px 10px;background:transparent;border:1.5px solid var(--od-ink-line);border-radius:8px;
+  color:var(--fg1);font-family:var(--font-sans);font-size:.9rem;font-weight:600;text-align:center;box-shadow:none;transform:none
 }
-.toolbox-checklist__item{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:4px 0;
-  color:var(--muted-foreground);
-}
-.toolbox-checklist__item--done{color:var(--foreground)}
-.toolbox-checklist__mark{
-  width:1.1em;
-  flex-shrink:0;
-  font-weight:700;
-  color:var(--muted-foreground);
-}
-.toolbox-checklist__item--done .toolbox-checklist__mark{color:#3a8f5c}
-.toolbox-status{
-  margin:0 0 12px;
-  padding:10px 12px;
-  border-radius:8px;
-  font-size:0.875rem;
-  line-height:1.45;
-  background:var(--card-background);
-  border:1px solid var(--border-color);
-  color:var(--muted-foreground);
-}
-.toolbox-status--ready{
-  border-color:var(--accent);
-  color:var(--foreground);
-  background:var(--od-paper-2);
-}
-.toolbox-status--success{
-  border-color:#3a8f5c;
-  color:var(--foreground);
-  background:rgba(63,185,80,.08);
-}
-.toolbox-status--pending{color:var(--muted-foreground)}
-.toolbox-status--busy{
-  border-color:var(--accent);
-  color:var(--foreground);
-}
-.encryption-hint{
-  margin:8px 0 0;
-  font-size:0.8rem;
-  line-height:1.4;
-  color:var(--muted-foreground);
-}
-.toolbox-advanced{
-  margin-top:8px;
-  padding-top:0;
-}
-.toolbox-advanced__label{
-  margin:0 0 10px;
-  font-size:0.75rem;
-  font-weight:600;
-  letter-spacing:0.06em;
-  text-transform:uppercase;
-  color:var(--muted-foreground);
-  font-family:var(--font-sans);
-}
-.toolbox-advanced .ble-actions{margin-top:8px}
-.toolbox-advanced .toolbox-advanced-btn{
-  width:100%;
-  margin:0;
-  background:transparent!important;
-  color:var(--muted-foreground)!important;
-  border:1px solid var(--border-color)!important;
-  box-shadow:none!important;
-  font-size:13px!important;
-  padding:8px 14px!important;
-}
-.toolbox-advanced .toolbox-advanced-btn:hover{
-  background:var(--card-background)!important;
-  color:var(--foreground)!important;
-  border-color:var(--accent)!important;
-  transform:none!important;
-  box-shadow:none!important;
-}
+.page-inner.tool-ui .esp-deep-sleep-value:hover{background:var(--od-paper-2);border-color:var(--fg1);transform:none}
+.page-inner.tool-ui .button-feedback-check{gap:12px;font-size:.95rem;font-weight:600}
+.page-inner.tool-ui .findmy-option .wifi-field label{font-size:.95rem!important;font-weight:600!important;color:var(--fg1)!important}
 .findmy-option{
   margin:0 0 14px;
   width:100%;
@@ -188,22 +363,7 @@
   cursor:pointer;
   user-select:none;
 }
-.button-feedback-check input[type=checkbox]{
-  width:18px;
-  height:18px;
-  margin:0;
-  accent-color:var(--accent);
-  cursor:pointer;
-  flex-shrink:0;
-}
 .button-feedback-option .encryption-hint{margin:0}
-#premadeConfigSection #presetGrid{margin-top:0}
-.page-inner.tool-ui button.incomplete{
-  opacity:0.5;cursor:pointer;background:var(--fg3)
-}
-.page-inner.tool-ui button.incomplete:hover{
-  background:var(--fg3);transform:none;box-shadow:none
-}
 .status-display,.packet-length-indicator,.bytes-counter{
   background:var(--card-background);border:1px solid var(--border-color);border-radius:6px;
   font-family:var(--font-mono)
@@ -213,171 +373,13 @@
   max-height:300px;overflow-y:auto;background:var(--card-background);border:1px solid var(--border-color);border-radius:8px
 }
 .small{font-size:.85rem;color:var(--fg3);margin-top:8px}
-.chip{
-  border-radius:20px;background:var(--accent);
-  color:var(--accent-button);padding:4px 12px;margin-right:8px;font-size:12px;font-weight:500
-}
 .danger{color:#b83232}
-.bit-flags{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.bit-flag{
-  display:flex;flex-direction:column;align-items:center;font-size:11px;flex:1;min-width:48px
-}
-.bit-flag input[type=checkbox]{
-  transform:scale(1.4);accent-color:var(--accent);background:var(--card-background)!important;
-  border:1px solid var(--border-color)!important;width:20px;height:20px;
-  appearance:none;cursor:pointer
-}
-.bit-flag input[type=checkbox]:checked{
-  background:var(--accent)!important;border-color:var(--accent)!important;position:relative
-}
-.bit-flag input[type=checkbox]:checked::after{
-  content:"✓";position:absolute;top:50%;left:50%;
-  transform:translate(-50%,-50%);color:var(--accent-button);font-size:10px;font-weight:700
-}
-.bit-flag input[type=checkbox]:focus{
-  outline:none;border-color:var(--accent)!important;box-shadow:0 0 0 2px var(--shadow-focus)
-}
-.bit-flag input[type=checkbox]:hover{border-color:var(--od-ink-2)!important}
-.bit-label{font-size:10px;text-align:center;color:var(--muted-foreground);margin-top:4px}
 input[type=text],input[type=number],select,
 .field-row input:not([type=checkbox]):not([type=radio]),.packet-card input:not([type=checkbox]):not([type=radio]),input[style*="flex"]{
   background:var(--card-background)!important;border:1.5px solid var(--border-color)!important;border-radius:6px!important;
   padding:8px 12px!important;color:var(--foreground)!important;font-size:14px!important;
   font-family:var(--font-mono)!important;
   min-height:40px!important;transition:.2s;appearance:none
-}
-.encryption-option{
-  margin-top:12px;
-  padding:0;
-  background:transparent;
-  border:none;
-  color-scheme:light;
-}
-.encryption-slider-wrap{
-  position:relative;
-  width:100%;
-}
-.encryption-slider-icon{
-  position:absolute;
-  top:50%;
-  width:18px;
-  height:18px;
-  pointer-events:none;
-  z-index:3;
-  transition:left .15s ease,color .2s ease,transform .15s ease;
-}
-.encryption-slider-icon--left{
-  color:var(--enc-icon-left-color,var(--muted-foreground));
-}
-.encryption-slider-icon--right{
-  color:var(--enc-icon-right-color,var(--muted-foreground));
-}
-.encryption-slider-input{
-  -webkit-appearance:none;
-  appearance:none;
-  display:block;
-  width:100%;
-  height:36px;
-  margin:0;
-  padding:0;
-  border:none;
-  background:transparent;
-  cursor:pointer;
-}
-.encryption-slider-input:focus{
-  outline:none;
-}
-.encryption-slider-input:focus-visible::-webkit-slider-thumb{
-  box-shadow:0 2px 8px rgba(0,0,0,.15),0 0 0 3px var(--shadow-focus);
-}
-.encryption-slider-input:focus-visible::-moz-range-thumb{
-  box-shadow:0 2px 8px rgba(0,0,0,.15),0 0 0 3px var(--shadow-focus);
-}
-.encryption-slider-input::-webkit-slider-runnable-track{
-  height:36px;
-  border-radius:999px;
-  background:var(--enc-track,var(--od-paper-3,#d8d4cc));
-  transition:background .2s ease;
-}
-.encryption-slider-input::-moz-range-track{
-  height:36px;
-  border-radius:999px;
-  background:var(--enc-track,var(--od-paper-3,#d8d4cc));
-  border:none;
-  transition:background .2s ease;
-}
-.encryption-slider-input::-webkit-slider-thumb{
-  -webkit-appearance:none;
-  width:32px;
-  height:32px;
-  margin-top:2px;
-  border-radius:50%;
-  background:#fff;
-  box-shadow:0 2px 8px rgba(0,0,0,.16);
-  transition:transform .15s ease,box-shadow .15s ease;
-}
-.encryption-slider-input::-moz-range-thumb{
-  width:32px;
-  height:32px;
-  border:none;
-  border-radius:50%;
-  background:#fff;
-  box-shadow:0 2px 8px rgba(0,0,0,.16);
-  transition:transform .15s ease,box-shadow .15s ease;
-}
-.encryption-slider-input:active::-webkit-slider-thumb{
-  transform:scale(.96);
-}
-.encryption-slider-input:active::-moz-range-thumb{
-  transform:scale(.96);
-}
-@media (prefers-color-scheme:dark){
-  .encryption-option{
-    color-scheme:dark;
-  }
-  .encryption-slider-input::-webkit-slider-thumb,
-  .encryption-slider-input::-moz-range-thumb{
-    background:#f5f5f5;
-    box-shadow:0 2px 10px rgba(0,0,0,.35);
-  }
-}
-.esp-deep-sleep-option{
-  margin-top:12px;
-  padding:12px 14px;
-  background:var(--card-background);
-  border:1px solid var(--border-color);
-  border-radius:8px;
-}
-.wifi-option{
-  margin-top:12px;
-  padding:0;
-  background:transparent;
-  border:none;
-  color-scheme:light;
-}
-.wifi-slider-label{
-  position:absolute;
-  top:50%;
-  z-index:3;
-  pointer-events:none;
-  font-family:var(--font-sans), system-ui, sans-serif;
-  font-size:12px;
-  font-weight:600;
-  letter-spacing:.02em;
-  line-height:1;
-  user-select:none;
-  transition:left .15s ease,color .2s ease,transform .15s ease;
-}
-.wifi-slider-label--left{
-  color:var(--wifi-label-left-color,var(--muted-foreground));
-}
-.wifi-slider-label--right{
-  color:var(--wifi-label-right-color,var(--muted-foreground));
-}
-@media (prefers-color-scheme:dark){
-  .wifi-option{
-    color-scheme:dark;
-  }
 }
 .wifi-credentials{
   display:flex;
@@ -418,13 +420,6 @@ input[type=text],input[type=number],select,
 .encryption-option.is-hidden-by-wifi{
   display:none !important;
 }
-.esp-deep-sleep-option label{
-  display:block;
-  font-weight:500;
-  font-size:0.95rem;
-  margin:0 0 10px;
-  color:var(--foreground);
-}
 .esp-deep-sleep-row{
   display:flex;
   align-items:center;
@@ -434,23 +429,6 @@ input[type=text],input[type=number],select,
   flex:1;
   min-width:0;
   accent-color:var(--accent);
-}
-.esp-deep-sleep-value{
-  font-family:var(--font-mono);
-  font-size:0.85rem;
-  color:var(--foreground);
-  min-width:4.5em;
-  text-align:right;
-  cursor:pointer;
-  background:transparent;
-  border:1px solid var(--border-color);
-  border-radius:6px;
-  padding:4px 8px;
-  line-height:1.2;
-}
-.esp-deep-sleep-value:hover{
-  border-color:var(--accent);
-  color:var(--accent);
 }
 .esp-deep-sleep-minutes{
   width:4.5em;
@@ -482,16 +460,10 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 }
 #versionInfo{color:var(--accent);font-weight:500}
 #crcNote,#parseResult{color:var(--fg3);font-style:italic}
-.ble-controls{display:flex;flex-direction:column;gap:16px}
 .ble-input-group,.ble-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .ble-input-group label{font-size:.9rem;margin:0;min-width:120px}
 .ble-input-group input[type=text]{flex:1;min-width:200px}
-.remember-group{display:flex;align-items:center;gap:6px}
-.remember-group label{font-size:.85rem;margin:0}
 .ble-actions button{flex:1;min-width:120px}
-.status-display{padding:12px;min-height:100px}
-.status-text{font-weight:600;color:#b83232;margin-bottom:8px}
-.status-text.connected{color:#3a8f5c}
 .log-display{
   font-family:var(--font-mono);
   font-size:12px;color:var(--fg3);max-height:200px;overflow-y:auto;white-space:pre-wrap
@@ -612,124 +584,13 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 .tooltip-content li {
   margin: 4px 0;
 }
-.preset-option:hover{
-  border-color:var(--od-ink);
-  box-shadow:var(--shadow-hover)
+.page-inner.tool-ui .wifi-field input,.page-inner.tool-ui .wifi-field select{min-height:44px!important;padding:8px 12px!important;font-family:var(--font-sans)!important;font-size:15px!important}
+.page-inner.tool-ui .findmy-option input[type=text]{font-family:var(--font-mono)!important;font-size:13px!important}
+.page-inner.tool-ui .wifi-credentials{margin:12px 0 16px;padding:14px 0 0}
+.page-inner.tool-ui .tb-field--compact input:not([type=checkbox]){min-width:0!important}
+/* tool-ui.css's `background` shorthand drops the dropdown arrow; put it back so choices don't look like text boxes. */
+.page-inner.tool-ui select:not([multiple]){
+  background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A6470' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'/%3e%3c/svg%3e")!important;
+  background-repeat:no-repeat!important;background-position:right 10px center!important;background-size:16px!important;padding-right:34px!important
 }
-.preset-option:active{transform:none}
-.preset-option.selected{
-  background:var(--accent);
-  border-color:var(--accent);
-  box-shadow:0 0 0 2px var(--od-paper),0 0 0 4px var(--accent);
-}
-.preset-option.selected label{color:var(--accent-button)}
-@media (max-width: 768px) {
-  #presetGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 480px) {
-  #presetGrid {
-    grid-template-columns: 1fr;
-  }
-}
-.packet-card{
-  background:var(--card-background);border:1px solid var(--border-color);border-radius:8px;
-  padding:16px;margin:8px 0;box-shadow:0 1px 2px rgba(0,0,0,.05);transition:.2s
-}
-.packet-card:hover{border-color:var(--accent);box-shadow:0 4px 6px rgba(0,0,0,.1), 0 2px 4px rgba(0,0,0,.06)}
-.packet-header{
-  display:flex;justify-content:space-between;align-items:center;
-  padding-bottom:12px;border-bottom:1px solid var(--border-color);margin-bottom:16px
-}
-.packet-title{display:flex;align-items:center;gap:8px}
-.packet-id{
-  background:var(--accent);
-  color:var(--accent-button);padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600
-}
-.packet-actions{display:flex;gap:8px;align-items:center}
-.auto-install-panel{
-  background:var(--card-background);border:2px solid var(--accent);border-radius:12px;padding:24px;
-  box-shadow:0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);margin-top:20px;display:none
-}
-.auto-install-panel.show{display:block}
-.auto-install-panel h3{
-  color:var(--foreground);font-size:1.3rem;font-weight:600;margin-top:0;margin-bottom:12px
-}
-.auto-install-panel p{
-  color:var(--muted-foreground);margin-bottom:16px;line-height:1.6
-}
-.auto-install-actions{
-  display:flex;gap:12px;flex-wrap:wrap
-}
-.auto-install-actions button{
-  width:100%;margin:0
-}
-#openBleTesterBtn{
-  display:none
-}
-.page-inner.tool-ui .tool-page .container > a:not(.product-card__link):not(.tool-link):not(.od-cta-primary):not(.od-cta-ghost) {
-  color: var(--od-blue-ink);
-  text-decoration: none;
-  transition: color 0.2s;
-}
-.page-inner.tool-ui .tool-page .container > a:not(.product-card__link):not(.tool-link):not(.od-cta-primary):not(.od-cta-ghost):hover {
-  color: var(--od-blue);
-  text-decoration: underline;
-}
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  align-items: center;
-  justify-content: center;
-}
-.modal.show {
-  display: flex;
-}
-.modal-content {
-  background: var(--card-background);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 32px;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-  text-align: center;
-}
-.modal-content h3 {
-  margin-top: 0;
-  color: var(--foreground);
-  font-size: 1.5rem;
-}
-.modal-content p {
-  color: var(--muted-foreground);
-  margin-bottom: 24px;
-  line-height: 1.6;
-}
-.modal-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 24px;
-}
-.modal-buttons .btn {
-  width: 100%;
-  margin: 0;
-}
-.close {
-  color: var(--muted-foreground);
-  float: right;
-  font-size: 28px;
-  font-weight: bold;
-  cursor: pointer;
-  line-height: 20px;
-}
-.close:hover {
-  color: var(--foreground);
-}
+.page-inner.tool-ui select.tb-add{background-position:right 14px center!important}
