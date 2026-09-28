@@ -258,8 +258,13 @@
         <div class="tb-callout" id="tbAlmostDone" hidden>
           <strong>Firmware installed.</strong> Pick the display in the Bluetooth list to finish setting it up.
         </div>
+        <div class="tb-devname" id="tbInstalledName" hidden>
+          <span class="tb-devname__label">Its Bluetooth name</span>
+          <span class="tb-devname__id" id="tbInstalledNameId"></span>
+        </div>
         <p class="tb-screen__text" id="toolboxStep3Hint">Keep it nearby. In the list, pick the name starting with <strong>OD</strong>.</p>
         <button type="button" id="simpleAutoInstallBtn" class="bt-btn bt-btn--primary bt-btn--block">Connect and set up</button>
+        <button type="button" class="tb-link tb-skip" id="tbShowAllBtn" hidden>Show all displays in the list</button>
         <div id="simpleConfigStatus" class="toolbox-status toolbox-status--pending" role="status"></div>
         <details class="tb-fold" id="configOptionsFold">
           <summary>More options <span class="tb-fold__hint" id="configOptionsSummary">No encryption</span></summary>
@@ -2501,7 +2506,7 @@ function connectToBleDevice(useCachedDevice = false) {
       resolve();
       return;
     }
-    const namePrefix = document.getElementById('namePrefix').value.trim();
+    const namePrefix = tbInstalledNameFilter() || document.getElementById('namePrefix').value.trim();
     if (!namePrefix) {
       reject(new Error('Device filter needed'));
       return;
@@ -2635,6 +2640,10 @@ function initializeSimpleConfigMode() {
   initWifiOptionUi();
   initToolboxInstallTracking();
   document.getElementById('simpleAutoInstallBtn').onclick = startSimpleAutoInstall;
+  document.getElementById('tbShowAllBtn').onclick = () => {
+    tbPickAnyDisplay = true;
+    updateSettingsScreen();
+  };
   document.getElementById('shareSimpleConfigBtn').onclick = shareSimpleConfig;
   
   // Initialize button state
@@ -3414,6 +3423,39 @@ function tbContinueSetup() {
   tbAutoSetupPending = false;
   if (tbMode === 'setup' && tbScreen === 'settings' && !configureRunning) startSimpleAutoInstall();
 }
+// ---- The installed display's Bluetooth name ----
+// With many displays nearby, the Bluetooth list is a guess. ESP32 firmware names itself "OD" + the last three bytes
+// of its MAC in reverse (ESP.getEfuseMac() >> 24), and the installer reads that MAC while flashing: it logs
+// "MAC: 44:1b:f6:c9:64:40" to the console (no terminal attached). That display is OD4064C9.
+let tbInstalledName = null;
+let tbPickAnyDisplay = false;
+function tbNameFromMac(mac) {
+  const b = String(mac).trim().split(':');
+  return b.length === 6 ? ('OD' + b[5] + b[4] + b[3]).toUpperCase() : null;
+}
+function tbWatchInstallerMac() {
+  tbInstalledName = null;
+  tbPickAnyDisplay = false;
+  if (console.log.__tbMac) return;
+  const log = console.log;
+  const wrapped = function() {
+    const m = typeof arguments[0] === 'string' && /^MAC: ([0-9a-f]{2}(?::[0-9a-f]{2}){5})$/i.exec(arguments[0]);
+    if (m && document.querySelector('ewt-install-dialog')) tbInstalledName = tbNameFromMac(m[1]);
+    return log.apply(this, arguments);
+  };
+  wrapped.__tbMac = true;
+  console.log = wrapped;
+}
+// The name to filter the Bluetooth list by while setting up the display that was just installed.
+function tbInstalledNameFilter() {
+  return tbInstalledName && tbMode === 'setup' && !tbPickAnyDisplay ? tbInstalledName : null;
+}
+function renderInstalledName() {
+  const connected = !!(bleLib && bleLib.isConnected);
+  document.getElementById('tbInstalledName').hidden = !tbInstalledName || tbMode !== 'setup' || connected;
+  document.getElementById('tbInstalledNameId').textContent = tbInstalledName || '';
+  document.getElementById('tbShowAllBtn').hidden = !tbInstalledNameFilter() || connected || configureRunning;
+}
 // The installers report success themselves; the button click alone means nothing.
 function initToolboxInstallTracking() {
   if (window.__tbInstallTracking) return;
@@ -3425,6 +3467,7 @@ function initToolboxInstallTracking() {
       r.addedNodes.forEach(function(node) {
         if (node.nodeName !== 'EWT-INSTALL-DIALOG' || node.__tbTracked) return;
         node.__tbTracked = true;
+        tbWatchInstallerMac();
         let finished = false;
         const watch = setInterval(function() {
           if (!node.isConnected) { clearInterval(watch); return; }
@@ -3582,6 +3625,8 @@ async function startSimpleAutoInstall() {
       ? error.message
       : needsClick
       ? 'Press the button to finish setting it up.'
+      : cancelled && tbInstalledNameFilter()
+      ? tbInstalledName + ' wasn\u2019t chosen. If the list was empty, wait until it has restarted and try again.'
       : cancelled
       ? 'No device was chosen. Press the button again and pick the device whose name starts with OD.'
       : 'That didn\u2019t work: ' + (error && error.message ? error.message : error) + '. Keep the device close and try again.', 'error');
@@ -3631,6 +3676,8 @@ function showDone(kind) {
 }
 function resetSetupFlow() {
   document.getElementById('tbAlmostDone').hidden = true;
+  tbInstalledName = null;
+  tbPickAnyDisplay = false;
   resetInstallState();
   updateProgressBar(0);
   if (bleLib && bleLib.isConnected) bleLib.disconnect();
@@ -4493,9 +4540,12 @@ function updateSettingsScreen() {
   if (connected) {
     const label = knownDeviceLabel();
     hint.textContent = 'Writes the settings' + (label ? ' for a ' + label : '') + '. It restarts afterwards.';
+  } else if (tbInstalledNameFilter()) {
+    hint.textContent = 'The Bluetooth list shows only this display.';
   } else {
     hint.innerHTML = 'Keep it nearby. In the list, pick the name starting with <strong>OD</strong>.';
   }
+  renderInstalledName();
 }
 
 // ---- Shared configurations ----
