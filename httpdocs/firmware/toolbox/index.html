@@ -265,6 +265,7 @@
         <p class="tb-screen__text" id="toolboxStep3Hint">Keep it nearby. In the list, pick the name starting with <strong>OD</strong>.</p>
         <button type="button" id="simpleAutoInstallBtn" class="bt-btn bt-btn--primary bt-btn--block">Connect and set up</button>
         <button type="button" class="tb-link tb-skip" id="tbShowAllBtn" hidden>Show all displays in the list</button>
+        <button type="button" class="tb-link tb-skip" id="tbFindUsbNameBtn" hidden>Many displays nearby? Find its name over USB</button>
         <div id="simpleConfigStatus" class="toolbox-status toolbox-status--pending" role="status"></div>
         <details class="tb-fold" id="configOptionsFold">
           <summary>More options <span class="tb-fold__hint" id="configOptionsSummary">No encryption</span></summary>
@@ -2640,6 +2641,11 @@ function initializeSimpleConfigMode() {
   initWifiOptionUi();
   initToolboxInstallTracking();
   document.getElementById('simpleAutoInstallBtn').onclick = startSimpleAutoInstall;
+  document.getElementById('tbFindUsbNameBtn').onclick = async () => {
+    const name = await tbFindNameOverUsb(true);
+    updateSettingsScreen();
+    if (!name) setSimpleConfigStatus('Couldn\u2019t read its name. Pick it in the Bluetooth list instead.', 'pending');
+  };
   document.getElementById('tbShowAllBtn').onclick = () => {
     tbPickAnyDisplay = true;
     updateSettingsScreen();
@@ -3446,6 +3452,37 @@ function tbWatchInstallerMac() {
   wrapped.__tbMac = true;
   console.log = wrapped;
 }
+// nRF52840 firmware names itself "OD" + the low 24 bits of FICR DEVICEID[1]. Its installer never learns that ID, but
+// the Arduino core reports it as the USB serial number (DEVICEID[1] then DEVICEID[0], in hex), which WebUSB can read:
+// EE2162053AAD4FCE is OD216205.
+const TB_NRF52_USB_VENDORS = [0x2886, 0x239a];  // Seeed, Adafruit
+function tbNameFromUsbSerial(serial) {
+  return /^[0-9a-f]{16}$/i.test(serial || '') ? ('OD' + serial.slice(2, 8)).toUpperCase() : null;
+}
+function tbCanFindNameOverUsb() {
+  const board = simpleConfigSelections.driverBoard;
+  return !!(navigator.usb && board && board.installConfig && board.installConfig.type === 'nrf52840');
+}
+// ask: open Chrome's USB list when no board was allowed before. Without it, only a board allowed before is used.
+async function tbFindNameOverUsb(ask) {
+  if (!tbCanFindNameOverUsb()) return null;
+  const ours = (d) => TB_NRF52_USB_VENDORS.includes(d.vendorId);
+  let devices = (await navigator.usb.getDevices().catch(() => [])).filter(ours);
+  if (devices.length !== 1 && ask) {
+    try {
+      devices = [await navigator.usb.requestDevice({ filters: TB_NRF52_USB_VENDORS.map(v => ({ vendorId: v })) })];
+    } catch (e) {
+      return null;
+    }
+  }
+  const name = devices.length === 1 ? tbNameFromUsbSerial(devices[0].serialNumber) : null;
+  if (name) {
+    tbInstalledName = name;
+    tbPickAnyDisplay = false;
+    addLog('Its Bluetooth name is ' + name + ' (from the USB serial number ' + devices[0].serialNumber + ')', 'info');
+  }
+  return name;
+}
 // The name to filter the Bluetooth list by while setting up the display that was just installed.
 function tbInstalledNameFilter() {
   return tbInstalledName && tbMode === 'setup' && !tbPickAnyDisplay ? tbInstalledName : null;
@@ -3455,6 +3492,7 @@ function renderInstalledName() {
   document.getElementById('tbInstalledName').hidden = !tbInstalledName || tbMode !== 'setup' || connected;
   document.getElementById('tbInstalledNameId').textContent = tbInstalledName || '';
   document.getElementById('tbShowAllBtn').hidden = !tbInstalledNameFilter() || connected || configureRunning;
+  document.getElementById('tbFindUsbNameBtn').hidden = !!tbInstalledName || tbMode !== 'setup' || connected || configureRunning || !tbCanFindNameOverUsb();
 }
 // The installers report success themselves; the button click alone means nothing.
 function initToolboxInstallTracking() {
@@ -3489,7 +3527,13 @@ function initToolboxInstallTracking() {
   }).observe(document.body, { childList: true });
   // nRF52 / nRF54 installers call this hook on their success page.
   window.OpenDisplayInstallHooks = {
-    onSuccess: function() { markToolboxFirmwareInstalled(); },
+    onSuccess: function() {
+      tbInstalledName = null;
+      tbPickAnyDisplay = false;
+      markToolboxFirmwareInstalled();
+      // A board allowed over USB before gives its name without asking.
+      tbFindNameOverUsb(false).then(name => { if (name) updateSettingsScreen(); });
+    },
     onNext: tbContinueSetup,
     nextLabel: function() { return tbMode === 'update' ? 'Done' : 'Continue setup'; }
   };
