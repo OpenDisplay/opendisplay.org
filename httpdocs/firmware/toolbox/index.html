@@ -4751,15 +4751,18 @@ let tbEspManifestGen = 0;
 function tbKeepsSettings() {
   return tbMode === 'update';
 }
-async function tbSetEspManifest(url) {
+async function tbSetEspManifest(presetUrl) {
   const btn = document.getElementById('firmwareInstallButton');
   const gen = ++tbEspManifestGen;
+  // Presets point at https://opendisplay.org/…; from www.opendisplay.org (or a local copy) that is another site, and
+  // ESP Web Tools can't fetch it (no CORS header). Use this site's copy.
+  const url = tbSameOriginUrl(presetUrl);
   if (!tbKeepsSettings()) {
     btn.setAttribute('manifest', url);
     return;
   }
   btn.removeAttribute('manifest');
-  const base = new URL(tbSameOriginUrl(url), location.href);
+  const base = new URL(url, location.href);
   const m = await fetch(base, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);
   if (gen !== tbEspManifestGen) return;
   if (!m) {
