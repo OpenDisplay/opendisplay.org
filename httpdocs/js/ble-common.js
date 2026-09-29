@@ -1322,6 +1322,18 @@ class OpenDisplayBLE {
       }
     }
     
+    // A key can also come as text (a remembered key, a link): 32 hex characters.
+    if (typeof key === 'string') {
+      const hexStr = key.replace(/[^0-9A-Fa-f]/g, '');
+      if (hexStr.length !== 32) {
+        throw new Error('Encryption key must be exactly 32 hex characters (16 bytes)');
+      }
+      key = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) {
+        key[i] = parseInt(hexStr.substr(i * 2, 2), 16);
+      }
+    }
+
     // Check if key is all zeros (encryption disabled)
     const isZero = key.every(b => b === 0);
     //if (isZero) {
