@@ -223,9 +223,17 @@ class NrfWebTools {
         <p>${data.message || 'Firmware has been successfully installed on your device!'}</p>
       </div>
     `;
+    // A host page (e.g. the Toolbox) can hook in to continue its own flow after the install.
+    const hooks = window.OpenDisplayInstallHooks;
+    const nextLabel = hooks && typeof hooks.nextLabel === 'function' ? hooks.nextLabel() : 'Close';
     actions.innerHTML = `
-      <button class="nrf52-dfu-btn nrf52-dfu-btn-primary" onclick="document.getElementById('nrf52-dfu-modal').querySelector('#nrf52-dfu-close-btn').click()">Close</button>
+      <button class="nrf52-dfu-btn nrf52-dfu-btn-primary" onclick="document.getElementById('nrf52-dfu-modal').querySelector('#nrf52-dfu-close-btn').click()"></button>
     `;
+    const nextBtn = actions.querySelector('button');
+    nextBtn.textContent = nextLabel;
+    // The click is what lets the host page open its next step (e.g. the Bluetooth device list).
+    if (hooks && typeof hooks.onNext === 'function') nextBtn.addEventListener('click', () => hooks.onNext());
+    if (hooks && typeof hooks.onSuccess === 'function') hooks.onSuccess();
   }
   
   renderWaitingContinuePage(headline, content, actions, data) {

@@ -1290,18 +1290,24 @@ class OpenDisplayBLE {
         if (error && error.message === 'Encryption key required') throw error;
         this.encryptionSession.masterKey = null;
         this.encryptionSession.authenticated = false;
+        this._lastAuthError = error.message;
         this.log(`Authentication failed: ${error.message} — try again`, 'error');
       }
     }
   }
 
   /**
-   * Set encryption master key (prompts user if not provided)
+   * Set encryption master key (asks the user if not provided).
+   * A page can set `requestKey` to an async function(lastError) returning the key text (or null to cancel)
+   * to ask in its own UI; without it, a browser prompt is used.
    */
   async setEncryptionKey(key = null) {
     if (key === null) {
-      // Prompt user for key
-      const keyInput = prompt('Enter encryption key (32 hex characters, e.g., 00112233445566778899AABBCCDDEEFF):');
+      const lastError = this._lastAuthError || null;
+      this._lastAuthError = null;
+      const keyInput = typeof this.requestKey === 'function'
+        ? await this.requestKey(lastError)
+        : prompt('Enter encryption key (32 hex characters, e.g., 00112233445566778899AABBCCDDEEFF):');
       if (!keyInput) {
         throw new Error('Encryption key required');
       }
@@ -1316,6 +1322,18 @@ class OpenDisplayBLE {
       }
     }
     
+    // A key can also come as text (a remembered key, a link): 32 hex characters.
+    if (typeof key === 'string') {
+      const hexStr = key.replace(/[^0-9A-Fa-f]/g, '');
+      if (hexStr.length !== 32) {
+        throw new Error('Encryption key must be exactly 32 hex characters (16 bytes)');
+      }
+      key = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) {
+        key[i] = parseInt(hexStr.substr(i * 2, 2), 16);
+      }
+    }
+
     // Check if key is all zeros (encryption disabled)
     const isZero = key.every(b => b === 0);
     //if (isZero) {
@@ -5705,6 +5723,11 @@ const PREMADE_SIMPLE_PRESETS = [
   { stem: 'reterminal-e1001', name: 'ReTerminal E1001', driverBoardId: 'reterminal-e1001', displayId: 'ep75-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1002', name: 'ReTerminal E1002', driverBoardId: 'reterminal-e1002', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
   { stem: 'reterminal-e1004', name: 'ReTerminal E1004', driverBoardId: 'reterminal-e1004', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-5000' },
+  { stem: 'reterminal-e1003', name: 'ReTerminal E1003', driverBoardId: 'reterminal-e1003', displayId: 'seeed-ed103-1872x1404', powerId: 'battery-3000' },
+  { stem: 'reterminal-sticky', name: 'ReTerminal Sticky', driverBoardId: 'reterminal-sticky', displayId: 'ep397-800x480', powerId: 'battery-650' },
+  { stem: 'reterminal-sticky-4gray', name: 'ReTerminal Sticky (4 gray)', driverBoardId: 'reterminal-sticky', displayId: 'ep397-800x480-4gray', powerId: 'battery-650' },
+  { stem: '426kit', name: 'OpenDisplay 4.26" Mono Kit', driverBoardId: 'opendisplay-426-mono-kit', displayId: 'ep426-800x480', powerId: 'battery-2000' },
+  { stem: '73kit', name: 'OpenDisplay 7.3" Color Kit', driverBoardId: 'opendisplay-73-color-kit', displayId: 'ep73-spectra-800x480', powerId: 'battery-2000' },
   { stem: 'ee02', name: 'Seeed EE02', driverBoardId: 'ee02', displayId: 'ep133a-spectra-1200x1600', powerId: 'battery-2000' }
 ];
 
@@ -5882,9 +5905,15 @@ const OpenDisplayBrowser = {
     }
     return 'Use Chrome or Edge on desktop or Android. On iPhone or iPad, use Bluefy for Bluetooth.';
   },
-  async ensureWebBluetoothAvailable() {
+  /**
+   * Resolves false (after telling the user) when Web Bluetooth can't be used right now.
+   * Pass { notify(message, reason) } to show it in the page's own UI; reason is 'unsupported' or
+   * 'adapter-off'. Without it, a browser alert is used.
+   */
+  async ensureWebBluetoothAvailable(opts = {}) {
+    const notify = typeof opts.notify === 'function' ? opts.notify : (message) => alert(message);
     if (!this.isWebBluetoothSupported()) {
-      alert(this.webBluetoothUnsupportedMessage());
+      notify(this.webBluetoothUnsupportedMessage(), 'unsupported');
       return false;
     }
     // On iOS/Bluefy getAvailability() is unreliable — it can resolve false even
@@ -5895,7 +5924,7 @@ const OpenDisplayBrowser = {
       try {
         const available = await navigator.bluetooth.getAvailability();
         if (!available) {
-          alert(this.webBluetoothAdapterUnavailableMessage());
+          notify(this.webBluetoothAdapterUnavailableMessage(), 'adapter-off');
           return false;
         }
       } catch (e) {
