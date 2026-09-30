@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.21.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.20.1...1.21.0) (2026-09-30)
+
+
+### Features
+
+* **toolbox:** connect-first setup that can't be left half-done, device page and readable editor ([1e3828c](https://github.com/OpenDisplay/opendisplay.org/commit/1e3828ce1e6eea0e1570ecff214d6e730f098c59))
+* **toolbox:** find an nRF52840 display's name over USB ([5059dda](https://github.com/OpenDisplay/opendisplay.org/commit/5059ddac22f36b346f6871f02996ded1f7fd21d7))
+* **toolbox:** show the installed display's name and list only that display ([ff5552d](https://github.com/OpenDisplay/opendisplay.org/commit/ff5552dcc8ce313a3ce07e84cfa83378fbcd8af1))
+* **toolbox:** turn encryption on by default when setting up ([97d66f7](https://github.com/OpenDisplay/opendisplay.org/commit/97d66f7dc04672f402c0e8bde89152042e0094ec))
+
+
+### Bug Fixes
+
+* **ble:** accept an encryption key as text ([1f0022b](https://github.com/OpenDisplay/opendisplay.org/commit/1f0022b968564858e11f354241aa49de1009a574))
+* **toolbox:** install ESP32 firmware from this site's copy of the manifest ([613ceff](https://github.com/OpenDisplay/opendisplay.org/commit/613ceff6ff9e9d4b1f8fde19212fa8ba6f7ca4ae))
+* **toolbox:** keep the settings on ESP32 updates and notice finished installs ([0433b0d](https://github.com/OpenDisplay/opendisplay.org/commit/0433b0d7a6f1af89ff3deb706fc64f18eb8a6921))
+* **toolbox:** say what to do when a display can't be reached ([88e6d61](https://github.com/OpenDisplay/opendisplay.org/commit/88e6d61730905fb7ccec7457247ce296d92cda40))
+
 ## [1.20.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.20.0...1.20.1) (2026-09-27)
 
 
