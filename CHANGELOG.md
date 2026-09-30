@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.22.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.21.0...1.22.0) (2026-09-30)
+
+
+### Features
+
+* **toolbox:** install any recent firmware version from GitHub releases ([15109e4](https://github.com/OpenDisplay/opendisplay.org/commit/15109e49da22dce0f42531e41d6e69c92683a79b))
+* **toolbox:** install any recent firmware version from GitHub releases ([1b6a741](https://github.com/OpenDisplay/opendisplay.org/commit/1b6a741fa7717fb30d4e5bdbd5a204181aab35be))
+
+
+### Bug Fixes
+
+* **fwproxy:** keep PHP notices out of firmware downloads ([8f8c269](https://github.com/OpenDisplay/opendisplay.org/commit/8f8c2698ed19b267de085ffa020774ad98fe3df8))
+
 ## [1.21.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.20.1...1.21.0) (2026-09-30)
 
 
