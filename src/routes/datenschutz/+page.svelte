@@ -1,148 +1,94 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <link rel="icon" href="assets/brand/logo-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/colors_and_type.css">
-  <link rel="stylesheet" href="css/inner.css">
-  <link rel="stylesheet" href="css/doc.css">
+<script>
+  import Card from '#lib/ui/Card.svelte';
+  import Page from '#lib/ui/Page.svelte';
+  import Prose from '#lib/ui/Prose.svelte';
+</script>
 
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenDisplay - Privacy policy</title>
-<style>
-/* Page-specific styles */
-h3 {
-  font-size: 1.25rem;
-  margin-top: 24px;
-  margin-bottom: 8px;
-}
-.content-text {
-  color: var(--muted-foreground);
-  line-height: 1.8;
-  margin-bottom: 16px;
-}
-ul {
-  color: var(--muted-foreground);
-  line-height: 1.8;
-  margin: 16px 0;
-  padding-left: 24px;
-}
-li {
-  margin-bottom: 8px;
-}
-.contact-info {
-  color: var(--muted-foreground);
-  line-height: 1.8;
-}
-.contact-info p {
-  margin: 8px 0;
-}
-</style>
-</head>
-<body class="page-inner doc-page">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+<svelte:head>
+  <title>Privacy policy · OpenDisplay</title>
+  <meta name="description" content="Privacy policy (Datenschutzerklärung) for opendisplay.org.">
+</svelte:head>
 
-  <header class="site-bar">
-    <div class="site-bar__accent" aria-hidden="true"></div>
-    <div class="site-bar__inner">
-      <a href="index.html" class="site-bar__brand" aria-label="OpenDisplay home">
-        <img src="assets/brand/logo-mark.svg" alt="" class="site-bar__mark" width="24" height="24">
-        <span class="site-bar__wordmark">OpenDisplay</span>
-      </a>
-      <div class="site-bar__icons">
-        <a href="https://github.com/OpenDisplay/" target="_blank" rel="noreferrer" class="site-bar__icon" aria-label="OpenDisplay on GitHub (opens in new tab)">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        </a>
-        <a href="https://discord.gg/XmTHz8RfJE" target="_blank" rel="noreferrer" class="site-bar__icon" aria-label="Join OpenDisplay on Discord (opens in new tab)">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-        </a>
-      </div>
-    </div>
-  </header>
-
-  <main id="main-content" class="tool-page">
-    <div class="container">
-<h1>Privacy policy</h1>
-
-  <div class="col panel">
-    <section>
+<!-- The legal text is German (German law requires it); the page chrome stays English. -->
+<Page title="Privacy policy">
+  <div lang="de" class="stack">
+  <Card>
+    <Prose>
       <h2>1. Datenschutz auf einen Blick</h2>
       <h3>Allgemeine Hinweise</h3>
-      <p class="content-text">
+      <p>
         Die folgenden Hinweise geben einen einfachen Überblick darüber, was mit Ihren personenbezogenen Daten passiert, wenn Sie diese Website besuchen. Personenbezogene Daten sind alle Daten, mit denen Sie persönlich identifiziert werden können. Ausführliche Informationen zum Thema Datenschutz entnehmen Sie unserer unter diesem Text aufgeführten Datenschutzerklärung.
       </p>
       <h3>Datenerfassung auf dieser Website</h3>
-      <h3 style="font-size: 1.1rem; font-weight: 600;">Wer ist verantwortlich für die Datenerfassung auf dieser Website?</h3>
-      <p class="content-text">
+      <h4>Wer ist verantwortlich für die Datenerfassung auf dieser Website?</h4>
+      <p>
         Die Datenverarbeitung auf dieser Website erfolgt durch den Websitebetreiber. Dessen Kontaktdaten können Sie dem Impressum dieser Website entnehmen.
       </p>
-      <h3 style="font-size: 1.1rem; font-weight: 600;">Wie erfassen wir Ihre Daten?</h3>
-      <p class="content-text">
+      <h4>Wie erfassen wir Ihre Daten?</h4>
+      <p>
         Ihre Daten werden zum einen dadurch erhoben, dass Sie uns diese mitteilen. Hierbei kann es sich z. B. um Daten handeln, die Sie in ein Kontaktformular eingeben. Andere Daten werden automatisch oder nach Ihrer Einwilligung beim Besuch der Website durch unsere IT-Systeme erfasst. Das sind vor allem technische Daten (z. B. Internetbrowser, Betriebssystem oder Uhrzeit des Seitenaufrufs). Die Erfassung dieser Daten erfolgt automatisch, sobald Sie diese Website betreten.
       </p>
-      <h3 style="font-size: 1.1rem; font-weight: 600;">Wofür nutzen wir Ihre Daten?</h3>
-      <p class="content-text">
+      <h4>Wofür nutzen wir Ihre Daten?</h4>
+      <p>
         Ein Teil der Daten wird erhoben, um eine fehlerfreie Bereitstellung der Website zu gewährleisten. Andere Daten können zur Analyse Ihres Nutzerverhaltens verwendet werden.
       </p>
-      <h3 style="font-size: 1.1rem; font-weight: 600;">Welche Rechte haben Sie bezüglich Ihrer Daten?</h3>
-      <p class="content-text">
+      <h4>Welche Rechte haben Sie bezüglich Ihrer Daten?</h4>
+      <p>
         Sie haben jederzeit das Recht unentgeltlich Auskunft über Herkunft, Empfänger und Zweck Ihrer gespeicherten personenbezogenen Daten zu erhalten. Sie haben außerdem ein Recht, die Berichtigung oder Löschung dieser Daten zu verlangen. Wenn Sie eine Einwilligung zur Datenverarbeitung erteilt haben, können Sie diese Einwilligung jederzeit für die Zukunft widerrufen. Außerdem haben Sie das Recht, unter bestimmten Umständen die Einschränkung der Verarbeitung Ihrer personenbezogenen Daten zu verlangen. Des Weiteren steht Ihnen ein Beschwerderecht bei der zuständigen Aufsichtsbehörde zu. Hierzu sowie zu weiteren Fragen zum Thema Datenschutz können Sie sich jederzeit unter der im Impressum angegebenen Adresse an uns wenden.
       </p>
-    </section>
-  </div>
+    </Prose>
+  </Card>
 
-  <div class="col panel">
-    <section>
+  <Card>
+    <Prose>
       <h2>2. Hosting und Content Delivery Networks (CDN)</h2>
       <h3>Externes Hosting</h3>
-      <p class="content-text">
+      <p>
         Diese Website wird bei einem externen Dienstleister gehostet (Hoster). Die personenbezogenen Daten, die auf dieser Website erfasst werden, werden auf den Servern des Hosters gespeichert. Hierbei kann es sich v. a. um IP-Adressen, Kontaktanfragen, Meta- und Kommunikationsdaten, Vertragsdaten, Kontaktdaten, Namen, Webseitenzugriffe und sonstige Daten, die über eine Website generiert werden, handeln. Der Einsatz des Hosters erfolgt zum Zwecke der Vertragserfüllung gegenüber unseren potenziellen und bestehenden Kunden (Art. 6 Abs. 1 lit. b DSGVO) und im Interesse einer sicheren, schnellen und effizienten Bereitstellung unseres Online-Angebots durch einen professionellen Anbieter (Art. 6 Abs. 1 lit. f DSGVO). Unser Hoster wird Ihre Daten nur insoweit verarbeiten, wie dies zur Erfüllung seiner Leistungspflichten erforderlich ist und unsere Weisungen in Bezug auf diese Daten befolgen.
       </p>
-    </section>
-  </div>
+    </Prose>
+  </Card>
 
-  <div class="col panel">
-    <section>
+  <Card>
+    <Prose>
       <h2>3. Allgemeine Hinweise und Pflichtinformationen</h2>
       <h3>Datenschutz</h3>
-      <p class="content-text">
+      <p>
         Die Betreiber dieser Seiten nehmen den Schutz Ihrer persönlichen Daten sehr ernst. Wir behandeln Ihre personenbezogenen Daten vertraulich und entsprechend der gesetzlichen Datenschutzvorschriften sowie dieser Datenschutzerklärung. Wenn Sie diese Website benutzen, werden verschiedene personenbezogene Daten erhoben. Personenbezogene Daten sind Daten, mit denen Sie persönlich identifiziert werden können. Die vorliegende Datenschutzerklärung erläutert, welche Daten wir erheben und wofür wir sie nutzen. Sie erläutert auch, wie und zu welchem Zweck das geschieht. Wir weisen darauf hin, dass die Datenübertragung im Internet (z. B. bei der Kommunikation per E-Mail) Sicherheitslücken aufweisen kann. Ein lückenloser Schutz der Daten vor dem Zugriff durch Dritte ist nicht möglich.
       </p>
       <h3>Hinweis zur verantwortlichen Stelle</h3>
-      <h3 style="font-size: 1.1rem; font-weight: 600;">Die verantwortliche Stelle für die Datenverarbeitung auf dieser Website ist:</h3>
-      <div class="contact-info">
-        <p>Jonas Niesner</p>
-        <p>Espenstr. 9</p>
-        <p>84051 Essenbach</p>
-        <p>Telefon: +4915730112156</p>
-        <p>E-Mail: jonas.niesner@gmail.com</p>
-      </div>
+      <h4>Die verantwortliche Stelle für die Datenverarbeitung auf dieser Website ist:</h4>
+      <p>Jonas Niesner<br>
+      Espenstr. 9<br>
+      84051 Essenbach<br>
+      Telefon: +4915730112156<br>
+      E-Mail: jonas.niesner@gmail.com</p>
       <h3>Widerruf Ihrer Einwilligung zur Datenverarbeitung</h3>
-      <p class="content-text">
+      <p>
         Viele Datenverarbeitungsvorgänge sind nur mit Ihrer ausdrücklichen Einwilligung möglich. Sie können eine bereits erteilte Einwilligung jederzeit widerrufen. Dazu reicht eine formlose Mitteilung per E-Mail an uns. Die Rechtmäßigkeit der bis zum Widerruf erfolgten Datenverarbeitung bleibt vom Widerruf unberührt.
       </p>
       <h3>Widerspruchsrecht gegen die Datenerhebung in besonderen Fällen sowie gegen Direktwerbung (Art. 21 DSGVO)</h3>
-      <p class="content-text">
+      <p>
         WENN DIE DATENVERARBEITUNG AUF GRUNDLAGE VON ART. 6 ABS. 1 LIT. E ODER F DSGVO ERFOLGT, HABEN SIE JEDERZEIT DAS RECHT, AUS GRÜNDEN, DIE SICH AUS IHRER BESONDEREN SITUATION ERGEBEN, GEGEN DIE VERARBEITUNG IHRER PERSONENBEZOGENEN DATEN WIDERSPRUCH EINZULEGEN; DIES GILT AUCH FÜR EIN AUF DIESE BESTIMMUNGEN GESTÜTZTES PROFILING. DIE JEWEILIGE RECHTSGRUNDLAGE, AUF DENEN EINE VERARBEITUNG BERUHT, ENTNEHMEN SIE DIESER DATENSCHUTZERKLÄRUNG. WENN SIE WIDERSPRUCH EINLEGEN, WERDEN WIR IHRE BETROFFENEN PERSONENBEZOGENEN DATEN NICHT MEHR VERARBEITEN, ES SEI DENN, WIR KÖNNEN ZWINGENDE SCHUTZWÜRDIGE GRÜNDE FÜR DIE VERARBEITUNG NACHWEISEN, DIE IHRE INTERESSEN, RECHTE UND FREIHEITEN ÜBERWIEGEN ODER DIE VERARBEITUNG DIENT DER GELTENDMACHUNG, AUSÜBUNG ODER VERTEIDIGUNG VON RECHTSANSPRÜCHEN (WIDERSPRUCH NACH ART. 21 ABS. 1 DSGVO). WERDEN IHRE PERSONENBEZOGENEN DATEN VERARBEITET, UM DIREKTWERBUNG ZU BETREIBEN, SO HABEN SIE DAS RECHT, JEDERZEIT WIDERSPRUCH GEGEN DIE VERARBEITUNG SIE BETREFFENDER PERSONENBEZOGENER DATEN ZUM ZWECKE DERARTIGER WERBUNG EINZULEGEN; DIES GILT AUCH FÜR DAS PROFILING, SOWEIT ES MIT SOLCHER DIREKTWERBUNG IN VERBINDUNG STEHT. WENN SIE WIDERSPRECHEN, WERDEN IHRE PERSONENBEZOGENEN DATEN ANSCHLIESSEND NICHT MEHR ZUM ZWECKE DER DIREKTWERBUNG VERWENDET (WIDERSPRUCH NACH ART. 21 ABS. 2 DSGVO).
       </p>
       <h3>Beschwerderecht bei der zuständigen Aufsichtsbehörde</h3>
-      <p class="content-text">
+      <p>
         Im Falle von Verstößen gegen die DSGVO steht den Betroffenen ein Beschwerderecht bei einer Aufsichtsbehörde, insbesondere in dem Mitgliedstaat ihres gewöhnlichen Aufenthalts, ihres Arbeitsplatzes oder des Orts des mutmaßlichen Verstoßes zu. Das Beschwerderecht besteht unbeschadet anderweitiger verwaltungsrechtlicher oder gerichtlicher Rechtsbehelfe.
       </p>
       <h3>Recht auf Datenübertragbarkeit</h3>
-      <p class="content-text">
+      <p>
         Sie haben das Recht, Daten, die wir auf Grundlage Ihrer Einwilligung oder in Erfüllung eines Vertrags automatisiert verarbeiten, an sich oder an einen Dritten in einem gängigen, maschinenlesbaren Format aushändigen zu lassen. Sofern Sie die direkte Übertragung der Daten an einen anderen Verantwortlichen verlangen, erfolgt dies nur, soweit es technisch machbar ist.
       </p>
       <h3>SSL- bzw. TLS-Verschlüsselung</h3>
-      <p class="content-text">
+      <p>
         Diese Seite nutzt aus Sicherheitsgründen und zum Schutz der Übertragung vertraulicher Inhalte, wie zum Beispiel Bestellungen oder Anfragen, die Sie an uns als Seitenbetreiber senden, eine SSL- bzw. TLS-Verschlüsselung. Eine verschlüsselte Verbindung erkennen Sie daran, dass die Adresszeile des Browsers von „http://" auf „https://" wechselt und an dem Schloss-Symbol in Ihrer Browserzeile. Wenn die SSL- bzw. TLS-Verschlüsselung aktiviert ist, können die Daten, die Sie an uns übermitteln, nicht von Dritten mitgelesen werden.
       </p>
       <h3>Auskunft, Löschung und Berichtigung</h3>
-      <p class="content-text">
+      <p>
         Sie haben im Rahmen der geltenden gesetzlichen Bestimmungen jederzeit das Recht auf unentgeltliche Auskunft über Ihre gespeicherten personenbezogenen Daten, deren Herkunft und Empfänger und den Zweck der Datenverarbeitung und ggf. ein Recht auf Berichtigung oder Löschung dieser Daten. Hierzu sowie zu weiteren Fragen zum Thema personenbezogene Daten können Sie sich jederzeit unter der im Impressum angegebenen Adresse an uns wenden.
       </p>
       <h3>Recht auf Einschränkung der Verarbeitung</h3>
-      <p class="content-text">
+      <p>
         Sie haben das Recht, die Einschränkung der Verarbeitung Ihrer personenbezogenen Daten zu verlangen. Hierzu können Sie sich jederzeit unter der im Impressum angegebenen Adresse an uns wenden. Das Recht auf Einschränkung der Verarbeitung besteht in folgenden Fällen:
       </p>
       <ul>
@@ -152,14 +98,14 @@ li {
         <li>Wenn Sie einen Widerspruch nach Art. 21 Abs. 1 DSGVO eingelegt haben, muss eine Abwägung zwischen Ihren und unseren Interessen vorgenommen werden. Solange noch nicht feststeht, wessen Interessen überwiegen, haben Sie das Recht, die Einschränkung der Verarbeitung Ihrer personenbezogenen Daten zu verlangen.</li>
         <li>Wenn Sie die Verarbeitung Ihrer personenbezogenen Daten eingeschränkt haben, dürfen diese Daten – von ihrer Speicherung abgesehen – nur mit Ihrer Einwilligung oder zur Geltendmachung, Ausübung oder Verteidigung von Rechtsansprüchen oder zum Schutz der Rechte einer anderen natürlichen oder juristischen Person oder aus Gründen eines wichtigen öffentlichen Interesses der Europäischen Union oder eines Mitgliedstaats verarbeitet werden.</li>
       </ul>
-    </section>
-  </div>
+    </Prose>
+  </Card>
 
-  <div class="col panel">
-    <section>
+  <Card>
+    <Prose>
       <h2>4. Datenerfassung auf dieser Website</h2>
       <h3>Server-Log-Dateien</h3>
-      <p class="content-text">
+      <p>
         Der Provider der Seiten erhebt und speichert automatisch Informationen in so genannten Server-Log-Dateien, die Ihr Browser automatisch an uns übermittelt. Dies sind:
       </p>
       <ul>
@@ -170,68 +116,25 @@ li {
         <li>Uhrzeit der Serveranfrage</li>
         <li>IP-Adresse</li>
       </ul>
-      <p class="content-text">
+      <p>
         Eine Zusammenführung dieser Daten mit anderen Datenquellen wird nicht vorgenommen. Diese Log Dateien werden späterstens nach 14 Tagen gelöscht.
       </p>
       <h3>Installationslogs</h3>
-      <p class="content-text">
+      <p>
         Sollten sie diese Webseite nutzen, um Firmware auf einem Gerät zu installieren, wird die gehashte Mac Adresse zusammen mit dem Namen der Installieren Datei gespeichert. Dies wird dazu genutzt, um alle Softwareinstallationen zu zählen. Die Erfassung dieser Daten erfolgt auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO. Der Websitebetreiber hat ein berechtigtes Interesse an der technisch fehlerfreien Darstellung und der Optimierung seiner Website – hierzu müssen die Server-Log-Files erfasst werden.
       </p>
       <h3>Anfrage per E-Mail oder Telefon</h3>
-      <p class="content-text">
+      <p>
         Wenn Sie uns per E-Mail oder Telefon kontaktieren, wird Ihre Anfrage inklusive aller daraus hervorgehenden personenbezogenen Daten (Name, Anfrage) zum Zwecke der Bearbeitung Ihres Anliegens bei uns gespeichert und verarbeitet. Diese Daten geben wir nicht ohne Ihre Einwilligung weiter. Die Verarbeitung dieser Daten erfolgt auf Grundlage von Art. 6 Abs. 1 lit. b DSGVO, sofern Ihre Anfrage mit der Erfüllung eines Vertrags zusammenhängt oder zur Durchführung vorvertraglicher Maßnahmen erforderlich ist. In allen übrigen Fällen beruht die Verarbeitung auf unserem berechtigten Interesse an der effektiven Bearbeitung der an uns gerichteten Anfragen (Art. 6 Abs. 1 lit. f DSGVO) oder auf Ihrer Einwilligung (Art. 6 Abs. 1 lit. a DSGVO) sofern diese abgefragt wurde. Die von Ihnen an uns per Kontaktanfragen übersandten Daten verbleiben bei uns, bis Sie uns zur Löschung auffordern, Ihre Einwilligung zur Speicherung widerrufen oder der Zweck für die Datenspeicherung entfällt (z. B. nach abgeschlossener Bearbeitung Ihres Anliegens). Zwingende gesetzliche Bestimmungen – insbesondere gesetzliche Aufbewahrungsfristen – bleiben unberührt.
       </p>
-      <p class="content-text">
-        Quelle: <a href="https://www.e-recht24.de/muster-datenschutzerklaerung.html" target="_blank">https://www.e-recht24.de/muster-datenschutzerklaerung.html</a>
+      <p>
+        Quelle: <a href="https://www.e-recht24.de/muster-datenschutzerklaerung.html" target="_blank" rel="noreferrer">https://www.e-recht24.de/muster-datenschutzerklaerung.html</a>
       </p>
-    </section>
+    </Prose>
+  </Card>
   </div>
-</div>
-  </main>
+</Page>
 
-  <footer class="site-footer">
-    <div class="container">
-      <div class="site-footer__top">
-        <div class="site-footer__brand">
-          <a href="index.html" class="site-footer__lockup" aria-label="OpenDisplay home">
-            <img src="assets/brand/logo_dark.svg" alt="OpenDisplay" class="site-footer__logo-full" width="140" height="41">
-          </a>
-          <span class="site-footer__tag">The open e-paper standard</span>
-          <p class="site-footer__lead">An open standard that lets any sender put pictures on any screen. Local, low-power, designed for e-paper.</p>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Build</span>
-          <a href="what-hardware-to-buy.html" class="od-foot-link">What hardware to buy</a>
-          <a href="firmware/display/index.html" class="od-foot-link">BLE Tester</a>
-          <a href="firmware/battery/index.html" class="od-foot-link">Battery calculator</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Reference</span>
-          <a href="protocol/index.html" class="od-foot-link">Protocol spec</a>
-          <a href="protocol/display-data-format.html" class="od-foot-link">Display data format</a>
-          <a href="protocol/flex-standard.html" class="od-foot-link">OpenDisplay Flex</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Flex tools</span>
-          <a href="protocol/flex-tools.html" class="od-foot-link">Overview</a>
-          <a href="firmware/toolbox/index.html" class="od-foot-link">Toolbox</a>
-          <a href="protocol/adding-displays.html" class="od-foot-link">Adding a new panel</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Community</span>
-          <a href="https://github.com/OpenDisplay/" target="_blank" rel="noreferrer" class="od-foot-link">GitHub</a>
-          <a href="https://discord.gg/XmTHz8RfJE" target="_blank" rel="noreferrer" class="od-foot-link">Discord</a>
-          <a href="https://www.openhomefoundation.org/" target="_blank" rel="noreferrer" class="od-foot-link">Open Home Foundation</a>
-        </div>
-      </div>
-      <div class="site-footer__bot">
-        <span>© 2026 OpenDisplay</span>
-        <div class="site-footer__legal">
-          <a href="impressum.html" class="od-foot-link">Legal notice</a>
-          <a href="datenschutz.html" class="od-foot-link">Privacy policy</a>
-        </div>
-      </div>
-    </div>
-  </footer>
-</body>
-</html>
+<style>
+  .stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+</style>

@@ -45,7 +45,7 @@
           <img src="/assets/brand/logo_dark.svg" alt="OpenDisplay" width="140" height="41">
         </a>
         <span class="tag">The open e-paper standard</span>
-        <p class="lead">An open standard that lets any sender put pictures on any screen. Local, low-power, designed for e-paper.</p>
+        <p class="lead">An open standard and open firmware that lets any sender put pictures on any screen. Local, low-power, designed for e-paper.</p>
       </div>
       {#each columns as column (column.title)}
         <nav class="col" aria-label={column.title}>

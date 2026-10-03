@@ -7,18 +7,18 @@
   let { children } = $props();
 </script>
 
-<!-- A full-height column: main takes the spare room, so on short pages the footer stays
-     at the bottom of the screen instead of floating up into it. -->
-<div class="shell">
+<!-- Header and content fill at least one screen, so on short pages the footer starts just
+     below the fold instead of showing up in the middle of the page. -->
+<div class="screen">
   <SiteBar />
   <main id="main-content">
     {@render children()}
   </main>
-  <SiteFooter />
 </div>
+<SiteFooter />
 
 <style>
-  .shell {
+  .screen {
     display: flex;
     flex-direction: column;
     min-height: 100vh;

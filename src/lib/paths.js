@@ -4,14 +4,14 @@
 // - the trailing-slash style (see src/routes/+layout.js), via `page()`.
 
 /** A ported page's URL in the site's current style: folder URL with a trailing slash. */
-const page = (path) => (path === '/' ? '/' : `/${path.replace(/^\/|\/$/g, '')}/`);
+export const page = (path) => (path === '/' ? '/' : `/${path.replace(/^\/|\/$/g, '')}/`);
 
 export const href = {
   home: '/',
   hardware: '/what-hardware-to-buy.html',
   buildYourDisplay: '/build-your-display.html',
-  impressum: '/impressum.html',
-  datenschutz: '/datenschutz.html',
+  impressum: page('impressum'),
+  datenschutz: page('datenschutz'),
 
   protocol: '/protocol/',
   displayDataFormat: '/protocol/display-data-format.html',
@@ -31,4 +31,3 @@ export const external = {
   openHomeFoundation: 'https://www.openhomefoundation.org/',
 };
 
-export { page };
