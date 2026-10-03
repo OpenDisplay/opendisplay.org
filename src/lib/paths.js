@@ -17,11 +17,11 @@ export const href = {
   basicStandard: '/protocol/basic-standard.html',
   bleFlow: '/protocol/ble-flow.html',
   displayDataFormat: '/protocol/display-data-format.html',
-  flexStandard: '/protocol/flex-standard.html',
+  flexStandard: page('protocol/flex-standard'),
   flexTools: page('protocol/flex-tools'),
   addingDisplays: '/protocol/adding-displays.html',
   openDisplayLanguage: '/protocol/open-display-language.html',
-  firmwareVariants: '/protocol/reference-firmware-variants.html',
+  firmwareVariants: page('protocol/reference-firmware-variants'),
   yamlConfig: '/protocol/yaml-config.html',
 
   firmware: '/firmware/',

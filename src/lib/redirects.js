@@ -5,4 +5,6 @@ export const REDIRECTS = {
   '/impressum.html': '/impressum/',
   '/datenschutz.html': '/datenschutz/',
   '/protocol/flex-tools.html': '/protocol/flex-tools/',
+  '/protocol/flex-standard.html': '/protocol/flex-standard/',
+  '/protocol/reference-firmware-variants.html': '/protocol/reference-firmware-variants/',
 };

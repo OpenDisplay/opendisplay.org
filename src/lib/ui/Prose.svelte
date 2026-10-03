@@ -64,13 +64,17 @@
     border: 0;
   }
 
-  /* Tables scroll sideways on small screens instead of squeezing. */
   .prose :global(table) {
-    display: block;
     width: 100%;
-    overflow-x: auto;
     border-collapse: collapse;
     font-size: var(--fs-2);
+  }
+  /* On small screens, tables scroll sideways instead of squeezing. */
+  @media (max-width: 768px) {
+    .prose :global(table) {
+      display: block;
+      overflow-x: auto;
+    }
   }
   .prose :global(th) {
     text-align: left;
@@ -86,6 +90,10 @@
     border-bottom: 1px solid var(--line);
   }
   .prose :global(td code) {
+    color: var(--text);
+  }
+  /* The first column names the row. */
+  .prose :global(td:first-child) {
     color: var(--text);
   }
 </style>
