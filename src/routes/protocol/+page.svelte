@@ -1,5 +1,6 @@
 <script>
   import Hub from '#lib/ui/Hub.svelte';
+  import ProtocolOverview from '#lib/diagrams/protocol-overview.md';
   import { href } from '#lib/paths.js';
 
   const destinations = [
@@ -53,6 +54,7 @@
       is split so manufacturers and sender authors can follow the core spec without wading through
       reference-firmware details.
     </p>
+    <ProtocolOverview />
     <ul>
       <li>
         <strong>Client Devices:</strong> Computers, smartphones, tablets, web browsers, or Home Assistant running

@@ -1,4 +1,4 @@
-// Renders the ```mermaid blocks in src/routes/**/*.md to SVG files in
+// Renders the ```mermaid blocks in src/**/*.md (pages and diagram snippets in src/lib/diagrams) to SVG files in
 // src/lib/markdown/diagrams/ (committed). Only new or changed diagrams are rendered, so a
 // browser is needed only then. `--check` renders nothing and fails if any are missing.
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import {
   theme,
 } from '../src/lib/markdown/diagrams.js';
 
-const diagrams = findDiagrams('src/routes');
+const diagrams = findDiagrams('src');
 const missing = diagrams.filter((d) => !isRendered(d.source));
 
 // Drop rendered SVGs no diagram uses any more.

@@ -16,6 +16,7 @@ export function theme() {
   return {
     fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif',
     fontSize: '14px',
+    dropShadow: 'none', // flat, like the rest of the site
     background: token('bg'),
     primaryColor: token('bg-sunken'),
     primaryBorderColor: token('text-faint'),

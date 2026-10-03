@@ -470,47 +470,54 @@ If a command fails, the device responds with `0xFF` followed by the command code
 
 ### Example 1: Configuration Reading (Chunked)
 
-| Step | From → to | Message | Detail |
-| --- | --- | --- | --- |
-| 1 | Client → Device | Connect | GATT connection |
-| 2 | Device → Client | Connected | Ready |
-| 3 | Client → Device | Write: 0x00 0x40 | Read Config |
-| 4 | Device → Client | Notify: 0x00 0x40 | Chunk 0, Total: 1280, 508 bytes |
-| 5 | Device → Client | Notify: 0x00 0x40 | Chunk 1, 512 bytes |
-| 6 | Device → Client | Notify: 0x00 0x40 | Chunk 2 (final), 260 bytes |
-| 7 |  | Disconnect |  |
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant D as Device
+  C->>D: Connect (GATT)
+  D-->>C: Connected, ready
+  C->>D: Write 0x00 0x40 (read config)
+  D-->>C: Notify 0x00 0x40: chunk 0, total 1280 (508 bytes)
+  D-->>C: Notify 0x00 0x40: chunk 1 (512 bytes)
+  D-->>C: Notify 0x00 0x40: chunk 2, final (260 bytes)
+  Note over C,D: Disconnect
+```
 
 ### Example 2: Image Transfer (Direct Write Mode)
 
-| Step | From → to | Message | Detail |
-| --- | --- | --- | --- |
-| 1 | Client → Device | Connect | GATT connection |
-| 2 | Device → Client | Connected | Ready |
-| 3 | Client → Device | Write: 0x00 0x70 | Start (empty or compressed header) |
-| 4 | Device → Client | Notify: 0x00 0x70 | Ready for data |
-| 5 | Client → Device | Write: 0x00 0x71 | Chunk 1: 230 bytes |
-| 6 | Device → Client | Notify: 0x00 0x71 | ACK |
-| 7 | Client → Device | Write: 0x00 0x71 | Chunk 2: 230 bytes |
-| 8 | Device → Client | Notify: 0x00 0x71 | ACK |
-| 9 | Client → Device | Write: 0x00 0x71 | Chunk 3...N: 230 bytes |
-| 10 | Device → Client | Notify: 0x00 0x71 | ACK (repeated) |
-| 11 | Client → Device | Write: 0x00 0x71 | Final chunk: 150 bytes |
-| 12 | Device → Client | Notify: 0x00 0x71 | ACK |
-| 13 | Client → Device | Write: 0x00 0x72 | End transfer |
-| 14 | Device → Client | Notify: 0x00 0x72 | ACK |
-| 15 | Device → Client | Notify: 0x00 0x73 | Refresh complete |
-| 16 |  | Disconnect |  |
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant D as Device
+  C->>D: Connect (GATT)
+  D-->>C: Connected, ready
+  C->>D: Write 0x00 0x70: start (empty or compressed header)
+  D-->>C: Notify 0x00 0x70: ready for data
+  loop Chunks 1…N (230 bytes each)
+    C->>D: Write 0x00 0x71: chunk
+    D-->>C: Notify 0x00 0x71: ACK
+  end
+  C->>D: Write 0x00 0x71: final chunk (150 bytes)
+  D-->>C: Notify 0x00 0x71: ACK
+  C->>D: Write 0x00 0x72: end transfer
+  D-->>C: Notify 0x00 0x72: ACK
+  D-->>C: Notify 0x00 0x73: refresh complete
+  Note over C,D: Disconnect
+```
 
 ### Example 3: Configuration Writing (Chunked)
 
-| Step | From → to | Message | Detail |
-| --- | --- | --- | --- |
-| 1 | Client → Device | Connect | GATT connection |
-| 2 | Device → Client | Connected | Ready |
-| 3 | Client → Device | Write: 0x00 0x41 | Total: 900, Chunk 1: 198 bytes |
-| 4 | Device → Client | Notify: 0x00 0x41 | ACK |
-| 5 | Client → Device | Write: 0x00 0x42 | Chunk 2: 200 bytes |
-| 6 | Device → Client | Notify: 0x00 0x42 | ACK |
-| 7 | Client → Device | Write: 0x00 0x42 | Chunk 3: 200 bytes |
-| 8 | Device → Client | Notify: 0x00 0x42 | ACK, Config saved |
-| 9 |  | Disconnect |  |
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant D as Device
+  C->>D: Connect (GATT)
+  D-->>C: Connected, ready
+  C->>D: Write 0x00 0x41: total 900, chunk 1 (198 bytes)
+  D-->>C: Notify 0x00 0x41: ACK
+  C->>D: Write 0x00 0x42: chunk 2 (200 bytes)
+  D-->>C: Notify 0x00 0x42: ACK
+  C->>D: Write 0x00 0x42: chunk 3 (200 bytes)
+  D-->>C: Notify 0x00 0x42: ACK, config saved
+  Note over C,D: Disconnect
+```
