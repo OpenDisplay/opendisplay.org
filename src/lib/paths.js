@@ -13,7 +13,7 @@ export const href = {
   impressum: page('impressum'),
   datenschutz: page('datenschutz'),
 
-  protocol: '/protocol/',
+  protocol: page('protocol'),
   basicStandard: '/protocol/basic-standard.html',
   bleFlow: '/protocol/ble-flow.html',
   displayDataFormat: '/protocol/display-data-format.html',
