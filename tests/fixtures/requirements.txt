@@ -1,0 +1,2 @@
+py-opendisplay==7.14.1
+epaper-dithering==6.0.0
