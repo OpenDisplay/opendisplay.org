@@ -24,7 +24,7 @@ export const href = {
   firmwareVariants: page('protocol/reference-firmware-variants'),
   yamlConfig: page('protocol/yaml-config'),
 
-  firmware: '/firmware/',
+  firmware: page('firmware'),
   reusingSolumDisplays: '/firmware/reusing_solum_displays.html',
   seeedCompatibility: '/firmware/seeed_display_compatibility.html',
   landing: '/l/',
@@ -40,4 +40,5 @@ export const external = {
   github: 'https://github.com/OpenDisplay/',
   discord: 'https://discord.gg/XmTHz8RfJE',
   openHomeFoundation: 'https://www.openhomefoundation.org/',
+  homeAssistant: 'https://github.com/OpenDisplay/Home_Assistant_Integration',
 };
