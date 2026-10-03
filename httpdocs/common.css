@@ -13,18 +13,22 @@
   --border-color: #e5e7eb;
 }
 
-/* Dark mode support */
+/* Dark mode support.
+   Palette aligned with the main site's dark tokens (css/colors_and_type.css)
+   so these legacy common.css pages feel cohesive when navigating to/from the
+   rest of the site: cool near-black surfaces, soft off-white ink, brand blue
+   nudged lighter for contrast. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --foreground: #f9fafb;
-    --background: #111827;
-    --muted-foreground: #9ca3af;
-    --accent: #00d4ff;
-    --accent-hover: #00bfff;
-    --accent-button: #fff;
-    --card-background: #1f2937;
-    --card-foreground: #f9fafb;
-    --border-color: #374151;
+    --foreground: #E9ECEF;        /* --od-ink (dark) */
+    --background: #131619;        /* --od-paper (dark) */
+    --muted-foreground: #949CA5;  /* --od-ink-3 (dark) */
+    --accent: #22C7FF;            /* --od-blue (dark) */
+    --accent-hover: #5AD4FF;      /* --od-blue-ink (dark) */
+    --accent-button: #08252F;     /* dark ink for text sitting on the blue button */
+    --card-background: #1B1F24;   /* --od-paper-2 (dark) */
+    --card-foreground: #E9ECEF;
+    --border-color: #2C323A;      /* --od-paper-line (dark) */
   }
 }
 
