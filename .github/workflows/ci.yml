@@ -33,6 +33,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Browsers and their system libraries come preinstalled in this image, so there is no
+    # per-run download. Keep the tag in step with @playwright/test in package.json.
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
 
@@ -42,9 +45,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
 
       - name: Build and test in the browser
         run: npm run test:e2e
