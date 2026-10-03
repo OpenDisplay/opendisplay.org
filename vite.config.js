@@ -5,6 +5,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { mdsvex } from 'mdsvex';
 import headingIds from './src/lib/markdown/heading-ids.js';
 import internalLinks from './src/lib/markdown/internal-links.js';
+import { highlighter } from './src/lib/markdown/highlight.js';
 import { defineConfig } from 'vite';
 
 const STATIC = 'httpdocs';
@@ -31,6 +32,8 @@ export default defineConfig({
           rehypePlugins: [headingIds, internalLinks],
           // Keep text exactly as written (no curly quotes): legal text and specs must not change.
           smartypants: false,
+          // ```mermaid → pre-rendered SVG; other code blocks → plain <pre><code>.
+          highlight: { highlighter },
         }),
       ],
       // Static export only: every route is prerendered (src/routes/+layout.js) and the

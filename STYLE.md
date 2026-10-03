@@ -45,7 +45,9 @@ Reading and reference material.
   are `Badge`. Display inks are `Swatch`.
 - Reference data that exists elsewhere (schema fields, encoder output, palettes) is
   generated from that source, not typed in.
-- Pictures only when a table can't say it, as a self-contained SVG without page CSS.
+- Pictures only when a table can't say it: a Mermaid diagram (```mermaid in the
+  Markdown), rendered to SVG at build time in the site's colors and font. Sequence
+  diagrams for message exchanges, flowcharts for decisions, nothing decorative.
 
 ## Legal (Impressum, privacy)
 

@@ -69,6 +69,16 @@
     border: 0;
   }
 
+  /* Mermaid diagrams, pre-rendered to SVG at build time (STYLE.md: Docs). */
+  .prose :global(figure.diagram) {
+    margin: 0 0 var(--sp-4);
+    overflow-x: auto;
+  }
+  .prose :global(figure.diagram svg) {
+    display: block;
+    height: auto;
+    margin: 0 auto;
+  }
   .prose :global(table) {
     width: 100%;
     border-collapse: collapse;

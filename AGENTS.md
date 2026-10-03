@@ -25,10 +25,15 @@ npm run dev        # dev server; unported httpdocs pages are served at their usu
 npm run build      # static site in build/
 npm test           # Vitest: protocol, encoding and component tests
 npm run lint       # Stylelint: design-token rules for src/
+npm run diagrams   # render new or changed ```mermaid blocks to SVG (also runs before build)
 npm run test:e2e   # Playwright (Chromium): builds, previews, checks every URL
 ```
 
 Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
+
+Diagrams: write ```mermaid blocks in Markdown pages. `npm run diagrams` renders them with
+Playwright's Chromium into `src/lib/markdown/diagrams/<hash>.svg`; commit those files.
+The build only reads them, so deploys need no browser; CI fails if one is missing.
 
 ## Components and styling
 

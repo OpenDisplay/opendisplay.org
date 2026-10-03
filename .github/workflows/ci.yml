@@ -33,6 +33,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Diagrams are rendered
+        run: node scripts/render-diagrams.js --check
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
