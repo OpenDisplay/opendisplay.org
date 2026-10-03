@@ -1,6 +1,10 @@
 import { existsSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { mdsvex } from 'mdsvex';
+import headingIds from './src/lib/markdown/heading-ids.js';
+import internalLinks from './src/lib/markdown/internal-links.js';
 import { defineConfig } from 'vite';
 
 const STATIC = 'httpdocs';
@@ -18,6 +22,15 @@ function isStaticPage(path) {
 export default defineConfig({
   plugins: [
     sveltekit({
+      extensions: ['.svelte', '.md'],
+      // Markdown pages: frontmatter → Page, body → Prose (src/lib/markdown/Layout.svelte).
+      preprocess: [
+        mdsvex({
+          extensions: ['.md'],
+          layout: { _: fileURLToPath(new URL('./src/lib/markdown/Layout.svelte', import.meta.url)) },
+          rehypePlugins: [headingIds, internalLinks],
+        }),
+      ],
       // Static export only: every route is prerendered (src/routes/+layout.js) and the
       // build/ folder is uploaded to the Netcup web root as plain files.
       adapter: adapter({

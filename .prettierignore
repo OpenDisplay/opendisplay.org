@@ -3,3 +3,4 @@ build/
 httpdocs/
 package-lock.json
 tests/fixtures/*.json
+src/**/*.md
