@@ -1,0 +1,11 @@
+# Entry page must revalidate so a cached copy never pins a superseded v<N>/
+# asset graph (DESIGN_WEB_OD_APP_PLAN.md §2). Production runs nginx in front
+# (verified 2026-08-23; no Cache-Control served today) — this file takes
+# effect only if Apache serves behind it, and is harmless otherwise. The JS
+# version-marker check in v1/js/main.js is the guaranteed fallback either way.
+<Files "index.html">
+  Header set Cache-Control "no-cache"
+</Files>
+<Files "current-version.txt">
+  Header set Cache-Control "no-store"
+</Files>
