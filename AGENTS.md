@@ -49,6 +49,10 @@ Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
   circles set `corner-shape: round`.
 - Light theme only. No inline `style=""` in routes. No component libraries, utility-CSS
   frameworks or CSS-in-JS.
+- **No toasts or pop-ups** (`alert()`, transient messages). Feedback stays where it happened:
+  the `Button` failed state plus a `Callout` next to the action, a `Field` error for bad
+  input, or one `Callout` at the top of a tool for page-level problems. Prefer making an
+  error impossible (disable or busy the action until it can run) over reporting it.
 - If a change seems to need a new component, variant or token: say so and stop. Don't add
   one quietly.
 
