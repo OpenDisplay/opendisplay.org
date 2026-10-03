@@ -40,5 +40,6 @@ export const external = {
   github: 'https://github.com/OpenDisplay/',
   discord: 'https://discord.gg/XmTHz8RfJE',
   openHomeFoundation: 'https://www.openhomefoundation.org/',
-  homeAssistant: 'https://github.com/OpenDisplay/Home_Assistant_Integration',
+  homeAssistant: 'https://www.home-assistant.io/integrations/opendisplay/', // core integration
+  homeAssistantCustom: 'https://github.com/OpenDisplay/Home_Assistant_Integration', // custom integration
 };

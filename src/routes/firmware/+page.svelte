@@ -20,9 +20,10 @@
       action: ['Calculator', href.battery],
     },
     {
-      title: 'Home Assistant Integration',
-      text: 'This firmware is fully compatible with the OpenDisplay Home Assistant Integration. Unlike AP-based setups, this BLE firmware does not require an access point. It only needs active BLE proxies (such as ESPHome Bluetooth proxies) to communicate with Home Assistant. This makes setup simpler and more flexible, allowing direct communication between your Home Assistant instance and your e-paper displays via Bluetooth Low Energy.',
-      action: ['Integration on GitHub', external.homeAssistant],
+      title: 'Home Assistant',
+      text: 'This firmware works with both the OpenDisplay core integration that ships with Home Assistant and the custom integration. Unlike AP-based setups, this BLE firmware does not require an access point. It only needs active BLE proxies (such as ESPHome Bluetooth proxies) to communicate with Home Assistant. This makes setup simpler and more flexible, allowing direct communication between your Home Assistant instance and your e-paper displays via Bluetooth Low Energy.',
+      links: [['Custom integration on GitHub', external.homeAssistantCustom]],
+      action: ['Core integration docs', external.homeAssistant],
     },
     {
       title: 'Adding New Displays Guide',
