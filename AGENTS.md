@@ -23,15 +23,17 @@ file; edit `AGENTS.md`.
 ```bash
 npm run dev        # dev server; unported httpdocs pages are served at their usual URLs
 npm run build      # static site in build/
-npm test           # Vitest: protocol and encoding tests
+npm test           # Vitest: protocol, encoding and component tests
+npm run lint       # Stylelint: design-token rules for src/
 npm run test:e2e   # Playwright (Chromium): builds, previews, checks every URL
 ```
 
-Before committing: `npm test` and `npm run test:e2e` pass.
+Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
 
 ## Components and styling
 
 - **Reuse before you create.** Look in `src/lib/ui/` (and the hidden `/_ui/` page) first.
+  Imports use the `#lib/…` subpath alias with the file extension (SvelteKit 3 has no `$lib`).
 - A new shared component needs **3 real uses**. Until then the markup stays in its page.
 - Don't add a variant when a prop or snippet does it. No one-off button classes.
 - **One `Button`.** Variants are primary / secondary / danger only. Busy, progress, done
@@ -43,6 +45,8 @@ Before committing: `npm test` and `npm run test:e2e` pass.
   message and more than one use.
 - **The only brand color is the logo blue `#00BFFF` (`--blue`).** Tints and readable blue
   text are `color-mix` recipes inside components, never new blue tokens.
+- Corners are squircles where supported (`corner-shape`, set in `base.css`); pills and
+  circles set `corner-shape: round`.
 - Light theme only. No inline `style=""` in routes. No component libraries, utility-CSS
   frameworks or CSS-in-JS.
 - If a change seems to need a new component, variant or token: say so and stop. Don't add
@@ -69,7 +73,7 @@ Before committing: `npm test` and `npm run test:e2e` pass.
 ## URLs
 
 - Pages use folder URLs with a trailing slash (`/impressum/`). Build internal links with
-  `$lib/paths.js`, never as hand-written strings, so the slash style can still change.
+  `#lib/paths.js`, never as hand-written strings, so the slash style can still change.
 - Every URL ever published keeps working. `tests/e2e/legacy-urls.json` and the redirect
   map only grow; removing or renaming a page means adding a redirect.
 - `/l/?<payload>` is printed as a QR code by the firmware. It must keep working forever.

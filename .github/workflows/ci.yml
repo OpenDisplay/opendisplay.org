@@ -27,6 +27,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Design-token lint
+        run: npm run lint
+
       - name: Unit tests
         run: npm test
 
