@@ -6,6 +6,7 @@
       title: 'Build',
       links: [
         ['What hardware to buy', href.hardware],
+        ['Home Assistant', href.homeAssistantGuide],
         ['BLE Tester', href.bleTester],
         ['Battery calculator', href.battery],
       ],

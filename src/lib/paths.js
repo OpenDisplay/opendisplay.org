@@ -8,6 +8,7 @@ export const page = (path) => (path === '/' ? '/' : `/${path.replace(/^\/|\/$/g,
 
 export const href = {
   home: '/',
+  homeAssistantGuide: page('homeassistant'),
   hardware: '/what-hardware-to-buy.html',
   buildYourDisplay: '/build-your-display.html',
   impressum: page('impressum'),
