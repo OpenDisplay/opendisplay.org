@@ -15,4 +15,6 @@ export const REDIRECTS = {
   '/protocol/display-data-format.html': '/protocol/display-data-format/',
   '/protocol/ble-flow.html': '/protocol/ble-flow/',
   '/protocol/basic-standard.html': '/protocol/basic-standard/',
+  '/firmware/reusing_solum_displays.html': '/firmware/reusing-solum-displays/',
+  '/firmware/seeed_display_compatibility.html': '/firmware/seeed-display-compatibility/',
 };

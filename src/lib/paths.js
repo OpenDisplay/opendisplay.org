@@ -26,8 +26,8 @@ export const href = {
   yamlConfig: page('protocol/yaml-config'),
 
   firmware: page('firmware'),
-  reusingSolumDisplays: '/firmware/reusing_solum_displays.html',
-  seeedCompatibility: '/firmware/seeed_display_compatibility.html',
+  reusingSolumDisplays: page('firmware/reusing-solum-displays'),
+  seeedCompatibility: page('firmware/seeed-display-compatibility'),
   landing: '/l/',
   generateQr: '/l/generateqr.html',
   nrfWebTools: '/nrf_web_tools/',
