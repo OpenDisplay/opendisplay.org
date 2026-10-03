@@ -167,7 +167,7 @@
   <section>
     <h2>Callout</h2>
     <div class="stack">
-      <Callout>Info: your display needs firmware 2.4 or newer.</Callout>
+      <Callout>Your display needs firmware 2.4 or newer.</Callout>
       <Callout tone="ok">Settings saved. The display restarts now.</Callout>
       <Callout tone="warn">Updating erases the Wi-Fi settings.</Callout>
       <Callout tone="error">The display didn't answer. Move closer and try again.</Callout>

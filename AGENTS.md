@@ -47,6 +47,9 @@ Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
   text are `color-mix` recipes inside components, never new blue tokens.
 - Corners are squircles where supported (`corner-shape`, set in `base.css`); pills and
   circles set `corner-shape: round`.
+- **No one-sided accent bars** (a thick colored `border-left` on notes, steps or sections).
+  Sections are headings and spacing (a full-width hairline divider at most); notes are a
+  `Callout`: tinted box, thin border all round, bold label.
 - Light theme only. No inline `style=""` in routes. No component libraries, utility-CSS
   frameworks or CSS-in-JS.
 - **No toasts or pop-ups** (`alert()`, transient messages). Feedback stays where it happened:
