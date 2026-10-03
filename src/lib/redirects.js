@@ -8,4 +8,8 @@ export const REDIRECTS = {
   '/protocol/flex-standard.html': '/protocol/flex-standard/',
   '/protocol/reference-firmware-variants.html': '/protocol/reference-firmware-variants/',
   '/protocol/open-display-language.html': '/protocol/open-display-language/',
+  '/protocol/adding-displays.html': '/protocol/adding-displays/',
+  '/protocol/yaml-config.html': '/protocol/yaml-config/',
+  // An older copy of the same guide; the protocol version supersedes it.
+  '/firmware/adding-displays.html': '/protocol/adding-displays/',
 };

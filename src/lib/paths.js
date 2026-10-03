@@ -19,10 +19,10 @@ export const href = {
   displayDataFormat: '/protocol/display-data-format.html',
   flexStandard: page('protocol/flex-standard'),
   flexTools: page('protocol/flex-tools'),
-  addingDisplays: '/protocol/adding-displays.html',
+  addingDisplays: page('protocol/adding-displays'),
   openDisplayLanguage: page('protocol/open-display-language'),
   firmwareVariants: page('protocol/reference-firmware-variants'),
-  yamlConfig: '/protocol/yaml-config.html',
+  yamlConfig: page('protocol/yaml-config'),
 
   firmware: '/firmware/',
   reusingSolumDisplays: '/firmware/reusing_solum_displays.html',

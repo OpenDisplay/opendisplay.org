@@ -9,14 +9,14 @@
   <title>Reference firmware variants · OpenDisplay</title>
 </svelte:head>
 
-<Page title="Reference firmware variants" width="prose">
+<Page title="Reference firmware variants" toc>
   {#snippet lead()}Both trees speak the same GATT command set over service <code>0x2446</code>. This page
     lists where <a href="https://github.com/OpenDisplay/Firmware">main Firmware</a> (ESP32 / nRF52840) and
     <a href="https://github.com/OpenDisplay/Firmware-silabs-bg22">Firmware-silabs-bg22</a> differ.{/snippet}
 
   <Card>
     <Prose>
-      <h2>Capability matrix</h2>
+      <h2 id="capability-matrix">Capability matrix</h2>
       <table>
         <thead>
           <tr>
@@ -108,7 +108,7 @@
 
   <Card>
     <Prose>
-      <h2>Sender guidance</h2>
+      <h2 id="sender-guidance">Sender guidance</h2>
       <p>
         <strong>New senders must not use legacy large-window zlib.</strong> Read Flex
         <code>transmission_modes</code>
@@ -129,7 +129,7 @@
 
   <Card>
     <Prose>
-      <h2>Source code entry points</h2>
+      <h2 id="source-code-entry-points">Source code entry points</h2>
       <ul>
         <li>
           <strong>Main:</strong> <code>Firmware/src/communication.cpp</code>,

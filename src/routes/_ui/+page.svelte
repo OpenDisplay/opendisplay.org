@@ -53,7 +53,6 @@
   eyebrow="Internal"
   title="UI kit"
   lead="Every design token and component variant. If it isn't here, it doesn't exist yet."
-  width="wide"
 >
   <section>
     <h2>Colors (12)</h2>

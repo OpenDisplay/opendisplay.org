@@ -9,12 +9,12 @@
   <title>OpenDisplay Language Specification · OpenDisplay</title>
 </svelte:head>
 
-<Page title="OpenDisplay Language Specification" width="prose">
+<Page title="OpenDisplay Language Specification" toc>
   {#snippet lead()}Part of the <strong><a href={href.basicStandard}>OpenDisplay spec</a></strong>{/snippet}
 
   <Card>
     <Prose>
-      <h2>Overview</h2>
+      <h2 id="overview">Overview</h2>
       <p>
         OpenDisplay Language (ODL) is a standardized format for describing visual layouts for e-paper
         displays. Senders use it to describe what to draw; receivers render the result using the shared
@@ -30,35 +30,6 @@
       </p>
     </Prose>
   </Card>
-
-  <h3>Table of Contents</h3>
-  <ul>
-    <li><a href="#basic-usage">Basic Usage</a></li>
-    <li><a href="#color-support">Color Support</a></li>
-    <li><a href="#font-support">Font Support</a></li>
-    <li>
-      <a href="#draw-types">Draw Types</a>
-      <ul>
-        <li><a href="#debug_grid">Debug Grid</a></li>
-        <li><a href="#text">Text</a></li>
-        <li><a href="#multiline">Multiline Text</a></li>
-        <li><a href="#line">Line</a></li>
-        <li><a href="#rectangle">Rectangle</a></li>
-        <li><a href="#rectangle_pattern">Rectangle Pattern</a></li>
-        <li><a href="#polygon">Polygon</a></li>
-        <li><a href="#circle">Circle</a></li>
-        <li><a href="#ellipse">Ellipse</a></li>
-        <li><a href="#arc">Arc/Pie Slice</a></li>
-        <li><a href="#icon">Icon</a></li>
-        <li><a href="#icon_sequence">Icon Sequence</a></li>
-        <li><a href="#dlimg">Download Image</a></li>
-        <li><a href="#qrcode">QR Code</a></li>
-        <li><a href="#plot">Plot</a></li>
-        <li><a href="#progress_bar">Progress Bar</a></li>
-      </ul>
-    </li>
-    <li><a href="#template-examples">Template Examples</a></li>
-  </ul>
 
   <Card>
     <Prose>

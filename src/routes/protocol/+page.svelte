@@ -10,13 +10,13 @@
   <title>Protocol Documentation · OpenDisplay</title>
 </svelte:head>
 
-<Page title="Protocol Documentation" width="prose">
+<Page title="Protocol Documentation" toc>
   {#snippet lead()}Three layers: the <strong>OpenDisplay</strong> spec, the <strong>Flex</strong>
     configuration extension for reference firmware, and optional <strong>Flex tools</strong>.{/snippet}
 
   <Card>
     <Prose>
-      <h2>Overview</h2>
+      <h2 id="overview">Overview</h2>
       <p>
         OpenDisplay lets senders (apps, Home Assistant, custom code) push rendered images to e-paper receivers
         over Bluetooth Low Energy and, on some devices, the same command set over Wi‑Fi LAN. The documentation
@@ -54,7 +54,7 @@
 
   <Card>
     <Prose>
-      <h2>1. OpenDisplay — the spec</h2>
+      <h2 id="opendisplay-the-spec">1. OpenDisplay — the spec</h2>
       <p>
         The protocol any sender or product implementation should follow: BLE advertising, configuration
         read/write, image transfer, encryption, optional LAN transport, display data encoding, and OpenDisplay
@@ -73,7 +73,7 @@
 
   <Card>
     <Prose>
-      <h2>Reference firmware variants</h2>
+      <h2 id="reference-firmware-variants">Reference firmware variants</h2>
       <p>
         ESP32/nRF and Silicon Labs BG22 builds share the same GATT commands but differ in partial refresh,
         NFC, Wi‑Fi/LAN, and compression window support. Use this matrix when writing senders for reference
@@ -85,7 +85,7 @@
 
   <Card>
     <Prose>
-      <h2>2. OpenDisplay Flex — configuration extension</h2>
+      <h2 id="opendisplay-flex-configuration-extension">2. OpenDisplay Flex — configuration extension</h2>
       <p>
         A YAML schema compiled to a binary TLV blob. Used by the reference firmware on development boards so
         one firmware binary can support many panels and pinouts. Flex is <em>not</em> a separate wire protocol —
@@ -100,7 +100,7 @@
 
   <Card>
     <Prose>
-      <h2>3. Flex tools — reference firmware only</h2>
+      <h2 id="flex-tools-reference-firmware-only">3. Flex tools — reference firmware only</h2>
       <p>
         Browser tools for flashing presets and extending reference firmware. Marked separately so spec readers
         and product integrators are not sent through DIY tooling by default.

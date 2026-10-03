@@ -76,6 +76,11 @@
       overflow-x: auto;
     }
   }
+  .prose :global(caption) {
+    padding-bottom: var(--sp-2);
+    text-align: left;
+    color: var(--text-muted);
+  }
   .prose :global(th) {
     text-align: left;
     font-weight: 600;

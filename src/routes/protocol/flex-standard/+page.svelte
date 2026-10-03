@@ -10,13 +10,13 @@
   <title>OpenDisplay Flex · OpenDisplay</title>
 </svelte:head>
 
-<Page title="OpenDisplay Flex" width="prose">
+<Page title="OpenDisplay Flex" toc>
   {#snippet lead()}Configuration extension for the <strong>reference firmware</strong> — not a separate communication
     protocol.{/snippet}
 
   <Card>
     <Prose>
-      <h2>What Flex is</h2>
+      <h2 id="what-flex-is">What Flex is</h2>
       <p>
         <strong>OpenDisplay Flex</strong> is a YAML-based configuration schema. Tools compile it into a binary TLV
         blob that describes a specific board: host MCU, display panel(s), pin wiring, power options, optional Wi‑Fi
@@ -38,7 +38,7 @@
 
   <Card>
     <Prose>
-      <h2>Who needs Flex</h2>
+      <h2 id="who-needs-flex">Who needs Flex</h2>
       <table>
         <thead>
           <tr>
@@ -76,7 +76,7 @@
 
   <Card>
     <Prose>
-      <h2>Schema and binary format</h2>
+      <h2 id="schema-and-binary-format">Schema and binary format</h2>
       <p>
         Canonical schema: <code>firmware/toolbox/config.yaml</code> (version <strong>1.2</strong> — major 1, minor
         2). The Toolbox and reference firmware share this file.
@@ -98,7 +98,7 @@
 
   <Card>
     <Prose>
-      <h2>Packet types in reference firmware</h2>
+      <h2 id="packet-types-in-reference-firmware">Packet types in reference firmware</h2>
       <p>
         The table below lists Flex packet type IDs from the schema and whether the current reference firmware
         parses them at boot (<code>config_parser.cpp</code>).
@@ -189,7 +189,7 @@
 
   <Card>
     <Prose>
-      <h2>BLE advertising and discovery</h2>
+      <h2 id="ble-advertising-and-discovery">BLE advertising and discovery</h2>
       <p>
         Reference firmware uses BLE service and characteristic UUID <strong>0x2446</strong> (128-bit form
         <code>00002446-0000-1000-8000-00805F9B34FB</code>). Manufacturer Specific Data uses company identifier
@@ -207,7 +207,7 @@
 
   <Card>
     <Prose>
-      <h2>Image transfer (OpenDisplay protocol)</h2>
+      <h2 id="image-transfer-opendisplay-protocol">Image transfer (OpenDisplay protocol)</h2>
       <p>
         Flex configuration tells the device display dimensions, color scheme, and capabilities (packet type
         32). Image bytes use the shared
@@ -235,7 +235,7 @@
 
   <Card>
     <Prose>
-      <h2>Full schema reference</h2>
+      <h2 id="full-schema-reference">Full schema reference</h2>
       <p>
         Every field, enum, and bit in the Flex configuration schema — packet types 1 through 43, CRC rules,
         and examples.
@@ -246,7 +246,7 @@
 
   <Card>
     <Prose>
-      <h2>Flex tools</h2>
+      <h2 id="flex-tools">Flex tools</h2>
       <p>
         Browser tools for flashing reference firmware and editing Flex presets. Not needed if you only
         implement or talk to a fixed OpenDisplay product.
