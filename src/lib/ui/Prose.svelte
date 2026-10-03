@@ -17,6 +17,11 @@
   .prose > :global(:last-child) {
     margin-bottom: 0;
   }
+  /* Sections are separated by a hairline, not boxed (STYLE.md: Docs). */
+  .prose :global(h2:not(:first-child)) {
+    padding-top: var(--sp-6);
+    border-top: 1px solid var(--line);
+  }
   .prose :global(h2) {
     margin: var(--sp-6) 0 var(--sp-3);
     font-size: var(--fs-4);

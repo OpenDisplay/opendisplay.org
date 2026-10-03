@@ -27,9 +27,10 @@ action), then a few full-width bands (what it is, how to start, community).
 ## Hub (a section's entry page: Protocol, Firmware, Flex tools)
 
 Helps people pick where to go next; it is not reading material.
-- Title + lead, then one `Card` per destination: heading, one or two sentences, one
+- Title + lead, an optional short intro (a paragraph or a list, not sections), then one
+  `Card` per destination: heading, one or two sentences, one
   secondary `Button` to go there. Cards here make each choice a clear target and set hubs
-  apart from reading pages.
+  apart from reading pages. Built with `Hub`, from a list of destinations.
 - No contents list.
 
 ## Docs (protocol and firmware guides, references, hardware pages)

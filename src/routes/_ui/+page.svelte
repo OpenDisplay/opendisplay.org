@@ -13,6 +13,7 @@
   import Swatch from '#lib/ui/Swatch.svelte';
   import Switch from '#lib/ui/Switch.svelte';
   import { SCHEMES } from '#lib/ui/inks.js';
+  import { href } from '#lib/paths.js';
 
   const colors = [
     'blue',
@@ -54,6 +55,26 @@
   title="UI kit"
   lead="Every design token and component variant. If it isn't here, it doesn't exist yet."
 >
+  <section>
+    <h2>Page types</h2>
+    <p class="note">
+      Every page follows one category from <code>STYLE.md</code>. Examples of each, built from these
+      components:
+    </p>
+    <ul class="types">
+      <li>
+        <strong>Hub</strong> (<code>Hub</code>: intro, one card per destination):
+        <a href={href.protocol}>Protocol</a>
+      </li>
+      <li>
+        <strong>Docs</strong> (Markdown, contents list, hairline sections, tables, Callouts):
+        <a href={href.yamlConfig}>YAML configuration</a>
+      </li>
+      <li><strong>Legal</strong> (docs rules, German body): <a href={href.datenschutz}>Privacy policy</a></li>
+      <li><strong>Tool</strong> and <strong>Home</strong>: not ported yet</li>
+    </ul>
+  </section>
+
   <section>
     <h2>Colors (12)</h2>
     <div class="grid">
@@ -269,6 +290,9 @@
     height: 40px;
     border-radius: var(--r-sm);
     border: 1px solid var(--line);
+  }
+  .types li + li {
+    margin-top: var(--sp-2);
   }
   .note {
     margin-top: var(--sp-4);

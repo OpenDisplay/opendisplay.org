@@ -3,17 +3,23 @@ title: "Adding New Displays Guide"
 lead: "<strong>Flex tool</strong> — for extending <a href=\"/protocol/flex-tools/\">reference firmware</a>, not the core OpenDisplay spec."
 ---
 
+<script>
+  import Callout from '#lib/ui/Callout.svelte';
+</script>
+
 ## Overview
 
 This guide explains how to add compatibility for new display panels to the open-source reference firmware. You will update the Flex YAML schema, implement panel support in firmware, and add a Toolbox preset so others can flash the configuration in the browser.
 
-### Need Help?
+<Callout tone="info" label="Need help?">
 
 If you get stuck at any point or need assistance, don't hesitate to ask for help on the [OpenDisplay Discord](https://discord.gg/XmTHz8RfJE). The community is friendly and helpful, and many users have gone through the same process. Whether you're having trouble finding your display, configuring pins, or testing your setup, someone is usually available to help!
 
+</Callout>
+
 ## Prerequisites
 
-### ⚠️ Supported MCUs Only
+<Callout tone="warn" label="Supported MCUs only">
 
 This guide is only valid if you are using a **supported microcontroller unit (MCU)**. The OpenDisplay firmware currently supports the following MCUs:
 
@@ -31,6 +37,8 @@ If your device uses a different MCU, this guide does not apply. You would need t
 -   Display panel specifications (resolution, color scheme, controller IC)
 -   Understanding of the OpenDisplay protocol (see [communication protocol](/protocol/ble-flow.html))
 -   Familiarity with Flex YAML configuration (see [YAML config reference](/protocol/yaml-config/))
+
+</Callout>
 
 ## Step 1: Gather Device Information
 
@@ -112,13 +120,17 @@ In this case, you'll need to:
 2.  If supported in bb\_epaper but not in OpenDisplay, proceed to add it to the YAML config (see Step 3)
 3.  If not supported in bb\_epaper, you'll need to add support there first, or use a compatible alternative panel
 
-### Tip
+<Callout tone="info" label="Tip">
 
 Many displays share the same controller IC (like UC8151, SSD1680, etc.) and may be compatible with existing panel types even if the exact model isn't listed. Check the controller IC in your panel's datasheet and look for panels using the same controller.
 
-### ⚠️ Important
+</Callout>
+
+<Callout tone="warn" label="Important">
 
 OpenDisplay firmware support is limited to what's available in the **bb\_epaper** library. If a panel isn't supported by bb\_epaper, it cannot be added to OpenDisplay without first adding support to the underlying library.
+
+</Callout>
 
 ### Recommended Testing Hardware
 
@@ -187,9 +199,11 @@ int mapEpd(uint16_t panelType) {
 
 The panel constant (e.g., `EP_NEW_200x200`) must match the constant defined in the bb\_epaper library.
 
-### ⚠️ Important
+<Callout tone="warn" label="Important">
 
 The panel type ID in the YAML config (e.g., 64) must match the case value in the firmware mapping function (e.g., 0x0040). The firmware uses hexadecimal values, so decimal 64 = 0x0040. Also ensure the panel constant matches what's defined in bb\_epaper.
+
+</Callout>
 
 ## Step 4: Create Preset Configuration
 
@@ -247,7 +261,11 @@ Use a descriptive filename that includes the MCU type and board name, e.g.:
 -   `esp32-s3-custom-board.json`
 -   `nrf52840-diy-panel.json`
 
-**Note:** You can use the configuration locally without saving it to the presets directory. The preset file is only needed if you want to contribute it to the project.
+<Callout>
+
+You can use the configuration locally without saving it to the presets directory. The preset file is only needed if you want to contribute it to the project.
+
+</Callout>
 
 ## Step 5: Pin Configuration Reference
 
@@ -264,7 +282,11 @@ Use a descriptive filename that includes the MCU type and board name, e.g.:
 
 #### 6.1 Build and Flash Firmware
 
-**Note:** This step is only necessary if you completed Step 3 (added a new panel type to the YAML config and firmware). If you found your display in the existing panel list (Step 2) and only created a configuration (Step 4), you can skip compilation and proceed directly to loading your configuration (Step 6.2).
+<Callout>
+
+This step is only necessary if you completed Step 3 (added a new panel type to the YAML config and firmware). If you found your display in the existing panel list (Step 2) and only created a configuration (Step 4), you can skip compilation and proceed directly to loading your configuration (Step 6.2).
+
+</Callout>
 
 If you did modify the firmware (Step 3), compile the firmware with your changes and flash it to your device using the [Web Installer](/firmware/toolbox/).
 
@@ -297,7 +319,7 @@ Read back the configuration from the device to ensure it was stored correctly:
 
 ## Step 7: Common Issues and Solutions
 
-### Still Having Issues?
+<Callout tone="info" label="Still having issues?">
 
 If you're encountering problems not covered here, or if the solutions below don't work, please ask for help on the [OpenDisplay Discord](https://discord.gg/XmTHz8RfJE). Include details about your hardware, configuration, and what you've already tried. The community can often help troubleshoot specific issues.
 
@@ -321,6 +343,8 @@ If you're encountering problems not covered here, or if the solutions below don'
 -   Ensure packet size doesn't exceed 4kB limit
 -   Verify all required packets are present
 -   Check for firmware errors in serial output
+
+</Callout>
 
 ## Step 8: Share Your Findings
 
