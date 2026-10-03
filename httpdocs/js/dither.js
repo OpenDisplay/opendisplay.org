@@ -61,7 +61,7 @@ const GRAY4_LUT_V2 = [3, 2, 1, 0];
 const GRAY4_PANELS_V2 = new Set([0x28, 0x48]);
 const BWRY_CODES = [0, 1, 2, 3];
 const BWRY_CODES_SWAPPED = [0, 1, 3, 2];
-const BWRY_PANELS_SWAPPED = new Set([0x1d, 0x1e]);
+const BWRY_PANELS_SWAPPED = new Set([0x1d]);
 const IDENTITY_16 = Array.from({ length: 16 }, (_, i) => i);
 
 /**
