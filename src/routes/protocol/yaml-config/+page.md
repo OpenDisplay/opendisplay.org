@@ -130,7 +130,7 @@ Identifies the manufacturer and specific board model/revision.
 
 Defines power supply settings, battery capacity, sleep behavior, and power consumption characteristics.
 
-#### Packet Type 32: display <Badge>Repeatable</Badge>
+<h4 id="packet-type-32">Packet Type 32: display <Badge>Repeatable</Badge></h4>
 
 Specifies display/panel configuration including dimensions, color scheme, controller type, pin assignments, and transfer capabilities. This packet is required for the protocol to function. Can appear multiple times for devices with multiple displays.
 
@@ -162,7 +162,7 @@ Optional configuration for buttons, switches, or other binary input devices.
 
 Station credentials for devices that use Flex [LAN (Wi‑Fi) transport](/protocol/ble-flow.html#lan-wifi-transport): 32-byte SSID, 32-byte password (null-terminated, zero-padded), 1-byte encryption type enum (none, WEP, WPA, WPA2, WPA3), plus reserved bytes per schema. Required in non-volatile config (along with `communication_modes` bit `wifi`) before the device will join the network and open the TCP server.
 
-#### Packet Type 39: security\_config
+<h4 id="packet-type-39">Packet Type 39: security_config</h4>
 
 Optional **application-layer encryption**: 16-byte AES-128 pre-shared key, `encryption_enabled`, `session_timeout_seconds` (0 = no timeout), security flags (`rewrite_allowed` for unauthenticated config recovery), and reset-pin fields per schema. If the key is all zeros, encryption is off. See [Encryption and authentication](/protocol/ble-flow.html#encryption-authentication) in the communication protocol.
 

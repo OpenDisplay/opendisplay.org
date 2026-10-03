@@ -13,4 +13,5 @@ export const REDIRECTS = {
   // An older copy of the same guide; the protocol version supersedes it.
   '/firmware/adding-displays.html': '/protocol/adding-displays/',
   '/protocol/display-data-format.html': '/protocol/display-data-format/',
+  '/protocol/ble-flow.html': '/protocol/ble-flow/',
 };

@@ -29,6 +29,8 @@ export default defineConfig({
           extensions: ['.md'],
           layout: { _: fileURLToPath(new URL('./src/lib/markdown/Layout.svelte', import.meta.url)) },
           rehypePlugins: [headingIds, internalLinks],
+          // Keep text exactly as written (no curly quotes): legal text and specs must not change.
+          smartypants: false,
         }),
       ],
       // Static export only: every route is prerendered (src/routes/+layout.js) and the

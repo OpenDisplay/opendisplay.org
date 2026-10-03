@@ -15,7 +15,7 @@ export const href = {
 
   protocol: page('protocol'),
   basicStandard: '/protocol/basic-standard.html',
-  bleFlow: '/protocol/ble-flow.html',
+  bleFlow: page('protocol/ble-flow'),
   displayDataFormat: page('protocol/display-data-format'),
   flexStandard: page('protocol/flex-standard'),
   flexTools: page('protocol/flex-tools'),
