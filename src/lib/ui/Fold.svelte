@@ -13,7 +13,9 @@
 </details>
 
 <style>
-  .fold { border-top: 1px solid var(--line); }
+  .fold {
+    border-top: 1px solid var(--line);
+  }
   summary {
     display: flex;
     align-items: center;
@@ -23,7 +25,9 @@
     cursor: pointer;
     list-style: none;
   }
-  summary::-webkit-details-marker { display: none; }
+  summary::-webkit-details-marker {
+    display: none;
+  }
   summary::after {
     content: '';
     width: 7px;
@@ -35,7 +39,15 @@
     transform: rotate(45deg) translateY(-2px);
     transition: transform var(--dur) var(--ease);
   }
-  .fold[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
-  .hint { font-size: var(--fs-2); font-weight: 400; color: var(--text-muted); }
-  .body { padding: var(--sp-1) 0 var(--sp-2); }
+  .fold[open] > summary::after {
+    transform: rotate(-135deg) translateY(-2px);
+  }
+  .hint {
+    font-size: var(--fs-2);
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .body {
+    padding: var(--sp-1) 0 var(--sp-2);
+  }
 </style>

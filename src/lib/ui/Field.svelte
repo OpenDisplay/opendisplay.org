@@ -16,9 +16,18 @@
 </div>
 
 <style>
-  .field { display: flex; flex-direction: column; gap: var(--sp-1); }
-  .field + :global(.field) { margin-top: var(--sp-4); }
-  label { font-size: var(--fs-2); font-weight: 600; }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .field + :global(.field) {
+    margin-top: var(--sp-4);
+  }
+  label {
+    font-size: var(--fs-2);
+    font-weight: 600;
+  }
   .field :global(:is(input, select, textarea)) {
     width: 100%;
     min-height: 44px;
@@ -30,11 +39,27 @@
     border-radius: var(--r-sm);
     transition: border-color var(--dur) var(--ease);
   }
-  .field :global(textarea) { min-height: 6lh; font-family: var(--font-mono); }
-  .field :global(:is(input, select, textarea):hover) { border-color: var(--text-muted); }
-  .field :global(:is(input, select, textarea):focus-visible) { border-color: var(--blue); }
-  .field :global(::placeholder) { color: var(--text-faint); }
-  .invalid :global(:is(input, select, textarea)) { border-color: var(--error); }
-  .message { font-size: var(--fs-2); color: var(--text-muted); }
-  .message.error { color: var(--error); }
+  .field :global(textarea) {
+    min-height: 6lh;
+    font-family: var(--font-mono);
+  }
+  .field :global(:is(input, select, textarea):hover) {
+    border-color: var(--text-muted);
+  }
+  .field :global(:is(input, select, textarea):focus-visible) {
+    border-color: var(--blue);
+  }
+  .field :global(::placeholder) {
+    color: var(--text-faint);
+  }
+  .invalid :global(:is(input, select, textarea)) {
+    border-color: var(--error);
+  }
+  .message {
+    font-size: var(--fs-2);
+    color: var(--text-muted);
+  }
+  .message.error {
+    color: var(--error);
+  }
 </style>

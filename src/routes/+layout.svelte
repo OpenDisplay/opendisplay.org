@@ -24,5 +24,7 @@
     min-height: 100vh;
     min-height: 100dvh; /* mobile: the visible viewport, not the one behind the URL bar */
   }
-  main { flex: 1 0 auto; }
+  main {
+    flex: 1 0 auto;
+  }
 </style>

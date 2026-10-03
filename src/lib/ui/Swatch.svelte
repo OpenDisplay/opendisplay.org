@@ -17,9 +17,27 @@
 </span>
 
 <style>
-  .swatches { display: inline-flex; gap: var(--sp-1); vertical-align: middle; }
-  .patch { width: 16px; height: 16px; border-radius: var(--r-sm); border: 1px solid var(--line); }
+  .swatches {
+    display: inline-flex;
+    gap: var(--sp-1);
+    vertical-align: middle;
+  }
+  .patch {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--line);
+  }
   /* Many gray levels: one continuous strip of narrow steps. */
-  .strip { gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-sm); }
-  .strip .patch { width: 6px; border: 0; border-radius: 0; }
+  .strip {
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+  }
+  .strip .patch {
+    width: 6px;
+    border: 0;
+    border-radius: 0;
+  }
 </style>

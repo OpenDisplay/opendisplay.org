@@ -5,7 +5,7 @@
 </script>
 
 <label class="switch">
-  <input type="checkbox" role="switch" bind:checked {disabled} {onchange}>
+  <input type="checkbox" role="switch" bind:checked {disabled} {onchange} />
   <span class="text">
     <span class="label">{label}</span>
     {#if description}<span class="description">{description}</span>{/if}
@@ -13,7 +13,12 @@
 </label>
 
 <style>
-  .switch { display: flex; align-items: flex-start; gap: var(--sp-3); cursor: pointer; }
+  .switch {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    cursor: pointer;
+  }
   input {
     appearance: none;
     position: relative;
@@ -40,10 +45,27 @@
     box-shadow: 0 1px 3px color-mix(in oklab, var(--text) 25%, transparent);
     transition: transform var(--dur) var(--ease);
   }
-  input:checked { background: var(--blue); }
-  input:checked::after { transform: translateX(18px); }
-  input:disabled { opacity: 0.6; cursor: not-allowed; }
-  .text { display: flex; flex-direction: column; gap: var(--sp-1); padding-top: calc(var(--sp-1) / 2); }
-  .label { font-size: var(--fs-3); }
-  .description { font-size: var(--fs-2); color: var(--text-muted); }
+  input:checked {
+    background: var(--blue);
+  }
+  input:checked::after {
+    transform: translateX(18px);
+  }
+  input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding-top: calc(var(--sp-1) / 2);
+  }
+  .label {
+    font-size: var(--fs-3);
+  }
+  .description {
+    font-size: var(--fs-2);
+    color: var(--text-muted);
+  }
 </style>

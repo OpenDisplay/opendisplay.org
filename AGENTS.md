@@ -53,6 +53,12 @@ Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
   the `Button` failed state plus a `Callout` next to the action, a `Field` error for bad
   input, or one `Callout` at the top of a tool for page-level problems. Prefer making an
   error impossible (disable or busy the action until it can run) over reporting it.
+- **Porting a page: as little styling as possible.** A ported page has no `<style>` block
+  by default; plain HTML inside `Prose`, `Card`, `Badge`, `Swatch` carries it. Check each
+  old style: does it carry meaning or layout the components can't express? If not (custom
+  colors, one-off sizes and margins, accent links, hover effects), drop it instead of
+  translating it. What survives goes into a component (3+ pages) or a short scoped style
+  with a comment saying why. List what was dropped in the commit message.
 - If a change seems to need a new component, variant or token: say so and stop. Don't add
   one quietly.
 

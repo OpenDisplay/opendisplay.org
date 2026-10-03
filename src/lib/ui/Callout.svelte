@@ -17,8 +17,16 @@
     background: color-mix(in oklab, var(--tone) 8%, var(--bg));
     font-size: var(--fs-2);
   }
-  .warn { --tone: var(--warn); }
-  .error { --tone: var(--error); }
-  .ok { --tone: var(--ok); }
-  .callout :global(p + p) { margin-top: var(--sp-2); }
+  .warn {
+    --tone: var(--warn);
+  }
+  .error {
+    --tone: var(--error);
+  }
+  .ok {
+    --tone: var(--ok);
+  }
+  .callout :global(p + p) {
+    margin-top: var(--sp-2);
+  }
 </style>

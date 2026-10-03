@@ -1,0 +1,5 @@
+build/
+.svelte-kit/
+httpdocs/
+package-lock.json
+tests/fixtures/*.json

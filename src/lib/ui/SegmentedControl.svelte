@@ -9,7 +9,7 @@
 <div class="segmented" role="radiogroup" aria-label={label}>
   {#each options as option (option.value)}
     <label class:selected={value === option.value}>
-      <input type="radio" name={group} value={option.value} bind:group={value} class="sr-only">
+      <input type="radio" name={group} value={option.value} bind:group={value} class="sr-only" />
       {option.label}
     </label>
   {/each}
@@ -32,9 +32,19 @@
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
-    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease);
   }
-  label:hover { color: var(--text); }
-  .selected { background: var(--bg-raised); color: var(--text); box-shadow: 0 1px 2px color-mix(in oklab, var(--text) 10%, transparent); }
-  label:has(:focus-visible) { box-shadow: var(--shadow-focus); }
+  label:hover {
+    color: var(--text);
+  }
+  .selected {
+    background: var(--bg-raised);
+    color: var(--text);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--text) 10%, transparent);
+  }
+  label:has(:focus-visible) {
+    box-shadow: var(--shadow-focus);
+  }
 </style>

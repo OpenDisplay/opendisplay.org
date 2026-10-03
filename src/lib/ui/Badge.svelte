@@ -18,8 +18,17 @@
     font: 500 var(--fs-1) / var(--lh-body) var(--font-mono);
     white-space: nowrap;
   }
-  .info { --tone: var(--blue); color: color-mix(in oklab, var(--blue) 60%, var(--text)); }
-  .ok { --tone: var(--ok); }
-  .warn { --tone: var(--warn); }
-  .error { --tone: var(--error); }
+  .info {
+    --tone: var(--blue);
+    color: color-mix(in oklab, var(--blue) 60%, var(--text));
+  }
+  .ok {
+    --tone: var(--ok);
+  }
+  .warn {
+    --tone: var(--warn);
+  }
+  .error {
+    --tone: var(--error);
+  }
 </style>
