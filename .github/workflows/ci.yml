@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, svelte-port]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+  fixtures:
+    # The py-opendisplay fixtures must be what gen.py produces from the pinned versions,
+    # so nobody hand-edits them to make a test pass.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/fixtures/requirements.txt
+
+      - run: pip install -r tests/fixtures/requirements.txt
+
+      - name: Regenerate fixtures
+        run: python tests/fixtures/gen.py
+
+      - name: Fixtures are up to date
+        run: git diff --exit-code -- tests/fixtures/

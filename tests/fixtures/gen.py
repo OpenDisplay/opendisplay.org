@@ -30,7 +30,7 @@ from opendisplay.models.config import (
     PowerOption,
     SystemConfig,
 )
-from opendisplay.protocol import commands
+from opendisplay.protocol import commands, config_parser
 from opendisplay.protocol.config_serializer import serialize_config
 
 OUT = Path(__file__).with_name("py-opendisplay.json")
@@ -178,6 +178,12 @@ def command_cases() -> list[dict]:
     ] + [{"refreshMode": mode, "etag": None, "wire": commands.build_direct_write_end_command(mode).hex()} for mode in (0, 1)]
 
 
+def packet_sizes() -> dict:
+    """Fixed payload size per config packet type, as py-opendisplay parses them."""
+    types = {name: value for name, value in vars(config_parser).items() if name.startswith("PACKET_TYPE_")}
+    return {f"0x{value:02x}": config_parser._get_packet_size(value) for _, value in sorted(types.items(), key=lambda kv: kv[1])}
+
+
 fixtures = {
     "_generated_by": f"tests/fixtures/gen.py with py-opendisplay {version('py-opendisplay')}, "
     f"epaper-dithering {version('epaper-dithering')}",
@@ -186,6 +192,7 @@ fixtures = {
     "encoding": encoding_cases(),
     "partial": partial_cases(),
     "config": config_case(),
+    "packetSizes": packet_sizes(),
     "directWriteEnd": command_cases(),
 }
 OUT.write_text(json.dumps(fixtures, indent=1) + "\n")
