@@ -3,3 +3,5 @@ node_modules/
 build/
 test-results/
 playwright-report/
+.build-check/
+.svelte-kit-check/

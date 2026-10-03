@@ -6,7 +6,8 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   use: { baseURL: 'http://localhost:4199' },
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4199 --strictPort',
+    // BUILD_CHECK=1 uses separate build folders, so a preview someone is running keeps working.
+    command: 'BUILD_CHECK=1 npm run build && BUILD_CHECK=1 npx vite preview --port 4199 --strictPort',
     url: 'http://localhost:4199/',
     reuseExistingServer: false, // a leftover preview server would serve a stale build
     timeout: 120_000,
