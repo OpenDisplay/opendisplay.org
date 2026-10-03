@@ -14,12 +14,23 @@ export const href = {
   datenschutz: page('datenschutz'),
 
   protocol: '/protocol/',
+  basicStandard: '/protocol/basic-standard.html',
+  bleFlow: '/protocol/ble-flow.html',
   displayDataFormat: '/protocol/display-data-format.html',
   flexStandard: '/protocol/flex-standard.html',
-  flexTools: '/protocol/flex-tools.html',
+  flexTools: page('protocol/flex-tools'),
   addingDisplays: '/protocol/adding-displays.html',
+  openDisplayLanguage: '/protocol/open-display-language.html',
+  firmwareVariants: '/protocol/reference-firmware-variants.html',
+  yamlConfig: '/protocol/yaml-config.html',
 
   firmware: '/firmware/',
+  reusingSolumDisplays: '/firmware/reusing_solum_displays.html',
+  seeedCompatibility: '/firmware/seeed_display_compatibility.html',
+  landing: '/l/',
+  generateQr: '/l/generateqr.html',
+  nrfWebTools: '/nrf_web_tools/',
+  designer: '/designer/',
   toolbox: '/firmware/toolbox/',
   bleTester: '/firmware/display/',
   battery: '/firmware/battery/',
@@ -30,4 +41,3 @@ export const external = {
   discord: 'https://discord.gg/XmTHz8RfJE',
   openHomeFoundation: 'https://www.openhomefoundation.org/',
 };
-

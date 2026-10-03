@@ -4,4 +4,5 @@
 export const REDIRECTS = {
   '/impressum.html': '/impressum/',
   '/datenschutz.html': '/datenschutz/',
+  '/protocol/flex-tools.html': '/protocol/flex-tools/',
 };
