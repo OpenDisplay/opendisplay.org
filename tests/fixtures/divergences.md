@@ -25,4 +25,4 @@ Fixtures were generated with py-opendisplay 7.14.1 and epaper-dithering 6.0.0 on
 - **Firmware (`Firmware/src/display_service.cpp`, 0x76 handler):** rejects unless `x % 8 == 0`, `w % 8 == 0` and `x + w <= width` (`OD_ERR_PARTIAL_RECT_ALIGN` / `RECT_OOB`). **Both answers are rejected**, and no valid 8-aligned rectangle covers x=12 on a 13 px panel.
 - **Correct behavior:** fall back to a full refresh when no aligned rectangle fits (instead of a round trip that ends in a NACK).
 - **Affects:** mono panels with partial support whose width isn't a multiple of 8 (e.g. 122 px wide 2.13" panels), only when the change touches the last partial byte column.
-- **Status:** open. Fix on both sides: when shifting x0 left would break the 8-pixel alignment, return `fallback_full`.
+- **Status:** open, tracked in OpenDisplay/py-opendisplay#169 (covers the website too). Fix on both sides: when no 8-aligned rectangle inside the panel covers the change, return `fallback_full`.
