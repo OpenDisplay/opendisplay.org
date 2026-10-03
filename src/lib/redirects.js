@@ -14,4 +14,5 @@ export const REDIRECTS = {
   '/firmware/adding-displays.html': '/protocol/adding-displays/',
   '/protocol/display-data-format.html': '/protocol/display-data-format/',
   '/protocol/ble-flow.html': '/protocol/ble-flow/',
+  '/protocol/basic-standard.html': '/protocol/basic-standard/',
 };

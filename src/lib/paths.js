@@ -14,7 +14,7 @@ export const href = {
   datenschutz: page('datenschutz'),
 
   protocol: page('protocol'),
-  basicStandard: '/protocol/basic-standard.html',
+  basicStandard: page('protocol/basic-standard'),
   bleFlow: page('protocol/ble-flow'),
   displayDataFormat: page('protocol/display-data-format'),
   flexStandard: page('protocol/flex-standard'),
