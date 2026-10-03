@@ -10,11 +10,11 @@
 </svelte:head>
 
 <!-- The legal text is German (German law requires it); the page chrome stays English. -->
-<Page title="Privacy policy">
+<Page title="Privacy policy" toc>
   <div lang="de" class="stack">
     <Card>
       <Prose>
-        <h2>1. Datenschutz auf einen Blick</h2>
+        <h2 id="datenschutz-auf-einen-blick">1. Datenschutz auf einen Blick</h2>
         <h3>Allgemeine Hinweise</h3>
         <p>
           Die folgenden Hinweise geben einen einfachen Überblick darüber, was mit Ihren personenbezogenen
@@ -57,7 +57,7 @@
 
     <Card>
       <Prose>
-        <h2>2. Hosting und Content Delivery Networks (CDN)</h2>
+        <h2 id="hosting-und-content-delivery-networks-cdn">2. Hosting und Content Delivery Networks (CDN)</h2>
         <h3>Externes Hosting</h3>
         <p>
           Diese Website wird bei einem externen Dienstleister gehostet (Hoster). Die personenbezogenen Daten,
@@ -76,7 +76,9 @@
 
     <Card>
       <Prose>
-        <h2>3. Allgemeine Hinweise und Pflichtinformationen</h2>
+        <h2 id="allgemeine-hinweise-und-pflichtinformationen">
+          3. Allgemeine Hinweise und Pflichtinformationen
+        </h2>
         <h3>Datenschutz</h3>
         <p>
           Die Betreiber dieser Seiten nehmen den Schutz Ihrer persönlichen Daten sehr ernst. Wir behandeln
@@ -196,7 +198,7 @@
 
     <Card>
       <Prose>
-        <h2>4. Datenerfassung auf dieser Website</h2>
+        <h2 id="datenerfassung-auf-dieser-website">4. Datenerfassung auf dieser Website</h2>
         <h3>Server-Log-Dateien</h3>
         <p>
           Der Provider der Seiten erhebt und speichert automatisch Informationen in so genannten
