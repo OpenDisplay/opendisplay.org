@@ -32,6 +32,10 @@ Before committing: `npm test`, `npm run lint` and `npm run test:e2e` pass.
 
 ## Components and styling
 
+- **Every page follows its category in `STYLE.md`** (home, hub, docs, legal, tool). A page
+  that fits none, or a layout question the guide doesn't answer, is a decision for the
+  maintainer: ask, then record the answer in `STYLE.md`. Don't design one page at a time.
+
 - **Reuse before you create.** Look in `src/lib/ui/` (and the hidden `/_ui/` page) first.
   Imports use the `#lib/…` subpath alias with the file extension (SvelteKit 3 has no `$lib`).
 - A new shared component needs **3 real uses**. Until then the markup stays in its page.
