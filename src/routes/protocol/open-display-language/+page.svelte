@@ -1,193 +1,76 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <link rel="icon" href="../assets/brand/logo-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="../css/colors_and_type.css">
-  <link rel="stylesheet" href="../css/inner.css">
-  <link rel="stylesheet" href="../css/doc.css">
+<script>
+  import Card from '#lib/ui/Card.svelte';
+  import Page from '#lib/ui/Page.svelte';
+  import Prose from '#lib/ui/Prose.svelte';
+  import { href } from '#lib/paths.js';
+</script>
 
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="OpenDisplay Language specification: Complete reference for drawing elements including text, shapes, icons, images, QR codes, plots, and progress bars for e-paper displays.">
-  <link rel="canonical" href="https://opendisplay.org/protocol/open-display-language.html">
-  <meta property="og:title" content="OpenDisplay Language Specification - OpenDisplay">
-  <meta property="og:description" content="OpenDisplay Language specification: Complete reference for drawing elements for e-paper displays.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://opendisplay.org/protocol/open-display-language.html">
-<title>OpenDisplay Language Specification - OpenDisplay</title>
-  <style>
-    .code-block {
-      background: var(--card-background);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 16px;
-      font-family: var(--font-mono);
-      font-size: 0.9rem;
-      overflow-x: auto;
-      margin: 12px 0;
-      white-space: pre-wrap;
-      color: var(--foreground);
-    }
-    .code-block code {
-      color: var(--foreground);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 16px 0;
-      background: var(--card-background);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    table th {
-      background: var(--card-background);
-      color: var(--foreground);
-      font-weight: 600;
-      padding: 12px;
-      text-align: left;
-      border-bottom: 2px solid var(--border-color);
-    }
-    table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border-color);
-      color: var(--muted-foreground);
-    }
-    table tr:last-child td {
-      border-bottom: none;
-    }
-    .element-section {
-      background: var(--card-background);
-      border-left: 4px solid var(--accent);
-      padding: 20px;
-      margin: 24px 0;
-      border-radius: 4px;
-    }
-    .element-section h3 {
-      color: var(--foreground);
-      font-size: 1.3rem;
-      font-weight: 600;
-      margin-top: 0;
-      margin-bottom: 12px;
-    }
-    .element-section h4 {
-      color: var(--foreground);
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin-top: 20px;
-      margin-bottom: 8px;
-    }
-    .toc {
-      background: var(--card-background);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 20px;
-      margin: 24px 0;
-    }
-    .toc h3 {
-      margin-top: 0;
-      color: var(--foreground);
-    }
-    .toc ul {
-      list-style: none;
-      padding-left: 0;
-      margin: 12px 0;
-    }
-    .toc li {
-      padding: 6px 0;
-    }
-    .toc a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-    .toc a:hover {
-      text-decoration: underline;
-    }
-  </style>
-</head>
-<body class="page-inner doc-page">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+<svelte:head>
+  <title>OpenDisplay Language Specification · OpenDisplay</title>
+</svelte:head>
 
-  <header class="site-bar">
-    <div class="site-bar__accent" aria-hidden="true"></div>
-    <div class="site-bar__inner">
-      <a href="../index.html" class="site-bar__brand" aria-label="OpenDisplay home">
-        <img src="../assets/brand/logo-mark.svg" alt="" class="site-bar__mark" width="24" height="24">
-        <span class="site-bar__wordmark">OpenDisplay</span>
-      </a>
-      <div class="site-bar__icons">
-        <a href="https://github.com/OpenDisplay/" target="_blank" rel="noreferrer" class="site-bar__icon" aria-label="OpenDisplay on GitHub (opens in new tab)">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        </a>
-        <a href="https://discord.gg/XmTHz8RfJE" target="_blank" rel="noreferrer" class="site-bar__icon" aria-label="Join OpenDisplay on Discord (opens in new tab)">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-        </a>
-      </div>
-    </div>
-  </header>
-<main id="main-content" class="tool-page">
-    <div class="container">
-<h1>OpenDisplay Language Specification</h1>
-  <p style="color: var(--muted-foreground); margin-top: -12px; margin-bottom: 24px;">
-    Part of the <strong><a href="basic-standard.html" style="color: var(--accent);">OpenDisplay spec</a></strong>
-  </p>
+<Page title="OpenDisplay Language Specification" width="prose">
+  {#snippet lead()}Part of the <strong><a href={href.basicStandard}>OpenDisplay spec</a></strong>{/snippet}
 
-  <div class="col panel">
-    <h2>Overview</h2>
-    <p class="intro-text">
-      OpenDisplay Language (ODL) is a standardized format for describing visual layouts for e-paper displays. 
-      Senders use it to describe what to draw; receivers render the result using the shared 
-      <a href="display-data-format.html" style="color: var(--accent);">display data format</a>. It is independent of 
-      whether the device uses a fixed product profile or reference firmware with 
-      <a href="flex-standard.html" style="color: var(--accent);">Flex</a> configuration.
-    </p>
-    <p class="intro-text">
-      The payload is a list of drawing elements that define what to display. Each element must specify its type 
-      and required properties. The elements are drawn in order from first to last. ODL is used by the 
-      <a href="../homeassistant/index.html" style="color: var(--accent);">Home Assistant integration</a> and can be 
-      authored with the <a href="../designer/index.html" style="color: var(--accent);">Layout Designer</a>.
-    </p>
-  </div>
+  <Card>
+    <Prose>
+      <h2>Overview</h2>
+      <p>
+        OpenDisplay Language (ODL) is a standardized format for describing visual layouts for e-paper
+        displays. Senders use it to describe what to draw; receivers render the result using the shared
+        <a href={href.displayDataFormat}>display data format</a>. It is independent of whether the device uses
+        a fixed product profile or reference firmware with
+        <a href={href.flexStandard}>Flex</a> configuration.
+      </p>
+      <p>
+        The payload is a list of drawing elements that define what to display. Each element must specify its
+        type and required properties. The elements are drawn in order from first to last. ODL is used by the
+        <a href="https://github.com/OpenDisplay/Home_Assistant_Integration">Home Assistant integration</a> and
+        can be authored with the <a href={href.designer}>Layout Designer</a>.
+      </p>
+    </Prose>
+  </Card>
 
-  <div class="toc">
-    <h3>Table of Contents</h3>
-    <ul>
-      <li><a href="#basic-usage">Basic Usage</a></li>
-      <li><a href="#color-support">Color Support</a></li>
-      <li><a href="#font-support">Font Support</a></li>
-      <li><a href="#draw-types">Draw Types</a>
-        <ul style="margin-left: 20px; margin-top: 8px;">
-          <li><a href="#debug_grid">Debug Grid</a></li>
-          <li><a href="#text">Text</a></li>
-          <li><a href="#multiline">Multiline Text</a></li>
-          <li><a href="#line">Line</a></li>
-          <li><a href="#rectangle">Rectangle</a></li>
-          <li><a href="#rectangle_pattern">Rectangle Pattern</a></li>
-          <li><a href="#polygon">Polygon</a></li>
-          <li><a href="#circle">Circle</a></li>
-          <li><a href="#ellipse">Ellipse</a></li>
-          <li><a href="#arc">Arc/Pie Slice</a></li>
-          <li><a href="#icon">Icon</a></li>
-          <li><a href="#icon_sequence">Icon Sequence</a></li>
-          <li><a href="#dlimg">Download Image</a></li>
-          <li><a href="#qrcode">QR Code</a></li>
-          <li><a href="#plot">Plot</a></li>
-          <li><a href="#progress_bar">Progress Bar</a></li>
-        </ul>
-      </li>
-      <li><a href="#template-examples">Template Examples</a></li>
-    </ul>
-  </div>
+  <h3>Table of Contents</h3>
+  <ul>
+    <li><a href="#basic-usage">Basic Usage</a></li>
+    <li><a href="#color-support">Color Support</a></li>
+    <li><a href="#font-support">Font Support</a></li>
+    <li>
+      <a href="#draw-types">Draw Types</a>
+      <ul>
+        <li><a href="#debug_grid">Debug Grid</a></li>
+        <li><a href="#text">Text</a></li>
+        <li><a href="#multiline">Multiline Text</a></li>
+        <li><a href="#line">Line</a></li>
+        <li><a href="#rectangle">Rectangle</a></li>
+        <li><a href="#rectangle_pattern">Rectangle Pattern</a></li>
+        <li><a href="#polygon">Polygon</a></li>
+        <li><a href="#circle">Circle</a></li>
+        <li><a href="#ellipse">Ellipse</a></li>
+        <li><a href="#arc">Arc/Pie Slice</a></li>
+        <li><a href="#icon">Icon</a></li>
+        <li><a href="#icon_sequence">Icon Sequence</a></li>
+        <li><a href="#dlimg">Download Image</a></li>
+        <li><a href="#qrcode">QR Code</a></li>
+        <li><a href="#plot">Plot</a></li>
+        <li><a href="#progress_bar">Progress Bar</a></li>
+      </ul>
+    </li>
+    <li><a href="#template-examples">Template Examples</a></li>
+  </ul>
 
-  <div class="col panel" id="basic-usage">
-    <h2>Basic Usage</h2>
-    <p class="intro-text">
-      E-paper displays come in multiple variants - red and yellow are the most common accent colors. 
-      The following options are available when using OpenDisplay Language:
-    </p>
-    
-    <h3>Example Payload</h3>
-    <div class="code-block">- type: text
+  <Card>
+    <Prose>
+      <h2 id="basic-usage">Basic Usage</h2>
+      <p>
+        E-paper displays come in multiple variants - red and yellow are the most common accent colors. The
+        following options are available when using OpenDisplay Language:
+      </p>
+
+      <h3>Example Payload</h3>
+      <pre><code
+          >- type: text
   value: Hello World!
   font: ppb.ttf
   x: 0
@@ -199,153 +82,196 @@
   x: 60
   y: 120
   size: 120
-  color: red</div>
+  color: red</code
+        ></pre>
 
-    <h3>Service Options</h3>
-    <p class="intro-text">When using OpenDisplay Language with services (such as Home Assistant's drawcustom service), these options are available:</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Option</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>payload</code></td>
-          <td>List of drawing elements (YAML)</td>
-          <td>-</td>
-        </tr>
-        <tr>
-          <td><code>background</code></td>
-          <td>Background color</td>
-          <td>white</td>
-        </tr>
-        <tr>
-          <td><code>rotate</code></td>
-          <td>Rotation of image</td>
-          <td>0</td>
-        </tr>
-        <tr>
-          <td><code>dither</code></td>
-          <td>Dithering (see table below)</td>
-          <td>2</td>
-        </tr>
-        <tr>
-          <td><code>ttl</code></td>
-          <td>Cache time in seconds</td>
-          <td>60</td>
-        </tr>
-        <tr>
-          <td><code>dry-run</code></td>
-          <td>Generate without sending</td>
-          <td>false</td>
-        </tr>
-      </tbody>
-    </table>
+      <h3>Service Options</h3>
+      <p>
+        When using OpenDisplay Language with services (such as Home Assistant's drawcustom service), these
+        options are available:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Option</th>
+            <th>Description</th>
+            <th>Default</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>payload</code></td>
+            <td>List of drawing elements (YAML)</td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td><code>background</code></td>
+            <td>Background color</td>
+            <td>white</td>
+          </tr>
+          <tr>
+            <td><code>rotate</code></td>
+            <td>Rotation of image</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td><code>dither</code></td>
+            <td>Dithering (see table below)</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td><code>ttl</code></td>
+            <td>Cache time in seconds</td>
+            <td>60</td>
+          </tr>
+          <tr>
+            <td><code>dry-run</code></td>
+            <td>Generate without sending</td>
+            <td>false</td>
+          </tr>
+        </tbody>
+      </table>
 
-    <h3>Dithering Options</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Dither</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>0</code></td>
-          <td>No dithering</td>
-        </tr>
-        <tr>
-          <td><code>1</code></td>
-          <td>Floyd-Steinberg dithering (best for photos)</td>
-        </tr>
-        <tr>
-          <td><code>2</code></td>
-          <td>Ordered dithering (default, best for halftone colors)</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      <h3>Dithering Options</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Dither</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>0</code></td>
+            <td>No dithering</td>
+          </tr>
+          <tr>
+            <td><code>1</code></td>
+            <td>Floyd-Steinberg dithering (best for photos)</td>
+          </tr>
+          <tr>
+            <td><code>2</code></td>
+            <td>Ordered dithering (default, best for halftone colors)</td>
+          </tr>
+        </tbody>
+      </table>
+    </Prose>
+  </Card>
 
-  <div class="col panel" id="color-support">
-    <h2>Color Support</h2>
-    <p class="intro-text">
-      E-paper displays predominantly come in two variants: red and yellow accent colors (displays with more colors also exist). 
-      You can specify colors in several ways:
-    </p>
-    <ul style="color: var(--muted-foreground); line-height: 1.8; margin-left: 20px;">
-      <li>Using explicit colors: <code>"black"</code>, <code>"white"</code>, <code>"red"</code>, <code>"yellow"</code></li>
-      <li>Using halftone colors (set <code>dither=2</code>): <code>"half_black"</code> (or <code>"gray"</code>, <code>"grey"</code>, <code>"half_white"</code>), <code>"half_red"</code>, <code>"half_yellow"</code></li>
-      <li>Using single letter shortcuts: <code>"b"</code> (black), <code>"w"</code> (white), <code>"r"</code> (red), <code>"y"</code> (yellow)</li>
-      <li>Using halftone shortcuts: <code>"hb"</code>, <code>"hw"</code> (50% black/gray), <code>"hr"</code> (50% red), <code>"hy"</code> (50% yellow)</li>
-      <li>Using <code>"accent"</code>, <code>"a"</code>, <code>"half_accent"</code>, or <code>"ha"</code> to automatically use the display's accent color (red or yellow depending on the hardware)</li>
-      <li>Using hex colors: <code>"#RGB"</code> or <code>"#RRGGBB"</code> (e.g., <code>"#F00"</code> or <code>"#FF0000"</code> for red)</li>
-    </ul>
+  <Card>
+    <Prose>
+      <h2 id="color-support">Color Support</h2>
+      <p>
+        E-paper displays predominantly come in two variants: red and yellow accent colors (displays with more
+        colors also exist). You can specify colors in several ways:
+      </p>
+      <ul>
+        <li>
+          Using explicit colors: <code>"black"</code>, <code>"white"</code>, <code>"red"</code>,
+          <code>"yellow"</code>
+        </li>
+        <li>
+          Using halftone colors (set <code>dither=2</code>): <code>"half_black"</code> (or
+          <code>"gray"</code>, <code>"grey"</code>, <code>"half_white"</code>), <code>"half_red"</code>,
+          <code>"half_yellow"</code>
+        </li>
+        <li>
+          Using single letter shortcuts: <code>"b"</code> (black), <code>"w"</code> (white), <code>"r"</code>
+          (red), <code>"y"</code> (yellow)
+        </li>
+        <li>
+          Using halftone shortcuts: <code>"hb"</code>, <code>"hw"</code> (50% black/gray), <code>"hr"</code>
+          (50% red), <code>"hy"</code> (50% yellow)
+        </li>
+        <li>
+          Using <code>"accent"</code>, <code>"a"</code>, <code>"half_accent"</code>, or <code>"ha"</code> to automatically
+          use the display's accent color (red or yellow depending on the hardware)
+        </li>
+        <li>
+          Using hex colors: <code>"#RGB"</code> or <code>"#RRGGBB"</code> (e.g., <code>"#F00"</code> or
+          <code>"#FF0000"</code> for red)
+        </li>
+      </ul>
 
-    <h3>Example Payload Adapting to Display Color</h3>
-    <div class="code-block">- type: text
+      <h3>Example Payload Adapting to Display Color</h3>
+      <pre><code
+          >- type: text
   value: Hello World!
   font: ppb.ttf
   x: 0
   y: 0
   size: 40
-  color: accent  # Will be red or yellow depending on the display</div>
+  color: accent  # Will be red or yellow depending on the display</code
+        ></pre>
 
-    <h3>Color Support by Element Type</h3>
-    <p class="intro-text">All elements that support colors (text, shapes, icons, etc.) accept the following color properties:</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Description</th>
-          <th>Values</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>color</code></td>
-          <td>Primary color</td>
-          <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>#RRGGBB</code></td>
-        </tr>
-        <tr>
-          <td><code>fill</code></td>
-          <td>Fill color</td>
-          <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>#RRGGBB</code></td>
-        </tr>
-        <tr>
-          <td><code>outline</code></td>
-          <td>Outline/border color</td>
-          <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>#RRGGBB</code></td>
-        </tr>
-        <tr>
-          <td><code>background</code></td>
-          <td>Background color (when applicable)</td>
-          <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>#RRGGBB</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="intro-text">
-      Using <code>"accent"</code> is recommended for portable scripts that should work with both red and yellow displays.
-    </p>
-  </div>
+      <h3>Color Support by Element Type</h3>
+      <p>
+        All elements that support colors (text, shapes, icons, etc.) accept the following color properties:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Description</th>
+            <th>Values</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>color</code></td>
+            <td>Primary color</td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>#RRGGBB</code></td
+            >
+          </tr>
+          <tr>
+            <td><code>fill</code></td>
+            <td>Fill color</td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>#RRGGBB</code></td
+            >
+          </tr>
+          <tr>
+            <td><code>outline</code></td>
+            <td>Outline/border color</td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>#RRGGBB</code></td
+            >
+          </tr>
+          <tr>
+            <td><code>background</code></td>
+            <td>Background color (when applicable)</td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>#RRGGBB</code></td
+            >
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Using <code>"accent"</code> is recommended for portable scripts that should work with both red and yellow
+        displays.
+      </p>
+    </Prose>
+  </Card>
 
-  <div class="col panel" id="font-support">
-    <h2>Font Support</h2>
-    <p class="intro-text">
-      Custom fonts are supported for text elements. Fonts can be specified in several ways:
-    </p>
+  <Card>
+    <Prose>
+      <h2 id="font-support">Font Support</h2>
+      <p>Custom fonts are supported for text elements. Fonts can be specified in several ways:</p>
 
-    <h3>Specifying Fonts</h3>
-    <div class="code-block"># Using the default font (ppb.ttf)
+      <h3>Specifying Fonts</h3>
+      <pre><code
+          ># Using the default font (ppb.ttf)
 - type: text
   value: Default font
   font: ppb.ttf # Optional, you can also omit this line
   x: 10
   y: 10
-  
+
 # Using just the filename (searched in all font directories)
 - type: text
   value: "Custom Font"
@@ -358,31 +284,29 @@
   value: "Custom Font with Path"
   font: "/media/GothamBold-Rnd.ttf"
   x: 10
-  y: 90</div>
+  y: 90</code
+        ></pre>
 
-    <h3>Default Fonts</h3>
-    <p class="intro-text">
-      The following default fonts are always available:
-    </p>
-    <ul style="color: var(--muted-foreground); line-height: 1.8; margin-left: 20px;">
-      <li><code>ppb.ttf</code></li>
-      <li><code>rbm.ttf</code></li>
-    </ul>
-    <p class="intro-text">
-      These are always available and will be used as fallbacks if specified fonts cannot be found.
-    </p>
-  </div>
+      <h3>Default Fonts</h3>
+      <p>The following default fonts are always available:</p>
+      <ul>
+        <li><code>ppb.ttf</code></li>
+        <li><code>rbm.ttf</code></li>
+      </ul>
+      <p>These are always available and will be used as fallbacks if specified fonts cannot be found.</p>
+    </Prose>
+  </Card>
 
-  <div class="col panel" id="draw-types">
-    <h2>Draw Types</h2>
-    <p class="intro-text">
-      The following drawing element types are supported in OpenDisplay Language:
-    </p>
+  <Card>
+    <Prose>
+      <h2 id="draw-types">Draw Types</h2>
+      <p>The following drawing element types are supported in OpenDisplay Language:</p>
 
-    <div class="element-section" id="debug_grid">
-      <h3>debug_grid</h3>
-      <p class="intro-text">The <code>debug_grid</code> draw type overlays a grid on the image canvas to help with layout debugging.</p>
-      <div class="code-block">- type: debug_grid</div>
+      <h3 id="debug_grid">debug_grid</h3>
+      <p>
+        The <code>debug_grid</code> draw type overlays a grid on the image canvas to help with layout debugging.
+      </p>
+      <pre><code>- type: debug_grid</code></pre>
       <table>
         <thead>
           <tr>
@@ -466,18 +390,18 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="text">
-      <h3>text</h3>
-      <p class="intro-text">Draws text.</p>
-      <div class="code-block">- type: text
+      <h3 id="text">text</h3>
+      <p>Draws text.</p>
+      <pre><code
+          >- type: text
   value: "Hello World!"
   font: "/media/custom.ttf"
   x: 0
   y: 0
   size: 40
-  color: red</div>
+  color: red</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -564,7 +488,10 @@
             <td>Outline color</td>
             <td>No</td>
             <td><code>white</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>y_padding</code></td>
@@ -598,21 +525,22 @@
       </table>
 
       <h4>Inline Color Markup</h4>
-      <p class="intro-text">
-        Text elements support inline color markup when <code>parse_colors</code> is enabled. This allows different parts of the text 
-        to be rendered in different colors without needing to create multiple text elements.
+      <p>
+        Text elements support inline color markup when <code>parse_colors</code> is enabled. This allows different
+        parts of the text to be rendered in different colors without needing to create multiple text elements.
       </p>
-      <p class="intro-text">Color markup syntax:</p>
-      <div class="code-block">[color]text[/color]</div>
-      <p class="intro-text">Available colors:</p>
-      <ul style="color: var(--muted-foreground); line-height: 1.8; margin-left: 20px;">
+      <p>Color markup syntax:</p>
+      <pre><code>[color]text[/color]</code></pre>
+      <p>Available colors:</p>
+      <ul>
         <li><code>black</code> - Black text</li>
         <li><code>white</code> - White text</li>
         <li><code>red</code> - Red text (for red displays)</li>
         <li><code>yellow</code> - Yellow text (for yellow displays)</li>
         <li><code>accent</code> - Uses the display's accent color (red or yellow depending on hardware)</li>
       </ul>
-      <div class="code-block"># Simple colored text
+      <pre><code
+          ># Simple colored text
 - type: text
   value: "Temperature: [red]25°C[/red]"
   x: 10
@@ -624,20 +552,21 @@
   value: "[black]Current[/black] temp: [accent]25°C[/accent]"
   x: 10
   y: 40
-  parse_colors: true</div>
-    </div>
+  parse_colors: true</code
+        ></pre>
 
-    <div class="element-section" id="multiline">
-      <h3>multiline</h3>
-      <p class="intro-text">Splits text into multiple lines based on a delimiter.</p>
-      <div class="code-block">- type: multiline
+      <h3 id="multiline">multiline</h3>
+      <p>Splits text into multiple lines based on a delimiter.</p>
+      <pre><code
+          >- type: multiline
   value: "Line 1|Line 2|Line 3"
   delimiter: "|"
   font: "ppb.ttf"
   x: 0
   offset_y: 50
   size: 40
-  color: black</div>
+  color: black</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -703,7 +632,10 @@
             <td>Text color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>spacing</code></td>
@@ -721,18 +653,18 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="line">
-      <h3>line</h3>
-      <p class="intro-text">Draws a straight line.</p>
-      <div class="code-block">- type: line
+      <h3 id="line">line</h3>
+      <p>Draws a straight line.</p>
+      <pre><code
+          >- type: line
   x_start: 20
   x_end: 380
   y_start: 15
   y_end: 15
   width: 1
-  fill: red</div>
+  fill: red</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -777,7 +709,10 @@
             <td>Line color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -823,19 +758,19 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="rectangle">
-      <h3>rectangle</h3>
-      <p class="intro-text">Draws a rectangle with optional rounded corners.</p>
-      <div class="code-block">- type: rectangle
+      <h3 id="rectangle">rectangle</h3>
+      <p>Draws a rectangle with optional rounded corners.</p>
+      <pre><code
+          >- type: rectangle
   x_start: 20
   x_end: 80
   y_start: 15
   y_end: 30
   width: 2
   fill: red
-  outline: black</div>
+  outline: black</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -880,14 +815,20 @@
             <td>Fill color</td>
             <td>No</td>
             <td><code>null</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>null</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>null</code></td
+            >
           </tr>
           <tr>
             <td><code>outline</code></td>
             <td>Border color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -908,7 +849,10 @@
             <td>Which corners to round</td>
             <td>No</td>
             <td><code>all</code></td>
-            <td><code>all</code> or comma-separated list of: <code>top_left</code>, <code>top_right</code>, <code>bottom_left</code>, <code>bottom_right</code></td>
+            <td
+              ><code>all</code> or comma-separated list of: <code>top_left</code>, <code>top_right</code>,
+              <code>bottom_left</code>, <code>bottom_right</code></td
+            >
           </tr>
           <tr>
             <td><code>visible</code></td>
@@ -919,12 +863,11 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="rectangle_pattern">
-      <h3>rectangle_pattern</h3>
-      <p class="intro-text">Draws repeated rectangles in a grid pattern.</p>
-      <div class="code-block">- type: rectangle_pattern
+      <h3 id="rectangle_pattern">rectangle_pattern</h3>
+      <p>Draws repeated rectangles in a grid pattern.</p>
+      <pre><code
+          >- type: rectangle_pattern
   x_start: 5
   x_size: 35
   x_offset: 10
@@ -935,7 +878,8 @@
   outline: red
   width: 1
   x_repeat: 1
-  y_repeat: 4</div>
+  y_repeat: 4</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1008,14 +952,20 @@
             <td>Fill color</td>
             <td>No</td>
             <td><code>null</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>null</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>null</code></td
+            >
           </tr>
           <tr>
             <td><code>outline</code></td>
             <td>Border color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -1033,15 +983,15 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="polygon">
-      <h3>polygon</h3>
-      <p class="intro-text">Draws a filled or outlined polygon based on the provided points.</p>
-      <div class="code-block">- type: polygon
+      <h3 id="polygon">polygon</h3>
+      <p>Draws a filled or outlined polygon based on the provided points.</p>
+      <pre><code
+          >- type: polygon
   points: [[10, 10], [50, 10], [50, 50], [10, 50]]
   fill: "red"
-  outline: "black"</div>
+  outline: "black"</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1083,15 +1033,15 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="circle">
-      <h3>circle</h3>
-      <p class="intro-text">Draws a circle around a center point.</p>
-      <div class="code-block">- type: circle
+      <h3 id="circle">circle</h3>
+      <p>Draws a circle around a center point.</p>
+      <pre><code
+          >- type: circle
   x: 50
   y: 50
-  radius: 20</div>
+  radius: 20</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1129,14 +1079,20 @@
             <td>Fill color</td>
             <td>No</td>
             <td><code>null</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>null</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>null</code></td
+            >
           </tr>
           <tr>
             <td><code>outline</code></td>
             <td>Border color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -1154,16 +1110,16 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="ellipse">
-      <h3>ellipse</h3>
-      <p class="intro-text">Draws an ellipse inside the bounding box.</p>
-      <div class="code-block">- type: ellipse
+      <h3 id="ellipse">ellipse</h3>
+      <p>Draws an ellipse inside the bounding box.</p>
+      <pre><code
+          >- type: ellipse
   x_start: 50
   x_end: 100
   y_start: 50
-  y_end: 100</div>
+  y_end: 100</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1208,14 +1164,20 @@
             <td>Fill color</td>
             <td>No</td>
             <td><code>null</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code>, <code>null</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code>, <code>null</code></td
+            >
           </tr>
           <tr>
             <td><code>outline</code></td>
             <td>Border color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -1233,18 +1195,20 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="arc">
-      <h3>arc</h3>
-      <p class="intro-text">Draws an arc (outline-only) or a pie slice (filled) based on the specified center, radius, and angles.</p>
-      <div class="code-block">- type: arc
+      <h3 id="arc">arc</h3>
+      <p>
+        Draws an arc (outline-only) or a pie slice (filled) based on the specified center, radius, and angles.
+      </p>
+      <pre><code
+          >- type: arc
   x: 100
   y: 75
   radius: 50
   start_angle: 0
   end_angle: 90
-  fill: red</div>
+  fill: red</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1314,17 +1278,17 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="icon">
-      <h3>icon</h3>
-      <p class="intro-text">Draws Material Design Icons.</p>
-      <div class="code-block">- type: icon
+      <h3 id="icon">icon</h3>
+      <p>Draws Material Design Icons.</p>
+      <pre><code
+          >- type: icon
   value: "account-cowboy-hat"
   x: 60
   y: 120
   size: 120
-  color: red</div>
+  color: red</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1341,7 +1305,11 @@
             <td>Icon name</td>
             <td>Yes</td>
             <td>-</td>
-            <td>From <a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noopener" style="color: var(--accent);">Material Design Icons</a></td>
+            <td
+              >From <a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noopener"
+                >Material Design Icons</a
+              ></td
+            >
           </tr>
           <tr>
             <td><code>x</code></td>
@@ -1369,7 +1337,10 @@
             <td>Icon color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>anchor</code></td>
@@ -1387,13 +1358,14 @@
           </tr>
         </tbody>
       </table>
-      <p class="intro-text">Note: Icon name can be prefixed with <code>mdi:</code> (e.g., <code>mdi:account-cowboy-hat</code>)</p>
-    </div>
+      <p>
+        Note: Icon name can be prefixed with <code>mdi:</code> (e.g., <code>mdi:account-cowboy-hat</code>)
+      </p>
 
-    <div class="element-section" id="icon_sequence">
-      <h3>icon_sequence</h3>
-      <p class="intro-text">Draws multiple Material Design Icons in a sequence with specified direction and spacing.</p>
-      <div class="code-block">- type: icon_sequence
+      <h3 id="icon_sequence">icon_sequence</h3>
+      <p>Draws multiple Material Design Icons in a sequence with specified direction and spacing.</p>
+      <pre><code
+          >- type: icon_sequence
   x: 10
   y: 10
   icons:
@@ -1401,7 +1373,8 @@
     - mdi:arrow-right
     - mdi:office-building
   size: 24
-  direction: right</div>
+  direction: right</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1432,7 +1405,11 @@
             <td>List of icon names</td>
             <td>Yes</td>
             <td>-</td>
-            <td>From <a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noopener" style="color: var(--accent);">Material Design Icons</a></td>
+            <td
+              >From <a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noopener"
+                >Material Design Icons</a
+              ></td
+            >
           </tr>
           <tr>
             <td><code>size</code></td>
@@ -1460,7 +1437,10 @@
             <td>Icon color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>anchor</code></td>
@@ -1478,18 +1458,18 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="dlimg">
-      <h3>dlimg</h3>
-      <p class="intro-text">Downloads and displays an image from a URL.</p>
-      <div class="code-block">- type: dlimg
+      <h3 id="dlimg">dlimg</h3>
+      <p>Downloads and displays an image from a URL.</p>
+      <pre><code
+          >- type: dlimg
   url: "https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png"
   x: 10
   y: 10
   xsize: 120
   ysize: 120
-  rotate: 0</div>
+  rotate: 0</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1559,28 +1539,28 @@
           </tr>
         </tbody>
       </table>
-      <p class="intro-text">
-        Notes:
-      </p>
-      <ul style="color: var(--muted-foreground); line-height: 1.8; margin-left: 20px;">
+      <p>Notes:</p>
+      <ul>
         <li>Local images must be in <code>/config/media/</code></li>
         <li>Data URIs supported (e.g., <code>data:image/gif;base64,...</code>)</li>
         <li>External images must be publicly accessible</li>
-        <li>Camera entities (e.g. <code>camera.p1s_camera</code>) must have a <code>entity_picture</code> attribute</li>
+        <li>
+          Camera entities (e.g. <code>camera.p1s_camera</code>) must have a <code>entity_picture</code> attribute
+        </li>
       </ul>
-    </div>
 
-    <div class="element-section" id="qrcode">
-      <h3>qrcode</h3>
-      <p class="intro-text">Generates and displays a QR code.</p>
-      <div class="code-block">- type: qrcode
+      <h3 id="qrcode">qrcode</h3>
+      <p>Generates and displays a QR code.</p>
+      <pre><code
+          >- type: qrcode
   data: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
   x: 140
   y: 50
   boxsize: 2
   border: 2
   color: "black"
-  bgcolor: "white"</div>
+  bgcolor: "white"</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1632,14 +1612,20 @@
             <td>QR code color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>bgcolor</code></td>
             <td>Background color</td>
             <td>No</td>
             <td><code>white</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>visible</code></td>
@@ -1650,12 +1636,11 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="plot">
-      <h3>plot</h3>
-      <p class="intro-text">Renders historical data from Home Assistant entities as a line plot.</p>
-      <div class="code-block">- type: plot
+      <h3 id="plot">plot</h3>
+      <p>Renders historical data from Home Assistant entities as a line plot.</p>
+      <pre><code
+          >- type: plot
   x_start: 10
   y_start: 20
   x_end: 199
@@ -1668,12 +1653,15 @@
     - entity: sensor.temperature
       width: 3
     - entity: sensor.humidity
-      color: red</div>
-      <p class="intro-text">
-        The plot element supports extensive configuration for axes, legends, and data series. 
-        For complete documentation of all plot options including Y-Legend, Y-Axis, X-Legend, X-Axis, 
-        and line options, please refer to the <a href="../homeassistant/index.html" style="color: var(--accent);">Home Assistant Integration documentation</a> 
-        or use the <a href="../designer/index.html" style="color: var(--accent);">Layout Designer</a> to explore all available options.
+      color: red</code
+        ></pre>
+      <p>
+        The plot element supports extensive configuration for axes, legends, and data series. For complete
+        documentation of all plot options including Y-Legend, Y-Axis, X-Legend, X-Axis, and line options,
+        please refer to the <a href="https://github.com/OpenDisplay/Home_Assistant_Integration"
+          >Home Assistant Integration documentation</a
+        >
+        or use the <a href={href.designer}>Layout Designer</a> to explore all available options.
       </p>
       <table>
         <thead>
@@ -1808,7 +1796,7 @@
         </tbody>
       </table>
       <h4>Line Options (per entity)</h4>
-      <p class="intro-text">Each entry in the <code>data</code> array can have these options:</p>
+      <p>Each entry in the <code>data</code> array can have these options:</p>
       <table>
         <thead>
           <tr>
@@ -1892,12 +1880,11 @@
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <div class="element-section" id="progress_bar">
-      <h3>progress_bar</h3>
-      <p class="intro-text">Displays a progress bar with optional percentage text.</p>
-      <div class="code-block">- type: progress_bar
+      <h3 id="progress_bar">progress_bar</h3>
+      <p>Displays a progress bar with optional percentage text.</p>
+      <pre><code
+          >- type: progress_bar
   x_start: 10
   y_start: 10
   x_end: 280
@@ -1908,7 +1895,8 @@
   progress: 42
   direction: right
   show_percentage: true
-  font: "ppb.ttf"</div>
+  font: "ppb.ttf"</code
+        ></pre>
       <table>
         <thead>
           <tr>
@@ -1967,21 +1955,30 @@
             <td>Background color</td>
             <td>No</td>
             <td><code>white</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>fill</code></td>
             <td>Progress bar color</td>
             <td>No</td>
             <td><code>red</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>outline</code></td>
             <td>Border color</td>
             <td>No</td>
             <td><code>black</code></td>
-            <td><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>, <code>yellow</code></td>
+            <td
+              ><code>white</code>, <code>black</code>, <code>accent</code>, <code>red</code>,
+              <code>yellow</code></td
+            >
           </tr>
           <tr>
             <td><code>width</code></td>
@@ -2013,53 +2010,64 @@
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <div class="col panel" id="template-examples">
-      <h2>Template Examples</h2>
-      <p class="intro-text">
-        OpenDisplay Language supports template expressions (when used with Home Assistant) for dynamic content:
+    </Prose>
+  </Card>
+  <Card>
+    <Prose>
+      <h2 id="template-examples">Template Examples</h2>
+      <p>
+        OpenDisplay Language supports template expressions (when used with Home Assistant) for dynamic
+        content:
       </p>
 
       <h3>Basic State Display</h3>
-      <div class="code-block">- type: "text"
-  value: "Temperature: {{ states('sensor.temperature') }}°C"
+      <pre><code
+          >- type: "text"
+  value: "Temperature: &#123;&#123; states('sensor.temperature') &#125;&#125;°C"
   x: 10
-  y: 10</div>
+  y: 10</code
+        ></pre>
 
       <h3>Conditional Formatting</h3>
-      <div class="code-block">- type: "text"
+      <pre><code
+          >- type: "text"
   value: >
     Status:
-    [{{ 'red' if is_state('binary_sensor.door', 'on') else 'black' }}]
-    {{ states('binary_sensor.door') }}
-    [/{{ 'red' if is_state('binary_sensor.door', 'on') else 'black' }}]
+    [&#123;&#123; 'red' if is_state('binary_sensor.door', 'on') else 'black' &#125;&#125;]
+    &#123;&#123; states('binary_sensor.door') &#125;&#125;
+    [/&#123;&#123; 'red' if is_state('binary_sensor.door', 'on') else 'black' &#125;&#125;]
   parse_colors: true
   x: 10
-  y: 10</div>
+  y: 10</code
+        ></pre>
 
       <h3>Dynamic Positioning</h3>
-      <div class="code-block">- type: "text"
+      <pre><code
+          >- type: "text"
   value: "Centered"
   x: "50%"
   y: "50%"
-  anchor: "mm"</div>
+  anchor: "mm"</code
+        ></pre>
 
       <h3>Common Use Cases</h3>
       <h4>Battery Status with Icon</h4>
-      <div class="code-block">- type: "icon"
+      <pre><code
+          >- type: "icon"
   value: "mdi:battery"
   x: 10
   y: 10
   size: 24
-  color: "{{ 'red' if states('sensor.battery')|float < 20 else 'black' }}"
+  color: "&#123;&#123; 'red' if states('sensor.battery')|float &lt; 20 else 'black' &#125;&#125;"
 - type: "text"
-  value: "{{ states('sensor.battery') }}%"
+  value: "&#123;&#123; states('sensor.battery') &#125;&#125;%"
   x: 40
-  y: 10</div>
+  y: 10</code
+        ></pre>
 
       <h4>Header with Divider</h4>
-      <div class="code-block">- type: "text"
+      <pre><code
+          >- type: "text"
   value: "Status Overview"
   x: 10
   y: 10
@@ -2068,10 +2076,12 @@
   x_start: 10
   x_end: 286
   y_start: 40
-  width: 2</div>
+  width: 2</code
+        ></pre>
 
       <h4>Multi-Sensor Display</h4>
-      <div class="code-block">- type: "text"
+      <pre><code
+          >- type: "text"
   value: "Living Room"
   x: 10
   y: 10
@@ -2082,7 +2092,7 @@
   y: 40
   size: 20
 - type: "text"
-  value: "{{ states('sensor.living_room_temperature') }}°C"
+  value: "&#123;&#123; states('sensor.living_room_temperature') &#125;&#125;°C"
   x: 35
   y: 40
 - type: "icon"
@@ -2091,57 +2101,10 @@
   y: 70
   size: 20
 - type: "text"
-  value: "{{ states('sensor.living_room_humidity') }}%"
+  value: "&#123;&#123; states('sensor.living_room_humidity') &#125;&#125;%"
   x: 35
-  y: 70</div>
-    </div>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container">
-      <div class="site-footer__top">
-        <div class="site-footer__brand">
-          <a href="../index.html" class="site-footer__lockup" aria-label="OpenDisplay home">
-            <img src="../assets/brand/logo_dark.svg" alt="OpenDisplay" class="site-footer__logo-full" width="140" height="41">
-          </a>
-          <span class="site-footer__tag">The open e-paper standard</span>
-          <p class="site-footer__lead">An open standard that lets any sender put pictures on any screen. Local, low-power, designed for e-paper.</p>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Build</span>
-          <a href="../what-hardware-to-buy.html" class="od-foot-link">What hardware to buy</a>
-          <a href="../firmware/display/index.html" class="od-foot-link">BLE Tester</a>
-          <a href="../firmware/battery/index.html" class="od-foot-link">Battery calculator</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Reference</span>
-          <a href="../protocol/index.html" class="od-foot-link">Protocol spec</a>
-          <a href="../protocol/display-data-format.html" class="od-foot-link">Display data format</a>
-          <a href="../protocol/flex-standard.html" class="od-foot-link">OpenDisplay Flex</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Flex tools</span>
-          <a href="../protocol/flex-tools.html" class="od-foot-link">Overview</a>
-          <a href="../firmware/toolbox/index.html" class="od-foot-link">Toolbox</a>
-          <a href="../protocol/adding-displays.html" class="od-foot-link">Adding a new panel</a>
-        </div>
-        <div class="site-footer__col">
-          <span class="site-footer__col-h">Community</span>
-          <a href="https://github.com/OpenDisplay/" target="_blank" rel="noreferrer" class="od-foot-link">GitHub</a>
-          <a href="https://discord.gg/XmTHz8RfJE" target="_blank" rel="noreferrer" class="od-foot-link">Discord</a>
-          <a href="https://www.openhomefoundation.org/" target="_blank" rel="noreferrer" class="od-foot-link">Open Home Foundation</a>
-        </div>
-      </div>
-      <div class="site-footer__bot">
-        <span>© 2026 OpenDisplay</span>
-        <div class="site-footer__legal">
-          <a href="../impressum.html" class="od-foot-link">Legal notice</a>
-          <a href="../datenschutz.html" class="od-foot-link">Privacy policy</a>
-        </div>
-      </div>
-    </div>
-  </footer>
-</body>
-</html>
-
+  y: 70</code
+        ></pre>
+    </Prose>
+  </Card>
+</Page>

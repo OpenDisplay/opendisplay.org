@@ -7,4 +7,5 @@ export const REDIRECTS = {
   '/protocol/flex-tools.html': '/protocol/flex-tools/',
   '/protocol/flex-standard.html': '/protocol/flex-standard/',
   '/protocol/reference-firmware-variants.html': '/protocol/reference-firmware-variants/',
+  '/protocol/open-display-language.html': '/protocol/open-display-language/',
 };

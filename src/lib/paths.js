@@ -20,7 +20,7 @@ export const href = {
   flexStandard: page('protocol/flex-standard'),
   flexTools: page('protocol/flex-tools'),
   addingDisplays: '/protocol/adding-displays.html',
-  openDisplayLanguage: '/protocol/open-display-language.html',
+  openDisplayLanguage: page('protocol/open-display-language'),
   firmwareVariants: page('protocol/reference-firmware-variants'),
   yamlConfig: '/protocol/yaml-config.html',
 
