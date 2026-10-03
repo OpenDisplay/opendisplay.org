@@ -75,6 +75,12 @@
       display: block;
       overflow-x: auto;
     }
+    .prose :global(:is(th, td)) {
+      padding: var(--sp-2);
+    }
+    .prose :global(td:first-child) {
+      white-space: nowrap;
+    }
   }
   .prose :global(caption) {
     padding-bottom: var(--sp-2);

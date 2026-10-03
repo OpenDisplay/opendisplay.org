@@ -15,13 +15,29 @@
 
   // Built in the browser from the headings: the section ids are in the prerendered
   // markup, so #links work without this list; it only adds the sidebar.
+  /** The section being read: the last heading that has scrolled past the top. */
+  let current = $state(null);
+
   onMount(() => {
     if (!toc) return;
-    sections = [...content.querySelectorAll('h2[id], h3[id]')].map((h) => ({
-      id: h.id,
-      title: h.textContent.trim(),
-      sub: h.tagName === 'H3',
-    }));
+    const headings = [...content.querySelectorAll('h2[id], h3[id]')];
+    sections = headings.map((h) => ({ id: h.id, title: h.textContent.trim(), sub: h.tagName === 'H3' }));
+
+    const OFFSET = 120; // a heading counts as reached once it's this close to the top
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 2;
+      const passed = headings.filter((h) => h.getBoundingClientRect().top <= OFFSET);
+      current = atBottom ? headings.at(-1)?.id : (passed.at(-1)?.id ?? null);
+    };
+    const onScroll = () => (frame ||= requestAnimationFrame(update));
+    update();
+    addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(frame);
+    };
   });
 </script>
 
@@ -54,7 +70,11 @@
 {#snippet list()}
   <ul>
     {#each sections as section (section.id)}
-      <li class:sub={section.sub}><a href="#{section.id}">{section.title}</a></li>
+      <li class:sub={section.sub}>
+        <a href="#{section.id}" aria-current={current === section.id ? 'location' : undefined}
+          >{section.title}</a
+        >
+      </li>
     {/each}
   </ul>
 {/snippet}
@@ -131,6 +151,10 @@
     line-height: var(--lh-tight);
     color: var(--text-muted);
     text-decoration: none;
+  }
+  ul a[aria-current] {
+    color: var(--text);
+    font-weight: 500;
   }
   ul a:hover {
     color: var(--text);

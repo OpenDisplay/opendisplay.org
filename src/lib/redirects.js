@@ -12,4 +12,5 @@ export const REDIRECTS = {
   '/protocol/yaml-config.html': '/protocol/yaml-config/',
   // An older copy of the same guide; the protocol version supersedes it.
   '/firmware/adding-displays.html': '/protocol/adding-displays/',
+  '/protocol/display-data-format.html': '/protocol/display-data-format/',
 };
