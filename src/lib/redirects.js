@@ -17,4 +17,5 @@ export const REDIRECTS = {
   '/protocol/basic-standard.html': '/protocol/basic-standard/',
   '/firmware/reusing_solum_displays.html': '/firmware/reusing-solum-displays/',
   '/firmware/seeed_display_compatibility.html': '/firmware/seeed-display-compatibility/',
+  '/what-hardware-to-buy.html': '/what-hardware-to-buy/',
 };

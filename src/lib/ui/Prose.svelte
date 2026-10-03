@@ -11,7 +11,7 @@
   .prose {
     color: var(--text);
   }
-  .prose :global(:is(p, ul, ol, table, pre, figure)) {
+  .prose :global(:is(p, ul, ol, table, pre, figure, .callout)) {
     margin: 0 0 var(--sp-4);
   }
   .prose > :global(:last-child) {

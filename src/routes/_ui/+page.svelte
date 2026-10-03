@@ -70,6 +70,10 @@
         <strong>Docs</strong> (Markdown, contents list, hairline sections, tables, Callouts):
         <a href={href.yamlConfig}>YAML configuration</a>
       </li>
+      <li>
+        <strong>Catalog</strong> (docs with <code>ProductGrid</code>):
+        <a href={href.hardware}>What hardware to buy</a>
+      </li>
       <li><strong>Legal</strong> (docs rules, German body): <a href={href.datenschutz}>Privacy policy</a></li>
       <li><strong>Tool</strong> and <strong>Home</strong>: not ported yet</li>
     </ul>

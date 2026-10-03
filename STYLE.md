@@ -49,6 +49,12 @@ Reading and reference material.
   Markdown), rendered to SVG at build time in the site's colors and font. Sequence
   diagrams for message exchanges, flowcharts for decisions, nothing decorative.
 
+## Catalog (What hardware to buy)
+
+Docs rules, with products instead of tables: a `ProductGrid` of cards (photo, name, one
+status line, links), two columns on wide screens and one on phones. Product data lives in
+a data file next to the page, not in markup.
+
 ## Legal (Impressum, privacy)
 
 Docs rules, plus: German body marked `lang: de`; contents list only with 3+ sections.
