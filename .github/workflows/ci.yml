@@ -30,6 +30,25 @@ jobs:
       - name: Unit tests
         run: npm test
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and test in the browser
+        run: npm run test:e2e
+
   fixtures:
     # The py-opendisplay fixtures must be what gen.py produces from the pinned versions,
     # so nobody hand-edits them to make a test pass.
