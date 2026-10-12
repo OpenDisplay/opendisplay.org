@@ -2258,7 +2258,7 @@
             "reserved": "0x0"
          },
          "manufacturerData": {
-            "manufacturer_id": "0",
+            "manufacturer_id": "7",
             "board_type": "0",
             "board_revision": "0x1",
             "reserved": "0x0"

@@ -180,6 +180,9 @@ ble_proto:
           6:
             name: good_display
             description: Good Display
+          7:
+            name: rockbase_iot
+            description: RockBase IoT
       - name: board_type
         size: 1
         description: Board identifier (depends on manufacturer_id)
@@ -285,6 +288,10 @@ ble_proto:
               0:
                 name: ESP32_133C02
                 description: ESP32-133C02 (ESP32-S3, 7.09"/13.3" Spectra6 driver board)
+            7:
+              0:
+                name: NM-EPD-420
+                description: RockBase IoT NM-EPD-420 (ESP32-S3, 4.2" e-paper)
       - name: board_revision
         size: 1
         description: Board revision number
