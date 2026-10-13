@@ -31,7 +31,8 @@
     "nrf54l15-xiao": 28,
     "ee02": 29,
     "good-display-133c02": 30,
-    "m5-papers3": 31
+    "m5-papers3": 31,
+    "nm-epd-420-4c": 32
   },
   "displays": {
     "ep154-200x200": 1,
