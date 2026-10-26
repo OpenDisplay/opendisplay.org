@@ -813,6 +813,9 @@ ble_proto:
           3004:
             name: m5papers3_960x540
             description: M5Stack PaperS3 (ED047TC1-class, 960x540, 16-gray capable; FastEPD native parallel path)
+          3005:
+            name: m5paper_960x540
+            description: Original M5Stack M5Paper (ED047TC1 960x540 + IT8951 over SPI, 16-gray capable; FastEPD IT8951 path)
       - name: pixel_width
         size: 2
         description: Pixel width of panel
