@@ -96,6 +96,7 @@
     "solar": 8,
     "battery-650": 9,
     "inkplate": 10,
-    "battery-5000": 11
+    "battery-5000": 11,
+    "m5paper-1150": 12
   }
 }

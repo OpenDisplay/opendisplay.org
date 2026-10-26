@@ -1063,6 +1063,9 @@ ble_proto:
           6:
             name: npm1300
             description: Nordic nPM1300 PMIC. Bit-bang I2C via data_bus (bus_id); default addr 0x6B. Voltage in MSD 14–15; packed SOC/charging byte like BQ27220 (SOC estimated from VBAT)
+          8:
+            name: pcf8563_rtc
+            description: NXP PCF8563 / BM8563 RTC (I2C 0x51) as a power-off wake source. With pwr_latch, deep sleep releases the latch and the RTC INT powers the board back on (M5Paper). Publishes no MSD data (msd_data_start_byte 0xFF)
       - name: bus_id
         size: 1
         description: Instance id of the bus to use for this sensor

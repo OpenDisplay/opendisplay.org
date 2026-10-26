@@ -2410,6 +2410,13 @@
             "pullups": "0x0",
             "pulldowns": "0x0"
          },
+         "sensorData": {
+            "sensor_type": "8",
+            "instance_number": "0",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x51",
+            "msd_data_start_byte": "0xff"
+         },
          "touchController": {
             "instance_number": "0x0",
             "touch_ic_type": "1",
@@ -2424,7 +2431,7 @@
             "enable_pin": "0xff"
          },
          "defaultDisplay": "m5-paper-960x540-4gray",
-         "defaultPower": "usb",
+         "defaultPower": "m5paper-1150",
          "installConfig": {
             "type": "esp32",
             "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-wrover-e-N4R8_full.json",
@@ -3504,6 +3511,22 @@
             "reserved": "0x00000000"
          },
          "index": 10
+      },
+      {
+         "id": "m5paper-1150",
+         "name": "M5Paper LiPo 1150mAh (RTC power-off)",
+         "powerOption": {
+            "power_mode": "1",
+            "battery_capacity_mah": "1150",
+            "sleep_timeout_ms": "20000",
+            "tx_power": "0x8",
+            "sleep_flags": "0x0",
+            "battery_sense_flags": "0x0",
+            "capacity_estimator": "1",
+            "deep_sleep_time_seconds": "900",
+            "reserved": "0x0"
+         },
+         "index": 12
       }
    ]
 }
