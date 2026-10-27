@@ -2425,7 +2425,7 @@
             "int_pin": "36",
             "rst_pin": "0xff",
             "display_instance": "0x0",
-            "flags": "0x0",
+            "flags": "0x6",
             "poll_interval_ms": "0",
             "touch_data_start_byte": "1",
             "enable_pin": "0xff"
