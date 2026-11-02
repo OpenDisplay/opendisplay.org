@@ -3785,6 +3785,69 @@ class OpenDisplayBLE {
    * @param {number} rotation
    * @returns {number[]} concatenated frames, passes * frameBytes
    */
+  /**
+   * Pull the drive modes, palettes and panel properties out of a parsed config.
+   *
+   * Reads packets 0x2E (display_mode), 0x30 (display_calibration: per-pass codes
+   * + measured CIELAB) and 0x31 (display_panel: colour code map) straight from
+   * the raw packet list, so nothing new has to be threaded through the walk.
+   *
+   * A mode with passes > 1 is a MULTI-PASS mode: it drives the panel once per
+   * pass with different pixel data, which is how 16 colours are reached. A mode
+   * is only offerable for upload if it has a measured palette, because the
+   * colours are per-unit and there is no safe default.
+   *
+   * @returns {{modes: Array, codeMap: number[]|null}}
+   */
+  extractDriveModes(parsedConfig) {
+    const out = { modes: [], codeMap: null };
+    if (!parsedConfig || !Array.isArray(parsedConfig.packets)) return out;
+    const calByMode = new Map();
+
+    for (const pkt of parsedConfig.packets) {
+      const d = pkt.data;
+      if (pkt.id === 0x31 && d.length >= 11) {
+        out.codeMap = d.slice(7, 11);
+      } else if (pkt.id === 0x30 && d.length >= 116) {
+        const n = Math.min(d[2], 16);
+        const codes = [], lab = [];
+        for (let i = 0; i < n; i++) {
+          const v = d[4 + i];
+          codes.push([(v >> 4) & 3, (v >> 2) & 3, v & 3]);
+          const o = 20 + i * 6;
+          const rd = (k) => { const u = d[k] | (d[k + 1] << 8); return (u > 32767 ? u - 65536 : u) / 100; };
+          lab.push([rd(o), rd(o + 2), rd(o + 4)]);
+        }
+        calByMode.set(d[1], { codes, lab, measured: (d[3] & 1) === 1 });
+      }
+    }
+    for (const pkt of parsedConfig.packets) {
+      if (pkt.id !== 0x2E) continue;
+      const d = pkt.data;
+      if (d.length < 29) continue;
+      let name = '';
+      for (let i = 2; i < 14 && d[i]; i++) name += String.fromCharCode(d[i]);
+      const modeIndex = d[1];
+      const passes = d[14];
+      const cal = calByMode.get(modeIndex) || null;
+      out.modes.push({
+        modeIndex, name: name || `mode ${modeIndex}`, passes,
+        tempMinC: d[24] > 127 ? d[24] - 256 : d[24],
+        tempMaxC: d[25] > 127 ? d[25] - 256 : d[25],
+        palette: cal,
+        // Colour count is a property of the PALETTE, not of the pass count --
+        // 3 passes give 64 possible code triples, of which a measured palette
+        // uses far fewer. Fall back to the pass-count hint only when unmeasured.
+        colours: cal ? cal.codes.length : (passes > 1 ? null : 4),
+        // A multi-pass mode without a measured palette cannot be uploaded to:
+        // the per-unit colours would have to be guessed.
+        uploadable: passes === 1 || !!cal
+      });
+    }
+    out.modes.sort((a, b) => a.modeIndex - b.modeIndex);
+    return out;
+  }
+
   encodeCanvasMultipass(canvas, palette, codeMap = null, rotation = 0) {
     if (!palette || !Array.isArray(palette.codes) || !palette.codes.length) {
       throw new Error(
