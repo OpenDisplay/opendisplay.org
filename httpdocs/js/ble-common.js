@@ -3766,6 +3766,142 @@ class OpenDisplayBLE {
    * @param {number[]|null} ditherWireMap - Palette index to wire value (optional)
    * @returns {Array} Byte array representing the image
    */
+  /**
+   * Encode a canvas for a MULTI-PASS drive mode (colour scheme 10, bwry16).
+   *
+   * A multi-pass mode drives the panel several times with DIFFERENT pixel data;
+   * a pixel's colour is set by its code in ALL passes. So this emits one 2bpp
+   * frame per pass, concatenated, which is exactly what CMD_DRIVE_WRITE_START
+   * expects in a single session.
+   *
+   * The palette MUST come from the device (config packet 0x30: per-pass codes
+   * plus the CIELAB they measured as). It is deliberately not bundled here:
+   * these colours are per-unit -- two same-part-number 2.9in panels differ by
+   * dE00 6.40, and a palette tuned on one measured 19% worse on the other.
+   *
+   * @param {HTMLCanvasElement} canvas
+   * @param {{codes: number[][], lab: number[][]}} palette - from 0x30
+   * @param {number[]} codeMap - logical->panel code map from 0x31
+   * @param {number} rotation
+   * @returns {number[]} concatenated frames, passes * frameBytes
+   */
+  encodeCanvasMultipass(canvas, palette, codeMap = null, rotation = 0) {
+    if (!palette || !Array.isArray(palette.codes) || !palette.codes.length) {
+      throw new Error(
+        'bwry16 needs the measured palette from the device (config packet 0x30). ' +
+        'Without the per-pass codes a frame cannot be encoded, and the colours ' +
+        'are per-unit so there is no safe default to fall back to.'
+      );
+    }
+    if (palette.lab && palette.lab.length !== palette.codes.length) {
+      throw new Error(
+        `palette has ${palette.codes.length} code entries but ${palette.lab.length} ` +
+        `measurements -- they index the same palette and must match`
+      );
+    }
+    const passes = palette.codes[0].length;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const w = img.width, h = img.height;
+    const px = img.data;
+
+    // Nearest entry in CIELAB with Floyd-Steinberg diffusion. Diffusion is not
+    // optional in practice: every chromatic entry of this palette lies between
+    // red and yellow (BWRY has no green or blue pigment), so smooth areas have
+    // no nearby entry and band badly without it.
+    const labPal = palette.lab && palette.lab.length
+      ? palette.lab
+      : palette.codes.map(() => [50, 0, 0]);
+    const err = new Float32Array(w * h * 3);
+    const idx = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x, o = i * 4;
+        const lab = this._srgbToLabTriple(px[o], px[o + 1], px[o + 2]);
+        const L = lab[0] + err[i * 3], A = lab[1] + err[i * 3 + 1], B = lab[2] + err[i * 3 + 2];
+        let best = 0, bestD = Infinity;
+        for (let k = 0; k < labPal.length; k++) {
+          const dL = L - labPal[k][0], dA = A - labPal[k][1], dB = B - labPal[k][2];
+          const d = dL * dL + dA * dA + dB * dB;
+          if (d < bestD) { bestD = d; best = k; }
+        }
+        idx[i] = best;
+        const eL = L - labPal[best][0], eA = A - labPal[best][1], eB = B - labPal[best][2];
+        const spread = (nx, ny, f) => {
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) return;
+          const j = (ny * w + nx) * 3;
+          err[j] += eL * f; err[j + 1] += eA * f; err[j + 2] += eB * f;
+        };
+        spread(x + 1, y, 7 / 16); spread(x - 1, y + 1, 3 / 16);
+        spread(x, y + 1, 5 / 16); spread(x + 1, y + 1, 1 / 16);
+      }
+    }
+
+    // Pack one 2bpp frame per pass, applying the panel's code map. The map is
+    // applied HERE and not at palette-authoring time because palette codes are
+    // logical colours while the map is a panel property -- BWRY wants [0,1,3,2]
+    // because hardware order is black,white,RED,YELLOW while the enum has
+    // yellow=2, the mismatch that caused a yellow/red swap in the lab firmware.
+    const out = [];
+    for (let p = 0; p < passes; p++) {
+      const codes = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        let c = palette.codes[idx[i]][p] & 3;
+        if (codeMap) c = codeMap[c] & 3;
+        codes[i] = c;
+      }
+      const frame = this.packWireCodes2bpp(codes, w, h, rotation);
+      for (let i = 0; i < frame.length; i++) out.push(frame[i]);
+    }
+    return out;
+  }
+
+  /** sRGB byte triple -> CIELAB (D65), matching the measurement convention. */
+  _srgbToLabTriple(r, g, b) {
+    const lin = (v) => {
+      v /= 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    const R = lin(r), G = lin(g), B = lin(b);
+    const X = (0.4124564 * R + 0.3575761 * G + 0.1804375 * B) / 0.95047;
+    const Y = (0.2126729 * R + 0.7151522 * G + 0.0721750 * B) / 1.0;
+    const Z = (0.0193339 * R + 0.1191920 * G + 0.9503041 * B) / 1.08883;
+    const d = 6 / 29;
+    const f = (t) => (t > d * d * d ? Math.cbrt(t) : t / (3 * d * d) + 4 / 29);
+    const fx = f(X), fy = f(Y), fz = f(Z);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+
+  /** Pack per-pixel 2-bit codes MSB-first, 4 pixels per byte, with rotation. */
+  packWireCodes2bpp(codes, w, h, rotation = 0) {
+    let src = codes, sw = w, sh = h;
+    if (rotation === 1 || rotation === 3) {
+      const rot = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const nx = rotation === 1 ? h - 1 - y : y;
+          const ny = rotation === 1 ? x : w - 1 - x;
+          rot[ny * h + nx] = codes[y * w + x];
+        }
+      }
+      src = rot; sw = h; sh = w;
+    } else if (rotation === 2) {
+      const rot = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) rot[i] = codes[w * h - 1 - i];
+      src = rot;
+    }
+    const perRow = Math.ceil(sw / 4);
+    const out = new Uint8Array(perRow * sh);
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const v = src[y * sw + x] & 3;
+        const bi = y * perRow + (x >> 2);
+        out[bi] |= v << (6 - 2 * (x & 3));
+      }
+    }
+    return out;
+  }
+
   encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null, ditherIndices = null, ditherWireMap = null) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -4327,6 +4463,11 @@ class OpenDisplayBLE {
       panelIcType = null,
       ditherIndices = null,
       ditherWireMap = null,
+      // Multi-pass (colour scheme 10 / bwry16). Both come from the DEVICE's own
+      // config -- multipassPalette from 0x30, driveModeIndex from 0x2E -- so the
+      // website never has to carry a per-unit palette or guess a mode number.
+      multipassPalette = null,
+      driveModeIndex = null,
       onProgress = null,
       onComplete = null,
       onStatusChange = null
@@ -4366,7 +4507,22 @@ class OpenDisplayBLE {
     }
     
     try {
-      const byteData = this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType, ditherIndices, ditherWireMap);
+      // Colour scheme 10 (bwry16) is multi-pass: one 2bpp frame PER PASS,
+      // concatenated into a single session. Packing per frame is identical to
+      // BWRY, so the difference is the frame COUNT, which comes from the
+      // palette's code width -- not from the scheme value.
+      const isMultipass = colorScheme === 10;
+      if (isMultipass && driveModeIndex === null) {
+        throw new Error(
+          'bwry16 needs driveModeIndex: the device selects a drive mode by its ' +
+          'position in the config (packet 0x2E), and guessing it here would pick ' +
+          'a waveform at random'
+        );
+      }
+      const byteData = isMultipass
+        ? this.encodeCanvasMultipass(canvas, multipassPalette,
+                                     multipassPalette && multipassPalette.codeMap, rotation)
+        : this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType, ditherIndices, ditherWireMap);
       const uncompressedSize = byteData.length;
       const byteDataUint8 = new Uint8Array(byteData);
       
@@ -4405,6 +4561,16 @@ if (supportsStreamingDecompression) {
 
       let startCommandHex = '0070';
       let chunkIndex = 0;
+      // CMD_DRIVE_WRITE_START 0x0085 names the drive mode up front, which 0x0070
+      // cannot: the waveform is uploaded as part of the init sequence BEFORE the
+      // frame, so the device must know the mode at START. 0x0072 END carries a
+      // refresh byte but it arrives after the pixels are already in the panel.
+      const useDriveWrite = isMultipass;
+      if (useDriveWrite) {
+        const flags = useCompressed ? 0x01 : 0x00;   // bit1 PIPELINED is Firmware-only
+        const hdr = [driveModeIndex & 0xFF, useFastRefresh ? 1 : 0, flags, 0x00, 0x00];
+        startCommandHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
+      }
       if (useCompressed) {
         const startPayload = new Uint8Array(4 + compressedBytes.length);
         startPayload[0] = uncompressedSize & 0xFF;
