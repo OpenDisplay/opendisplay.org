@@ -912,7 +912,7 @@ ble_proto:
             name: bwgbry_split
             description: Spectra 6 same nibbles as bwgbry, packed left-half plane then right-half plane
               (dual-CS panels, no device framebuffer)
-          9:
+          10:
             name: bwry16
             description: 'BWRY driven multi-pass for 16 colours. Pixel packing is IDENTICAL to bwry
               (2bpp, one plane) -- the extra colours come from sending one frame PER PASS, and the pass
@@ -920,7 +920,9 @@ ble_proto:
               colour is set by its code in every pass. Exists so a host image pipeline can select the
               16-entry palette; the device needs only the mode. Measured on a 2.9in GDEY029F51H, 16
               entries are separable at dE00 >= 1 (13 at >= 3), but only 10 exceed chroma 5 and every
-              chromatic entry lies between red and yellow, because BWRY has no green or blue pigment.'
+              chromatic entry lies between red and yellow, because BWRY has no green or blue pigment. Value 10,
+              not 9: epaper-dithering (the designated mirror of this enum) already uses 9 for a
+              library-local Grayscale8 that is deliberately not a wire value.'
           100:
             name: RGB565
             description: RGB565
