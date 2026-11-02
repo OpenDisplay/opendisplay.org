@@ -3882,6 +3882,28 @@ class OpenDisplayBLE {
   }
 
   /**
+   * Map a device's colour_scheme to the one the 4-colour image path should use.
+   *
+   * Scheme 10 (bwry16) is NOT a panel pixel format. The panel is BWRY: 2bpp,
+   * four inks. 16 colours come from driving it three times with different data,
+   * which is a property of a drive MODE -- its pass count in packet 0x2E plus
+   * the measured palette in 0x30 -- discovered via extractDriveModes(). A
+   * device whose DisplayConfig says 10 still packs single-pass frames as BWRY,
+   * so that is what the drawing palette, preview and dither must use.
+   *
+   * This exists because an unmapped 10 does not fail loudly. The display tool's
+   * clampScheme() floors unknown values at 6, which silently turned a BWRY
+   * panel into a 16-level greyscale one; the designer assigns the value to a
+   * <select> that has no option 10, which collapses to 0 (mono). Both look like
+   * a working upload.
+   */
+  baseColorScheme(cs) {
+    const n = parseInt(cs, 10);
+    if (Number.isNaN(n)) return 0;
+    return n === 10 ? 3 : n;   // bwry16 -> bwry
+  }
+
+  /**
    * Pull the drive modes, palettes and panel properties out of a parsed config.
    *
    * Reads packets 0x2E (display_mode), 0x30 (display_calibration: per-pass codes

@@ -4122,12 +4122,19 @@
           // Apply display config to UI
           displayConfig.width = displayCfg.pixelWidth;
           displayConfig.height = displayCfg.pixelHeight;
-          displayConfig.colorScheme = displayCfg.colorScheme;
+          // bwry16 (10) names a drive MODE, not a pixel format: the panel is
+          // still BWRY and single-pass frames still pack as BWRY. The 16-colour
+          // path is reached through the Drive Mode selector below, never
+          // through this value. Assigning a raw 10 to the <select> (which has
+          // no such option) silently collapses it to 0 = mono.
+          displayConfig.colorScheme = (bleLib && bleLib.baseColorScheme)
+            ? bleLib.baseColorScheme(displayCfg.colorScheme)
+            : displayCfg.colorScheme;
           displayConfig.panelIcType = displayCfg.panelIcType != null ? Number(displayCfg.panelIcType) : null;
-          
+
           document.getElementById('displayWidth').value = displayCfg.pixelWidth;
           document.getElementById('displayHeight').value = displayCfg.pixelHeight;
-          document.getElementById('colorSchemeSelect').value = displayCfg.colorScheme;
+          document.getElementById('colorSchemeSelect').value = displayConfig.colorScheme;
           
           canvas.width = displayCfg.pixelWidth;
           canvas.height = displayCfg.pixelHeight;

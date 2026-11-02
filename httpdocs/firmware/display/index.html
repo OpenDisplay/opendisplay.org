@@ -1277,7 +1277,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
 
         function clampScheme(cs) {
-            const n = parseInt(cs, 10);
+            // bwry16 (10) is a drive MODE, not a pixel format -- the panel is
+            // still BWRY. Map it BEFORE the clamp below, which would otherwise
+            // floor 10 to 6 and render a BWRY panel as 16-level greyscale.
+            const base = (typeof bleLib !== 'undefined' && bleLib && bleLib.baseColorScheme)
+                ? bleLib.baseColorScheme(cs)
+                : (parseInt(cs, 10) === 10 ? 3 : cs);
+            const n = parseInt(base, 10);
             if (n === 7 || n === 8) return n;
             if (Number.isNaN(n)) return 0;
             return Math.min(Math.max(n, 0), 6);
