@@ -744,6 +744,15 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 </div>
             </div>
             <div id="canvasOptions">
+                <div class="field-row" style="margin-top: 12px;">
+                    <label for="driveModeSelect" style="margin: 0; min-width: 120px;">Drive Mode:</label>
+                    <select id="driveModeSelect" style="flex: 1;" disabled>
+                        <option value="">Default (connect to list modes)</option>
+                    </select>
+                </div>
+                <div class="field-row" style="margin-top: 4px;">
+                    <small id="driveModeNote" style="opacity:.75"></small>
+                </div>
                 <div class="field-row" style="margin-top: 12px;display:none">
                     <label for="colorSchemeSelect" style="margin: 0; min-width: 120px;">Color Scheme:</label>
                     <select id="colorSchemeSelect" onchange="getPixelData()" style="flex: 1;">
@@ -1201,6 +1210,65 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             7: 'B/W + Green + Blue + Red + Yellow + Orange (7-color)',
             8: '6-color split (left half-plane then right; dual-CS)'
         };
+
+        // Drive modes read off the CONNECTED device (packets 0x2E/0x30/0x31).
+        // Not a static list: which modes exist, their pass counts and their
+        // colours are per-device, and a multi-pass palette is per-UNIT.
+        let deviceDriveModes = { modes: [], codeMap: null };
+
+        function populateDriveModes(parsedConfig) {
+            const sel = document.getElementById('driveModeSelect');
+            const note = document.getElementById('driveModeNote');
+            if (!sel) return;
+            deviceDriveModes = (bleLib && bleLib.extractDriveModes)
+                ? bleLib.extractDriveModes(parsedConfig)
+                : { modes: [], codeMap: null };
+            sel.innerHTML = '';
+            if (!deviceDriveModes.modes.length) {
+                sel.innerHTML = '<option value="">Default (device declares no modes)</option>';
+                sel.disabled = true;
+                if (note) note.textContent = 'This device carries no drive-mode packets, '
+                    + 'so the legacy full-refresh path is used.';
+                return;
+            }
+            for (const m of deviceDriveModes.modes) {
+                const opt = document.createElement('option');
+                opt.value = String(m.modeIndex);
+                opt.textContent = `${m.name} — ${m.colours === null ? '?' : m.colours} colours, `
+                    + `${m.passes} pass${m.passes === 1 ? '' : 'es'}`;
+                // Listed but disabled rather than hidden: an uncalibrated panel
+                // should look uncalibrated, not look like it has fewer modes.
+                if (!m.uploadable) { opt.disabled = true; opt.textContent += ' (needs calibration)'; }
+                sel.appendChild(opt);
+            }
+            sel.disabled = false;
+            const first = deviceDriveModes.modes.find(m => m.uploadable);
+            if (first) sel.value = String(first.modeIndex);
+            updateDriveModeNote();
+            sel.onchange = updateDriveModeNote;
+            addLog(`Drive modes: ` + deviceDriveModes.modes
+                .map(m => `${m.name}(${m.colours ?? '?'}c/${m.passes}p)`).join(', '), 'success');
+        }
+
+        function selectedDriveMode() {
+            const sel = document.getElementById('driveModeSelect');
+            if (!sel || sel.disabled || sel.value === '') return null;
+            const i = parseInt(sel.value, 10);
+            return deviceDriveModes.modes.find(m => m.modeIndex === i) || null;
+        }
+
+        function updateDriveModeNote() {
+            const note = document.getElementById('driveModeNote');
+            const m = selectedDriveMode();
+            if (!note) return;
+            if (!m) { note.textContent = ''; return; }
+            const parts = [];
+            if (m.passes > 1) parts.push(`sends ${m.passes} frames (${m.passes}x data and refresh time)`);
+            if (m.palette) parts.push(m.palette.measured ? 'measured palette' : 'nominal palette');
+            if (m.tempMinC !== m.tempMaxC) parts.push(`advised ${m.tempMinC}–${m.tempMaxC} °C`);
+            note.textContent = parts.join(' · ');
+        }
+
         function clampScheme(cs) {
             const n = parseInt(cs, 10);
             if (n === 7 || n === 8) return n;
@@ -3616,7 +3684,29 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const partialSupport = (extraOptions.forcePartial || wantsPartialUpload())
                 ? displayPartialUpdateSupport
                 : 0;
-            bleLib.sendCanvasToDisplay(canvas, colorScheme, {
+            // A multi-pass mode encodes against the DEVICE's measured palette and
+            // tells the device which mode to drive; colour scheme 10 selects that
+            // path. Everything else keeps the existing behaviour untouched.
+            const driveMode = selectedDriveMode();
+            let effectiveScheme = colorScheme;
+            const driveExtra = {};
+            if (driveMode && driveMode.passes > 1) {
+                if (!driveMode.palette) {
+                    addLog(`Mode '${driveMode.name}' has no measured palette on this device, `
+                        + `so its colours are unknown. Calibrate it first.`, 'error');
+                    return;
+                }
+                effectiveScheme = 10;
+                driveExtra.driveModeIndex = driveMode.modeIndex;
+                driveExtra.multipassPalette = Object.assign({}, driveMode.palette,
+                                                            { codeMap: deviceDriveModes.codeMap });
+                addLog(`Uploading in '${driveMode.name}': ${driveMode.colours} colours, `
+                    + `${driveMode.passes} passes`, 'info');
+            } else if (driveMode) {
+                driveExtra.driveModeIndex = driveMode.modeIndex;
+            }
+            bleLib.sendCanvasToDisplay(canvas, effectiveScheme, {
+                ...driveExtra,
                 rotation: displayRotation,
                 originalWidth: widthInput,
                 originalHeight: heightInput,
@@ -3963,6 +4053,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     updatePreviewLine(validScheme);
                     updateDrawPalette();
                     updateTextColorSwatches();
+                    populateDriveModes(parsedConfig);
                     updateQRColorSwatches();
                     // Measured palettes depend on both the panel and the scheme.
                     OpenDisplayBLE.ditherReady().then(populatePaletteSelect);
