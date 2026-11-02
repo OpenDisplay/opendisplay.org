@@ -4958,7 +4958,8 @@ if (supportsStreamingDecompression) {
     }
 
     if (OpenDisplayBLE.isAuthRequiredResponse(bytes) &&
-        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76)) {
+        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76 ||
+         bytes[1] === 0x85)) {
       this.encryptionSession.authenticated = false;
       this._abortDirectWrite(new Error('Authentication required (0xFE)'));
       return true;
@@ -4970,7 +4971,8 @@ if (supportsStreamingDecompression) {
     }
     
     if (bytes.length >= 4 && bytes[0] === 0xFF && bytes[3] === 0x00 &&
-        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76)) {
+        (bytes[1] === 0x70 || bytes[1] === 0x71 || bytes[1] === 0x72 || bytes[1] === 0x76 ||
+         bytes[1] === 0x85)) {
       const opcode = bytes[1];
       const err = bytes[2];
       if (opcode === 0x76 && this.directWriteState.awaitingPartialStart) {
@@ -5005,11 +5007,11 @@ if (supportsStreamingDecompression) {
     let responseType = null;
     
     // Check for 00 XX format
-    if (cmd1 === 0x00 && (cmd2 === 0x70 || cmd2 === 0x71 || cmd2 === 0x72 || cmd2 === 0x73 || cmd2 === 0x74 || cmd2 === 0x76)) {
+    if (cmd1 === 0x00 && (cmd2 === 0x70 || cmd2 === 0x71 || cmd2 === 0x72 || cmd2 === 0x73 || cmd2 === 0x74 || cmd2 === 0x76 || cmd2 === 0x85)) {
       responseType = cmd2;
     }
     // Check for XX 00 format (reversed byte order)
-    else if (cmd2 === 0x00 && (cmd1 === 0x70 || cmd1 === 0x71 || cmd1 === 0x72 || cmd1 === 0x73 || cmd1 === 0x74 || cmd1 === 0x76)) {
+    else if (cmd2 === 0x00 && (cmd1 === 0x70 || cmd1 === 0x71 || cmd1 === 0x72 || cmd1 === 0x73 || cmd1 === 0x74 || cmd1 === 0x76 || cmd1 === 0x85)) {
       responseType = cmd1;
     }
     
@@ -5041,6 +5043,17 @@ if (supportsStreamingDecompression) {
     }
     
     // Handle direct write responses
+    // CMD_DRIVE_WRITE_START (0x85) IS the START ack for a multi-pass upload.
+    // Its ACK carries [mode][passes] rather than being bare, and without this
+    // the frame matched no pattern: the device had accepted the transfer and
+    // was waiting for data while the client sat on its start timer and gave up
+    // with "Direct write ack timeout (start)".
+    if (responseType === 0x85) {
+      if (bytes.length >= 4) {
+        this.log(`Drive-write START accepted: mode ${bytes[2]}, ${bytes[3]} pass(es)`, 'success');
+      }
+      responseType = 0x70;
+    }
     if (responseType === 0x70) {
       // Direct write started - device acknowledged the start command
       this.log('Direct write started, sending data chunks...', 'success');
