@@ -39,6 +39,12 @@ const DIRECT_WRITE_END_ACK_TIMEOUT_MS = 60000;
 // A multi-pass frame boundary blocks the device for a full panel refresh before
 // it can ack. Measured worst case on a 2.9in BWRY colour16 pass 0: 20637 ms.
 const DIRECT_WRITE_PASS_ACK_TIMEOUT_MS = 90000;
+// Per-refresh budget used when SEVERAL refreshes are owed at once (the end ack of
+// a multi-pass upload). Kept separate from the single-boundary bound above so the
+// multi-pass case does not multiply that one's generous margin by the pass count:
+// 3 x 90 s would let a genuinely stalled upload hang for four and a half minutes.
+// 30 s is ~1.5x the measured 20637 ms refresh.
+const PANEL_REFRESH_BUDGET_MS = 30000;
 
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
@@ -4448,6 +4454,7 @@ class OpenDisplayBLE {
       paletteHeight: prepared.paletteHeight,
       // 0 for a single-pass upload, which disables the boundary logic entirely.
       frameBytes: prepared.frameBytes || 0,
+      passes: prepared.passes || 1,
       passesDone: 0
     };
     this.directWriteState = state;
@@ -4812,6 +4819,8 @@ if (supportsStreamingDecompression) {
         frameBytes: (isMultipass && byteData.length)
           ? Math.floor(byteData.length / (multipassPalette.codes[0].length || 1))
           : 0,
+        // Pass count drives the end-ack budget: each pass owes a panel refresh.
+        passes: isMultipass ? (multipassPalette.codes[0].length || 1) : 1,
         supportsCompression,
         supportsStreamingDecompression,
         STREAMING_ZLIB_WINDOW_BITS,
@@ -4907,9 +4916,29 @@ if (supportsStreamingDecompression) {
       // passes * frameBytes), so it widens the window only for the chunk that
       // crosses one and keeps the tight bound everywhere else -- a genuine stall
       // mid-frame still fails fast.
-      const sentBytes = state.chunks.slice(0, state.chunkIndex)
-        .reduce((a, c) => a + c.length, 0);
-      const atBoundary = state.frameBytes > 0
+      //
+      // A COMPRESSED STREAM HIDES THOSE BOUNDARIES. frameBytes counts
+      // UNCOMPRESSED bytes (byteData.length / passes), but when the upload is
+      // compressed the chunks carry deflate output, so sentBytes and frameBytes
+      // are in different units. A 48384-byte 3-pass payload compresses to well
+      // under one 16128-byte frame, so the quotient stayed 0 for the entire
+      // transfer, atBoundary never fired, and the refresh hit the 15 s window:
+      // "Direct write ack timeout (chunk)" on a transfer that was working --
+      // the device's ack arrived ~21 s in, right after the pass-0 refresh.
+      //
+      // The device advances passes at DECOMPRESSED frame boundaries, which the
+      // host cannot locate in its compressed output without flushing the
+      // deflate stream at each frame. Until it does, a compressed multi-pass
+      // transfer keeps the wide window throughout: a refresh can land on any
+      // chunk, so no chunk can be assumed quick. The cost is that a genuine
+      // stall takes the long timeout to surface instead of 15 s; aborting a
+      // working upload is the worse failure.
+      const multiPass = state.frameBytes > 0;
+      const boundaryLocatable = multiPass && !state.compressed;
+      const sentBytes = boundaryLocatable
+        ? state.chunks.slice(0, state.chunkIndex).reduce((a, c) => a + c.length, 0)
+        : 0;
+      const atBoundary = boundaryLocatable
         && Math.floor(sentBytes / state.frameBytes) > state.passesDone;
       if (atBoundary) {
         state.passesDone = Math.floor(sentBytes / state.frameBytes);
@@ -4919,6 +4948,15 @@ if (supportsStreamingDecompression) {
           state.onStatusChange(`Refreshing pass ${state.passesDone}...`);
         }
         this._armDirectWriteAckTimer('pass refresh', DIRECT_WRITE_PASS_ACK_TIMEOUT_MS);
+      } else if (multiPass && !boundaryLocatable) {
+        if (!state.warnedOpaqueBoundaries) {
+          state.warnedOpaqueBoundaries = true;
+          this.log('Multi-pass upload is compressed, so frame boundaries are not '
+            + 'locatable in the compressed stream; allowing '
+            + `${DIRECT_WRITE_PASS_ACK_TIMEOUT_MS / 1000}s per chunk ack so a pass `
+            + 'refresh cannot be mistaken for a stall.', 'info');
+        }
+        this._armDirectWriteAckTimer('chunk (multi-pass)', DIRECT_WRITE_PASS_ACK_TIMEOUT_MS);
       } else {
         this._armDirectWriteAckTimer('chunk');
       }
@@ -4956,7 +4994,17 @@ if (supportsStreamingDecompression) {
       // Bound the wait for the end-command ack (0x72). Once it arrives the timer
       // is cleared and the refresh phase (0x73) is bounded by the firmware's own
       // refresh timeout (0x74). Some firmware acks only after refreshing, hence the longer bound.
-      this._armDirectWriteAckTimer('end', DIRECT_WRITE_END_ACK_TIMEOUT_MS);
+      //
+      // A multi-pass upload can owe MORE THAN ONE refresh at this point. When
+      // the whole (compressed) payload fit in the START command there were no
+      // chunk acks to absorb them, so every pass refreshes between START and
+      // the end ack: 3 passes x 20637 ms measured is past the 60 s single-refresh
+      // bound. Scale the budget by the pass count rather than assuming one.
+      const endTimeout = state.passes > 1
+        ? Math.max(DIRECT_WRITE_END_ACK_TIMEOUT_MS,
+                   state.passes * PANEL_REFRESH_BUDGET_MS)
+        : DIRECT_WRITE_END_ACK_TIMEOUT_MS;
+      this._armDirectWriteAckTimer('end', endTimeout);
     }
   }
 
