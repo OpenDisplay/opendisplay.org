@@ -36,6 +36,9 @@ const DIRECT_WRITE_ACK_TIMEOUT_MS = 15000;
 // (0x72) after the display refresh finishes, which takes ~20 s on color e-paper.
 // Give that one step a longer bound so a successful upload isn't reported as a timeout.
 const DIRECT_WRITE_END_ACK_TIMEOUT_MS = 60000;
+// A multi-pass frame boundary blocks the device for a full panel refresh before
+// it can ack. Measured worst case on a 2.9in BWRY colour16 pass 0: 20637 ms.
+const DIRECT_WRITE_PASS_ACK_TIMEOUT_MS = 90000;
 
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
@@ -3842,6 +3845,7 @@ class OpenDisplayBLE {
    * @param {number} driveModeIndex
    */
   async sendRawMultipass(payload, driveModeIndex, options = {}) {
+    const passes = Math.max(1, options.passes || 1);
     if (!this.isConnected) throw new Error('Not connected');
     if (this.directWriteState && this.directWriteState.active) {
       throw new Error('Direct write already in progress');
@@ -3872,6 +3876,7 @@ class OpenDisplayBLE {
       trackPartial: false,
       newEtag: null,
       startCommandHex,
+      frameBytes: passes > 1 ? Math.floor(payload.length / passes) : 0,
       statusMessage: `Uploading raw test pattern: ${chunks.length} chunks`
     });
   }
@@ -4420,7 +4425,10 @@ class OpenDisplayBLE {
       newEtag: prepared.newEtag,
       paletteBuffer: prepared.paletteBuffer,
       paletteWidth: prepared.paletteWidth,
-      paletteHeight: prepared.paletteHeight
+      paletteHeight: prepared.paletteHeight,
+      // 0 for a single-pass upload, which disables the boundary logic entirely.
+      frameBytes: prepared.frameBytes || 0,
+      passesDone: 0
     };
     this.directWriteState = state;
     if (prepared.onStatusChange) {
@@ -4780,6 +4788,10 @@ if (supportsStreamingDecompression) {
         paletteWidth,
         paletteHeight,
         startCommandHex,
+        // Only meaningful for a multi-pass upload; 0 disables boundary handling.
+        frameBytes: (isMultipass && byteData.length)
+          ? Math.floor(byteData.length / (multipassPalette.codes[0].length || 1))
+          : 0,
         supportsCompression,
         supportsStreamingDecompression,
         STREAMING_ZLIB_WINDOW_BITS,
@@ -4865,7 +4877,31 @@ if (supportsStreamingDecompression) {
     // While chunk acks are still outstanding, keep the ack timer armed so a
     // stalled transfer (no more acks arriving) aborts rather than hanging.
     if (state.active && state.pendingAcks > 0) {
-      this._armDirectWriteAckTimer('chunk');
+      // A MULTI-PASS BOUNDARY IS A REFRESH, NOT A STALL. When the bytes sent so
+      // far complete a frame, the device finishes that pass -- power-on, display
+      // refresh, BUSY wait -- before it can acknowledge anything. On this panel
+      // pass 0 measures 20637 ms, far past the 15 s chunk timeout, so a working
+      // transfer aborted with "ack timeout (chunk)" partway through.
+      //
+      // The host knows exactly where those boundaries fall (it declared
+      // passes * frameBytes), so it widens the window only for the chunk that
+      // crosses one and keeps the tight bound everywhere else -- a genuine stall
+      // mid-frame still fails fast.
+      const sentBytes = state.chunks.slice(0, state.chunkIndex)
+        .reduce((a, c) => a + c.length, 0);
+      const atBoundary = state.frameBytes > 0
+        && Math.floor(sentBytes / state.frameBytes) > state.passesDone;
+      if (atBoundary) {
+        state.passesDone = Math.floor(sentBytes / state.frameBytes);
+        this.log(`Pass ${state.passesDone} complete; waiting for the panel to `
+          + `refresh before the next frame`, 'info');
+        if (state.onStatusChange) {
+          state.onStatusChange(`Refreshing pass ${state.passesDone}...`);
+        }
+        this._armDirectWriteAckTimer('pass refresh', DIRECT_WRITE_PASS_ACK_TIMEOUT_MS);
+      } else {
+        this._armDirectWriteAckTimer('chunk');
+      }
     }
 
     if (state.chunkIndex >= state.chunks.length && state.pendingAcks === 0) {
