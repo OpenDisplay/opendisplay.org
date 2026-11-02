@@ -442,7 +442,10 @@
     </details>
 <script src="/js/pako.js"></script>
 <script src="/js/ble-common.js"></script>
-<script type="module" src="/js/dither.js"></script>
+<!-- ?v= must match the other pages: ES modules are cached by URL, so an
+     unversioned tag here would keep a stale dither.js alive in the same
+     browser session. See the note in firmware/display/index.html. -->
+<script type="module" src="/js/dither.js?v=2"></script>
 <script>
 let bleLib = null;
 // Live resolve/reject for the current connectToBleDevice() attempt. The persistent

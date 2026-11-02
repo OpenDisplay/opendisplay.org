@@ -1102,7 +1102,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
       <script src="/js/js-yaml.min.js"></script>
       <script src="/l/qrcode.js"></script>
       <script src="/js/ble-common.js"></script>
-      <script type="module" src="/js/dither.js"></script>
+      <!-- ?v= is a cache buster, and it is load-bearing. Browsers cache ES
+           modules by URL, so a plain reload keeps serving the previous
+           dither.js. This page now depends on dither.js knowing colour scheme
+           10; pairing new HTML with a stale module made every 16-colour upload
+           fail on `getPalette(10).colors` being undefined. BUMP THIS whenever
+           dither.js gains something this page relies on. -->
+      <script type="module" src="/js/dither.js?v=2"></script>
       <script src="/js/opendisplay-msd.js"></script>
       <script src="/js/opendisplay-battery.js"></script>
     <script>
@@ -3199,8 +3205,31 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
          * snaps every stroke to the 4 base inks and the extra colours vanish as
          * you draw them.
          */
+        /**
+         * True when the loaded dither.js understands colour scheme 10.
+         *
+         * Guards against a stale cached module: this page passes scheme 10 plus
+         * a devicePalette, and a dither.js predating that support dies on
+         * `getPalette(10).colors` being undefined. Degrading to the 4-colour
+         * path with a message beats an opaque failure mid-upload.
+         */
+        function ditherKnowsMultipass() {
+            const lib = window.OpenDisplayDither;
+            return !!(lib && lib.BWRY16 === 10 && typeof lib.devicePaletteToColorPalette === 'function');
+        }
+        let warnedStaleDither = false;
         function previewColorScheme() {
-            return driveModePaletteRGB() ? 10 : currentColorScheme();
+            if (!driveModePaletteRGB()) return currentColorScheme();
+            if (!ditherKnowsMultipass()) {
+                if (!warnedStaleDither) {
+                    warnedStaleDither = true;
+                    addLog('Loaded dither.js predates colour scheme 10, so this upload will '
+                        + 'use the 4 base colours. Hard-reload (Ctrl+Shift+R) to pick up the '
+                        + 'current module.', 'warning');
+                }
+                return currentColorScheme();
+            }
+            return 10;
         }
         /** Slider value to library option: negative means 'auto', zero means 'off'. */
         function toneValue(v) {
