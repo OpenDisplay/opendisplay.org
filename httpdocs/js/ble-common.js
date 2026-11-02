@@ -825,7 +825,40 @@ class OpenDisplayBLE {
 
       this.log(`GATT Server state: connected=${this.gattServer.connected}`, 'info');
 
-      this.service = await this.gattServer.getPrimaryService(this.serviceUUID);
+      // A STALE GATT CACHE LOOKS EXACTLY LIKE A MISSING SERVICE. Chrome caches a
+      // device's service list, and a device that has been through an OTA has
+      // exposed a DIFFERENT database in the meantime (AppLoader publishes the OTA
+      // service, not the application one). The GATT connect then succeeds and
+      // getPrimaryService rejects with NotFoundError for a service the device is
+      // in fact advertising -- verified with a fresh enumeration.
+      //
+      // Disconnecting drops Chrome's cached attribute table for the device, so a
+      // reconnect re-discovers. Bounded, because a genuinely absent service must
+      // still fail rather than loop.
+      this.service = null;
+      for (let attempt = 1; attempt <= 3 && !this.service; attempt++) {
+        try {
+          this.service = await this.gattServer.getPrimaryService(this.serviceUUID);
+        } catch (svcError) {
+          if (svcError.name !== 'NotFoundError' || attempt === 3) {
+            if (svcError.name === 'NotFoundError') {
+              this.log(
+                `Service ${bluetoothUuidShortLabel(this.serviceUUID)} not found after `
+                + `${attempt} attempts. If this device was recently updated, the browser `
+                + `is probably holding a stale GATT cache: forget it in `
+                + `chrome://bluetooth-internals (or your OS Bluetooth settings) and `
+                + `reconnect.`, 'error');
+            }
+            throw svcError;
+          }
+          this.log(
+            `Service not found (attempt ${attempt}/3) -- likely a stale GATT cache; `
+            + `reconnecting to force re-discovery...`, 'warning');
+          try { this.device.gatt.disconnect(); } catch (_) { /* already gone */ }
+          await new Promise(r => setTimeout(r, 600));
+          this.gattServer = await this.device.gatt.connect();
+        }
+      }
       this.log(`Service ${bluetoothUuidShortLabel(this.serviceUUID)} found`, 'success');
 
       this.log('Accessing characteristic (encryption will be established if needed)...', 'info');
