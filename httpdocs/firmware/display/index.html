@@ -1267,6 +1267,9 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (m.palette) parts.push(m.palette.measured ? 'measured palette' : 'nominal palette');
             if (m.tempMinC !== m.tempMaxC) parts.push(`advised ${m.tempMinC}–${m.tempMaxC} °C`);
             note.textContent = parts.join(' · ');
+            // The drawing palette follows the mode, so it must be rebuilt here.
+            if (typeof updateDrawPalette === 'function') updateDrawPalette();
+            if (typeof updateTextColorSwatches === 'function') updateTextColorSwatches();
         }
 
         function clampScheme(cs) {
@@ -2405,10 +2408,46 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function getScheme() {
             return clampScheme(document.getElementById('colorSchemeSelect')?.value || '0');
         }
+
+        /** CIELAB (D65) -> '#rrggbb'. Inverse of the encoder's sRGB->Lab. */
+        function labToHex(L, a, b) {
+            const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
+            const inv = (t) => (t > 6 / 29 ? t * t * t : 3 * (6 / 29) * (6 / 29) * (t - 4 / 29));
+            const X = 0.95047 * inv(fx), Y = 1.0 * inv(fy), Z = 1.08883 * inv(fz);
+            const lin = [
+                3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z,
+                -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z,
+                0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
+            ];
+            const enc = (v) => {
+                v = Math.min(1, Math.max(0, v));
+                const c = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+                return Math.round(Math.min(1, Math.max(0, c)) * 255);
+            };
+            return '#' + lin.map(enc).map(n => n.toString(16).padStart(2, '0')).join('');
+        }
+
+        /**
+         * Swatches for the SELECTED DRIVE MODE, or null to fall back to the
+         * scheme's fixed table.
+         *
+         * A multi-pass mode's colours are measured per unit and live in the
+         * device's config, so the drawing palette has to follow the mode rather
+         * than the colour scheme -- picking colour16 and still being offered 4
+         * swatches makes the extra colours undrawable even though the upload
+         * path supports them.
+         */
+        function driveModePaletteHex() {
+            const m = (typeof selectedDriveMode === 'function') ? selectedDriveMode() : null;
+            if (!m || !m.palette || !m.palette.lab || m.palette.lab.length < 2) return null;
+            if (m.passes <= 1) return null;   // single-pass uses the scheme table
+            return m.palette.lab.map(([L, a, b]) => labToHex(L, a, b));
+        }
+
         function fillColorSwatches(container, currentColor, onSelect) {
             if (!container) return;
             const scheme = getScheme();
-            const colors = PALETTE[scheme];
+            const colors = driveModePaletteHex() || PALETTE[scheme];
             const cur = currentColor || '#000000';
             container.innerHTML = '';
             colors.forEach((hex) => {
