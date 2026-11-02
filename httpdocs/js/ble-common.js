@@ -43,8 +43,14 @@ const DIRECT_WRITE_PASS_ACK_TIMEOUT_MS = 90000;
 // a multi-pass upload). Kept separate from the single-boundary bound above so the
 // multi-pass case does not multiply that one's generous margin by the pass count:
 // 3 x 90 s would let a genuinely stalled upload hang for four and a half minutes.
-// 30 s is ~1.5x the measured 20637 ms refresh.
-const PANEL_REFRESH_BUDGET_MS = 30000;
+//
+// SIZED FOR THE SLOWEST PANEL, NOT THE ONE IN FRONT OF YOU. The 2.9in refreshes
+// in 20637 ms, but the 4.2in GDEM042F52 has an unusable BUSY line and so runs on
+// a 35000 ms FIXED delay (panels.yaml busy.fixed_delay_ms). A budget tuned to the
+// 2.9in would abort the 4.2in whenever its refreshes bunch up before the end ack,
+// which happens when the compressed payload fits entirely in the START command
+// and there are no chunk acks to absorb them. 45 s is ~1.3x the 4.2in figure.
+const PANEL_REFRESH_BUDGET_MS = 45000;
 
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
