@@ -912,6 +912,15 @@ ble_proto:
             name: bwgbry_split
             description: Spectra 6 same nibbles as bwgbry, packed left-half plane then right-half plane
               (dual-CS panels, no device framebuffer)
+          9:
+            name: bwry16
+            description: 'BWRY driven multi-pass for 16 colours. Pixel packing is IDENTICAL to bwry
+              (2bpp, one plane) -- the extra colours come from sending one frame PER PASS, and the pass
+              count is a property of the drive mode (display_mode 0x2E), not of this value. A pixel''s
+              colour is set by its code in every pass. Exists so a host image pipeline can select the
+              16-entry palette; the device needs only the mode. Measured on a 2.9in GDEY029F51H, 16
+              entries are separable at dE00 >= 1 (13 at >= 3), but only 10 exceed chroma 5 and every
+              chromatic entry lies between red and yellow, because BWRY has no green or blue pigment.'
           100:
             name: RGB565
             description: RGB565
@@ -2053,8 +2062,10 @@ ble_proto:
       required: false
       repeatable: true
       max_instances: 8
-      description: 'Measured CIELAB of each palette slot, per display AND per mode (a 16-colour mode and
-        a BWRY mode are different colour sets). Device-side inert: stored and served, never interpreted.
+      description: 'A mode''s palette: the per-pass ENCODING of each entry and the measured CIELAB it
+        produces, per display AND per mode (a 16-colour mode and a BWRY mode are different colour sets).
+        Device-side inert: stored and served, never interpreted -- but a host cannot encode a multi-pass
+        frame without it.
         Motivated by measurement: two same-part-number 2.9in panels differ by dE00 6.40 with a 14% gamut
         gap, and a palette tuned on one measured 19% worse on the other.'
       fields:
@@ -2073,6 +2084,16 @@ ble_proto:
         bits:
           '0':
             name: measured
+      - name: codes
+        size: 16
+        type: bytes
+        description: 'Per-entry ENCODING: which per-pass codes produce each colour, one byte per entry,
+          2 bits per pass -- pass0 in bits 5-4, pass1 in bits 3-2, pass2 in bits 1-0 (bits 7-6 reserved).
+          Stored WITH the measurements rather than in a packet of its own so the two cannot disagree
+          about entry count or order: a measured colour whose codes are unknown cannot be reproduced,
+          and codes with no measurement cannot be chosen between. type bytes is load-bearing -- a
+          size-16 field is a hex blob, but were it ever shrunk below 9 the serializer would treat it as
+          a little-endian integer and reverse the entries.'
       - name: lab
         size: 96
         description: 16 x (L*,a*,b*) as 3 x int16 little-endian, units of 1/100
