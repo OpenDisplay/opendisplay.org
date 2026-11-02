@@ -828,6 +828,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                                     <label for="paletteSelect">Palette</label>
                                     <select id="paletteSelect"></select>
                                 </div>
+                                <div class="bt-field">
+                                    <label>Diagnostics</label>
+                                    <button type="button" onclick="uploadTestSwatches()">Upload test swatches</button>
+                                </div>
                                 <div class="slider-row">
                                     <label for="tuneTone">Tone</label>
                                     <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
@@ -2410,6 +2414,76 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         }
 
         /** CIELAB (D65) -> '#rrggbb'. Inverse of the encoder's sRGB->Lab. */
+
+        /**
+         * Upload a grid of the selected mode's palette entries, RAW.
+         *
+         * Deliberately bypasses dithering, palette remapping and colour
+         * correction: it writes each entry's per-pass CODES straight into the
+         * frames. That makes it the one upload whose expected result is known
+         * exactly -- every cell must come back as the measured colour for that
+         * entry. If dithering were left in the path, a wrong colour could be the
+         * dither, the palette mapping, the encoder or the panel, and the test
+         * would prove nothing.
+         *
+         * Needs a multi-pass mode with a measured palette, because a raw code
+         * grid is only meaningful against known entries.
+         */
+        async function uploadTestSwatches() {
+            const m = selectedDriveMode();
+            if (!m || m.passes <= 1 || !m.palette) {
+                addLog('Test swatches need a multi-pass mode with a measured palette '
+                    + '(select one under Drive Mode).', 'error');
+                return;
+            }
+            if (!bleLib || !bleLib.isConnected) {
+                addLog('Not connected.', 'error');
+                return;
+            }
+            const n = m.palette.codes.length;
+            const cols = Math.ceil(Math.sqrt(n));
+            const rows = Math.ceil(n / cols);
+            const w = widthInput, h = heightInput;
+            const cw = Math.floor(w / cols), ch = Math.floor(h / rows);
+
+            // Build the index map directly -- no canvas, no quantiser.
+            const idx = new Uint8Array(w * h);
+            for (let y = 0; y < h; y++) {
+                const r = Math.min(Math.floor(y / ch), rows - 1);
+                for (let x = 0; x < w; x++) {
+                    const c = Math.min(Math.floor(x / cw), cols - 1);
+                    const e = r * cols + c;
+                    idx[y * w + x] = e < n ? e : 1;   // pad with entry 1 (white)
+                }
+            }
+            const frames = [];
+            for (let p = 0; p < m.passes; p++) {
+                const codes = new Uint8Array(w * h);
+                for (let i = 0; i < w * h; i++) {
+                    let v = m.palette.codes[idx[i]][p] & 3;
+                    if (deviceDriveModes.codeMap) v = deviceDriveModes.codeMap[v] & 3;
+                    codes[i] = v;
+                }
+                const f = bleLib.packWireCodes2bpp(codes, w, h, displayRotation);
+                frames.push(f);
+            }
+            let total = 0; frames.forEach(f => total += f.length);
+            const payload = new Uint8Array(total);
+            let o = 0; frames.forEach(f => { payload.set(f, o); o += f.length; });
+            addLog(`Test swatches: ${n} entries in a ${cols}x${rows} grid, `
+                + `${m.passes} frames, ${payload.length} B raw (no dithering)`, 'info');
+            try {
+                await bleLib.sendRawMultipass(payload, m.modeIndex, {
+                    onStatusChange: (msg) => addLog(msg, 'info'),
+                    onComplete: (ok, err) => addLog(ok ? 'Test swatches uploaded.'
+                        : `Test swatch upload failed: ${err && err.message}`,
+                        ok ? 'success' : 'error')
+                });
+            } catch (e) {
+                addLog(`Test swatch upload failed: ${e.message}`, 'error');
+            }
+        }
+
         function labToHex(L, a, b) {
             const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
             const inv = (t) => (t > 6 / 29 ? t * t * t : 3 * (6 / 29) * (6 / 29) * (t - 4 / 29));

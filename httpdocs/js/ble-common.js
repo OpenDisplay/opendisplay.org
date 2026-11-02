@@ -3819,6 +3819,50 @@ class OpenDisplayBLE {
    * @returns {number[]} concatenated frames, passes * frameBytes
    */
   /**
+   * Send already-packed multi-pass frames, bypassing every encoding stage.
+   *
+   * No canvas, no quantiser, no dithering, no palette remap -- the caller has
+   * already produced the exact per-pass code bytes. This exists for diagnostics:
+   * it is the only upload whose expected panel output is known exactly, so a
+   * wrong colour can only be the encoder-independent part of the chain (the
+   * command, the transport, the device or the panel).
+   *
+   * Compression is deliberately NOT used: a flat swatch grid compresses to
+   * almost nothing, which would also hide any size/boundary bug in the
+   * uncompressed streaming path that a real image would hit.
+   *
+   * @param {Uint8Array} payload - passes * frameBytes, already packed
+   * @param {number} driveModeIndex
+   */
+  async sendRawMultipass(payload, driveModeIndex, options = {}) {
+    if (!this.isConnected) throw new Error('Not connected');
+    if (this.directWriteState && this.directWriteState.active) {
+      throw new Error('Direct write already in progress');
+    }
+    const { onProgress = null, onComplete = null, onStatusChange = null } = options;
+    const chunks = this._prepareDirectWriteChunks(Array.from(payload), DIRECT_WRITE_CHUNK_SIZE);
+    const hdr = [driveModeIndex & 0xFF, 0x00, 0x00, 0x00, 0x00];  // refresh 0, no flags
+    const startCommandHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
+    this.log(`Raw multi-pass upload: mode ${driveModeIndex}, ${payload.length} B, `
+      + `${chunks.length} chunks, uncompressed`, 'info');
+    return this._activateFullDirectWrite({
+      compressed: false,
+      chunks,
+      chunkIndex: 0,
+      onProgress,
+      onComplete,
+      onStatusChange,
+      useFastRefresh: false,
+      chunkSize: DIRECT_WRITE_CHUNK_SIZE,
+      pipelineSize: DIRECT_WRITE_PIPELINE_SIZE,
+      trackPartial: false,
+      newEtag: null,
+      startCommandHex,
+      statusMessage: `Uploading raw test pattern: ${chunks.length} chunks`
+    });
+  }
+
+  /**
    * Pull the drive modes, palettes and panel properties out of a parsed config.
    *
    * Reads packets 0x2E (display_mode), 0x30 (display_calibration: per-pass codes
@@ -4580,7 +4624,7 @@ class OpenDisplayBLE {
     const TRANSMISSION_MODE_STREAMING_DECOMPRESSION = 0x01;
     const TRANSMISSION_MODE_ZIP = 0x02;
     const STREAMING_ZLIB_WINDOW_BITS = 9;
-    const maxStartPayload = this.encryptionSession.authenticated
+    let maxStartPayload = this.encryptionSession.authenticated
       ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
       : 200;
     
@@ -4661,11 +4705,20 @@ if (supportsStreamingDecompression) {
       // cannot: the waveform is uploaded as part of the init sequence BEFORE the
       // frame, so the device must know the mode at START. 0x0072 END carries a
       // refresh byte but it arrives after the pixels are already in the panel.
+      // The opcode and its fixed header are a PREFIX that the compressed branch
+      // below appends to. An earlier version set startCommandHex to the 0x0085
+      // form here and the compressed branch then rebuilt it as '0070', so a
+      // multi-pass upload silently went out on the legacy opcode and the device
+      // answered FF 70 -- it had been told nothing about the mode or the 3x size.
       const useDriveWrite = isMultipass;
+      let startPrefixHex = '0070';
       if (useDriveWrite) {
         const flags = useCompressed ? 0x01 : 0x00;   // bit1 PIPELINED is Firmware-only
         const hdr = [driveModeIndex & 0xFF, useFastRefresh ? 1 : 0, flags, 0x00, 0x00];
-        startCommandHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
+        startPrefixHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
+        startCommandHex = startPrefixHex;
+        // 0x0085's own header eats into the START budget.
+        maxStartPayload = Math.max(0, maxStartPayload - 5);
       }
       if (useCompressed) {
         const startPayload = new Uint8Array(4 + compressedBytes.length);
@@ -4675,13 +4728,13 @@ if (supportsStreamingDecompression) {
         startPayload[3] = (uncompressedSize >> 24) & 0xFF;
         startPayload.set(compressedBytes, 4);
         if (startPayload.length <= maxStartPayload) {
-          startCommandHex = '0070' + this.bytesToHex(startPayload).replace(/\s+/g, '');
+          startCommandHex = startPrefixHex + this.bytesToHex(startPayload).replace(/\s+/g, '');
           chunkIndex = chunks.length;
         } else {
           const headerHex = this.bytesToHex(startPayload.slice(0, 4)).replace(/\s+/g, '');
           const maxCompressedInStart = maxStartPayload - 4;
           const firstChunkData = startPayload.slice(4, 4 + Math.min(maxCompressedInStart, DIRECT_WRITE_CHUNK_SIZE));
-          startCommandHex = '0070' + headerHex + this.bytesToHex(firstChunkData).replace(/\s+/g, '');
+          startCommandHex = startPrefixHex + headerHex + this.bytesToHex(firstChunkData).replace(/\s+/g, '');
           const firstChunkBytesSent = firstChunkData.length;
           if (chunks.length > 0) {
             const firstChunkSize = chunks[0].length;
