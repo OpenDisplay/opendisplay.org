@@ -13,6 +13,13 @@ const OPENDISPLAY_BLE_SERVICE_UUID = '00002446-0000-1000-8000-00805f9b34fb';
 // firmwares broadcast this in MSD; iOS WebKit often cannot see the name or service UUID
 // in the advertising packet (especially ESP32), but MSD is usually present.
 const OPENDISPLAY_MSD_COMPANY_ID = 0x2446;
+// BLE frame budget for an encrypted session. Module scope because more than one
+// upload path needs it: they were locals of sendCanvasToDisplay, so a second
+// sender referencing them was a ReferenceError, and copying the numbers would
+// have let the two drift apart silently.
+const ENCRYPTION_OVERHEAD = 31;
+const MAX_ENCRYPTED_PACKET_SIZE = 185;
+const DIRECT_WRITE_CHUNK_UNENCRYPTED = 230;
 
 // Timeout (ms) to wait for each config-write ack (0x41/0x42) from the device.
 // The firmware acks every chunk, so this bounds a dead connection per expected reply.
@@ -3840,11 +3847,18 @@ class OpenDisplayBLE {
       throw new Error('Direct write already in progress');
     }
     const { onProgress = null, onComplete = null, onStatusChange = null } = options;
-    const chunks = this._prepareDirectWriteChunks(Array.from(payload), DIRECT_WRITE_CHUNK_SIZE);
+    // These are computed per call, not module constants: sendCanvasToDisplay
+    // derives them locally and an ENCRYPTED session needs the smaller frame.
+    // Referencing its locals from here was a ReferenceError at runtime.
+    const chunkSize = this.encryptionSession.authenticated
+      ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
+      : DIRECT_WRITE_CHUNK_UNENCRYPTED;
+    const chunks = this._prepareDirectWriteChunks(Array.from(payload), chunkSize);
     const hdr = [driveModeIndex & 0xFF, 0x00, 0x00, 0x00, 0x00];  // refresh 0, no flags
     const startCommandHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
     this.log(`Raw multi-pass upload: mode ${driveModeIndex}, ${payload.length} B, `
-      + `${chunks.length} chunks, uncompressed`, 'info');
+      + `${chunks.length} x ${chunkSize} B chunks, uncompressed`
+      + (this.encryptionSession.authenticated ? ' (encrypted session)' : ''), 'info');
     return this._activateFullDirectWrite({
       compressed: false,
       chunks,
@@ -3853,8 +3867,8 @@ class OpenDisplayBLE {
       onComplete,
       onStatusChange,
       useFastRefresh: false,
-      chunkSize: DIRECT_WRITE_CHUNK_SIZE,
-      pipelineSize: DIRECT_WRITE_PIPELINE_SIZE,
+      chunkSize,
+      pipelineSize: 1,
       trackPartial: false,
       newEtag: null,
       startCommandHex,
@@ -4613,9 +4627,8 @@ class OpenDisplayBLE {
       onStatusChange = null
     } = options;
     
-    const ENCRYPTION_OVERHEAD = 31;
-    const MAX_ENCRYPTED_PACKET_SIZE = 185;
-    const DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED = 230;
+    // ENCRYPTION_OVERHEAD / MAX_ENCRYPTED_PACKET_SIZE are module-scope (top of file).
+    const DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED = DIRECT_WRITE_CHUNK_UNENCRYPTED;
     const DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED = MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD;
     const DIRECT_WRITE_CHUNK_SIZE = (this.encryptionSession.authenticated)
       ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED
