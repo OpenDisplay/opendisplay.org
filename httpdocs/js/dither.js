@@ -64,6 +64,11 @@ const BWRY_CODES_SWAPPED = [0, 1, 3, 2];
 const BWRY_PANELS_SWAPPED = new Set([0x1d, 0x1e]);
 const IDENTITY_16 = Array.from({ length: 16 }, (_, i) => i);
 
+// BWRY driven multi-pass for 16 colours. Packing is identical to scheme 3
+// (2bpp, one plane); the extra colours come from one frame PER PASS, so a
+// pixel's colour is set by its code in every pass.
+const BWRY16 = 10;
+
 /**
  * Palette-index to wire-value table for a scheme, honouring per-panel quirks.
  * @param {number} scheme Firmware color scheme (0-8)
@@ -82,6 +87,11 @@ function wireMap(scheme, panelIcType = null) {
     case 5: return GRAY4_PANELS_V2.has(panel) ? GRAY4_LUT_V2 : GRAY4_LUT;
     case 6: return IDENTITY_16;
     case 7: return [0, 1, 2, 3, 4, 5, 6];
+    // Scheme 10's "wire value" is the PALETTE INDEX, not a panel code: the
+    // multi-pass encoder looks each index up in the device's per-pass code
+    // triples (config packet 0x30) to build one frame per pass. Mapping it
+    // here would corrupt that lookup, so the table stays identity.
+    case BWRY16: return IDENTITY_16;
     default: return IDENTITY_16;
   }
 }
@@ -98,23 +108,88 @@ function canonicalScheme(scheme) {
 }
 
 /**
+ * Build a library ColorPalette from a device's measured 16-colour palette.
+ *
+ * This is the path scheme 10 takes instead of a scheme id. The colours are
+ * PER-UNIT -- two same-part-number 2.9" panels differ by dE00 6.40, and a
+ * palette tuned on one measured 19% worse on the other -- so there is no
+ * correct static table to fall back to. The device carries its own in config
+ * packet 0x30, and that is what must be dithered against.
+ *
+ * `scheme` is deliberately left unset: the core then matches against these
+ * bytes directly rather than looking the id up in its own table, which is why
+ * this works on a bundle that predates the scheme value.
+ *
+ * @param {Array<{r:number,g:number,b:number}>} colors Palette-index order
+ * @returns {{colors:Record<string,{r:number,g:number,b:number}>,accent:string}}
+ */
+function devicePaletteToColorPalette(colors) {
+  if (!Array.isArray(colors) || colors.length < 2) {
+    throw new Error(`device palette needs at least 2 colours, got ${colors ? colors.length : 0}`);
+  }
+  const named = {};
+  colors.forEach((c, i) => { named[`e${i}`] = { r: c.r, g: c.g, b: c.b }; });
+  // Accent drives the core's chroma-preservation bias. Pick the most chromatic
+  // entry rather than a fixed index: which entry is the strongest ink varies
+  // per unit, and on BWRY most entries are near-neutral.
+  let accent = 'e0';
+  let best = -1;
+  colors.forEach((c, i) => {
+    const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+    if (chroma > best) { best = chroma; accent = `e${i}`; }
+  });
+  return { colors: named, accent };
+}
+
+/**
  * Measured palette for a connected panel, or null when none is calibrated.
  * @param {number|null} panelIcType
  * @param {number} scheme
  */
 function paletteForPanel(panelIcType, scheme) {
   if (panelIcType == null) return null;
+  // Scheme 10 shares its inks with scheme 3 but has 16 entries, not 4. The
+  // built-in measured palettes are keyed to the 4-entry layout, so applying one
+  // would silently quantise 16 colours down to 4.
+  if (Number(scheme) === BWRY16) return null;
   const id = PANEL_PALETTES.get(`${Number(panelIcType)}:${canonicalScheme(scheme)}`);
   return id ? MEASURED_BY_ID.get(id) : null;
 }
 
-/** Ideal sRGB colors for a scheme, in palette-index order. */
-function idealPalette(scheme) {
+/**
+ * Ideal sRGB colors for a scheme, in palette-index order.
+ *
+ * `devicePalette` is required for scheme 10 and ignored otherwise: the library
+ * has no table for it, and there is no honest static default (see
+ * devicePaletteToColorPalette).
+ * @param {number} scheme
+ * @param {Array<{r:number,g:number,b:number}>} [devicePalette]
+ */
+function idealPalette(scheme, devicePalette = null) {
+  if (Number(scheme) === BWRY16) {
+    if (!devicePalette) {
+      throw new Error(
+        'colour scheme 10 (bwry16) has no ideal palette: its 16 colours are ' +
+        'per-unit and must be read from the device (config packet 0x30)',
+      );
+    }
+    return devicePalette.map((c) => ({ r: c.r, g: c.g, b: c.b }));
+  }
   return Object.values(getPalette(Number(scheme)).colors);
 }
 
-/** Human-readable color names for a scheme, in palette-index order. */
-function paletteNames(scheme) {
+/**
+ * Human-readable color names for a scheme, in palette-index order.
+ * @param {number} scheme
+ * @param {number} [count] Entry count, for schemes with no library table
+ */
+function paletteNames(scheme, count = 16) {
+  // e0..eN rather than invented hues: these are blended pigment states, not
+  // inks, and most are near-neutral. Naming them would imply a gamut BWRY does
+  // not have -- it has no green or blue pigment at all.
+  if (Number(scheme) === BWRY16) {
+    return Array.from({ length: count }, (_, i) => `e${i}`);
+  }
   return Object.keys(getPalette(Number(scheme)).colors);
 }
 
@@ -155,6 +230,15 @@ function pickAuto(imageData) {
 function dither(imageData, opts = {}) {
   const scheme = Number(opts.scheme ?? 0);
   const panelIcType = opts.panelIcType ?? null;
+  const devicePalette = opts.devicePalette || null;
+
+  if (scheme === BWRY16 && !devicePalette) {
+    throw new Error(
+      'colour scheme 10 (bwry16) needs opts.devicePalette: its 16 colours are ' +
+      'per-unit, so they must come from the connected device (config packet ' +
+      '0x30) rather than a built-in table',
+    );
+  }
 
   const paletteId = opts.paletteId || 'auto';
   let measured = null;
@@ -181,16 +265,27 @@ function dither(imageData, opts = {}) {
     gamut: opts.gamut ?? 'auto',
   };
 
+  // A device palette outranks everything: it is a real measurement of THIS
+  // unit, where the built-in tables are either idealised or measured on a
+  // different panel.
+  let target;
+  if (devicePalette) target = devicePaletteToColorPalette(devicePalette);
+  else if (measured) target = measured.palette;
+  else target = Number(scheme);
+
   const started = performance.now();
   const result = ditherImage(
     { width: imageData.width, height: imageData.height, data: imageData.data },
-    measured ? measured.palette : Number(scheme),
+    target,
     settings,
   );
   const ms = performance.now() - started;
 
-  const ideal = idealPalette(scheme);
-  const preview = (measured && opts.realistic) ? result.palette : ideal;
+  // With a device palette the measured colours ARE the honest preview, so
+  // there is no idealised alternative to fall back to.
+  const preview = devicePalette
+    ? result.palette
+    : ((measured && opts.realistic) ? result.palette : idealPalette(scheme));
 
   const counts = new Uint32Array(result.palette.length);
   for (let i = 0; i < result.indices.length; i++) counts[result.indices[i]]++;
@@ -203,7 +298,8 @@ function dither(imageData, opts = {}) {
     modeValue: auto ? modeLabelFor(mode) : modeValue,
     measuredId: measured ? measured.id : null,
     counts,
-    names: paletteNames(scheme),
+    names: paletteNames(scheme, result.palette.length),
+    devicePaletteUsed: Boolean(devicePalette),
   };
 }
 
@@ -245,6 +341,8 @@ window.OpenDisplayDither = {
   paletteForPanel,
   idealPalette,
   paletteNames,
+  devicePaletteToColorPalette,
+  BWRY16,
   pickAuto,
 };
 window.dispatchEvent(new Event('opendisplay-dither-ready'));
