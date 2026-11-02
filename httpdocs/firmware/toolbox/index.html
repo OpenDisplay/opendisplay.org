@@ -4152,6 +4152,53 @@ function mergeSimpleConfigToFull() {
     });
   }
 
+  // Panel DRIVE data from the display preset: display_panel (49/0x31),
+  // display_mode (46/0x2E) and display_lut (47/0x2F).
+  //
+  // Firmware that has dropped the vendored bb_epaper library has NO built-in
+  // panel table, so a device configured without these cannot drive its panel at
+  // all. They are generated into simple-config-presets.json by
+  // Firmware_Silabs/panels/gen_simple_config_drive.py -- a waveform is 535
+  // bytes, so hand-maintaining them is not an option.
+  //
+  // Unlike extraPackets, these are repeatable types that all share
+  // instance_number 0, so identity needs the per-type discriminator as well:
+  // mode_index for display_mode, lut_slot for display_lut. Keying on
+  // instance_number alone would collapse every mode onto one packet.
+  if (simpleConfigSelections.display && simpleConfigSelections.display.drivePackets) {
+    const driveKey = function (pid, fields) {
+      const inst = (fields && fields.instance_number) || '0x0';
+      let disc = '';
+      if (pid === '46') disc = ':' + String((fields && fields.mode_index) || '0');
+      else if (pid === '47') disc = ':' + String((fields && fields.lut_slot) || '0');
+      return pid + '/' + inst + disc;
+    };
+    // Drop drive packets from any previously selected display before adding
+    // this one's: a 2.9" preset leaves 2 modes behind that a 1-mode panel would
+    // never overwrite, and the stale mode would still be offered to a host.
+    instances.packets = instances.packets.filter(function (p) {
+      return !(p._simpleDrive && !simpleConfigSelections.display.drivePackets.some(
+        function (dp) { return driveKey(dp.pid, dp.fields) === driveKey(p.pid, p.fields); }));
+    });
+    simpleConfigSelections.display.drivePackets.forEach(function (dp) {
+      const key = driveKey(dp.pid, dp.fields);
+      const existing = instances.packets.find(function (p) {
+        return driveKey(p.pid, p.fields) === key && p.pid === dp.pid;
+      });
+      if (existing) {
+        existing.fields = { ...dp.fields };
+        existing._simpleDrive = true;
+      } else {
+        instances.packets.push({
+          uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          pid: dp.pid,
+          fields: { ...dp.fields },
+          _simpleDrive: true
+        });
+      }
+    });
+  }
+
   instances.packets = instances.packets.filter(function (p) {
     return !(p.pid === '38' && p._autoToolboxWifi);
   });

@@ -1918,16 +1918,21 @@ ble_proto:
         description: 0-based mode index within the display (0-3)
       - name: mode_name
         size: 12
+        type: text
         description: human-readable mode name, NUL-padded (e.g. 'full', 'colour16')
       - name: passes
         size: 1
         description: number of drive passes; 1 for a normal refresh, 3 for 16-colour
       - name: lut_slot
         size: 4
-        description: per-pass LUT slot index; 0xFF = no custom LUT for that pass
+        type: bytes
+        description: 'per-pass LUT slot index as 4 separate bytes, pass 0 first; 0xFF = no custom LUT
+          for that pass. type bytes is load-bearing: a size-4 field without it is serialized as one
+          little-endian integer, which would reverse the passes.'
       - name: vsn1
         size: 4
-        description: per-pass patch of wave-header byte 3 (vsn1); 0 = no patch
+        type: bytes
+        description: per-pass patch of waveform byte 3 (vsn1) as 4 separate bytes, pass 0 first; 0 = no patch
       - name: mode_flags
         size: 1
         description: 'Reserved; must be 0. Was analog_from_wave (take PWRR/PLL/VCOM from the waveform
@@ -2027,7 +2032,8 @@ ble_proto:
           both a short and a long wait uses the 0x00 0x05 delay step for the short one.'
       - name: code_map
         size: 4
-        description: 'logical colour index -> panel 2-bit code. BWRY panels want [0,1,3,2] because the
+        type: bytes
+        description: 'logical colour index -> panel 2-bit code, 4 separate bytes. BWRY panels want [0,1,3,2] because the
           hardware order is black,white,RED,YELLOW while the colour enum has yellow=2,red=3 -- the
           disagreement that produced a yellow/red swap in the lab firmware.'
       - name: mode_count
