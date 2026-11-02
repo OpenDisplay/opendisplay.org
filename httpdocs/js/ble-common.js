@@ -3824,7 +3824,7 @@ class OpenDisplayBLE {
    *
    * @param {HTMLCanvasElement} canvas
    * @param {{codes: number[][], lab: number[][]}} palette - from 0x30
-   * @param {number[]} codeMap - logical->panel code map from 0x31
+   * @param {number[]} codeMap - IGNORED for a measured palette; see above
    * @param {number} rotation
    * @returns {number[]} concatenated frames, passes * frameBytes
    */
@@ -3996,18 +3996,16 @@ class OpenDisplayBLE {
       }
     }
 
-    // Pack one 2bpp frame per pass, applying the panel's code map. The map is
-    // applied HERE and not at palette-authoring time because palette codes are
-    // logical colours while the map is a panel property -- BWRY wants [0,1,3,2]
-    // because hardware order is black,white,RED,YELLOW while the enum has
-    // yellow=2, the mismatch that caused a yellow/red swap in the lab firmware.
+    // Pack one 2bpp frame per pass. NO code map: a palette entry's per-pass
+    // values are ALREADY panel 2-bit codes. code_map (0x31) turns a LOGICAL
+    // BWRY colour into a panel code for the 4-colour path; applying it to codes
+    // that are already panel codes maps 2->3 and 3->2, swapping yellow and red
+    // in every pass.
     const out = [];
     for (let p = 0; p < passes; p++) {
       const codes = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) {
-        let c = palette.codes[idx[i]][p] & 3;
-        if (codeMap) c = codeMap[c] & 3;
-        codes[i] = c;
+        codes[i] = palette.codes[idx[i]][p] & 3;
       }
       const frame = this.packWireCodes2bpp(codes, w, h, rotation);
       for (let i = 0; i < frame.length; i++) out.push(frame[i]);

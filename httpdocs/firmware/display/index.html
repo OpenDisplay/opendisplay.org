@@ -2471,8 +2471,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             for (let p = 0; p < passes; p++) {
                 const codes = new Uint8Array(w * h);
                 for (let i = 0; i < w * h; i++) {
+                    // Multi-pass palette codes are ALREADY panel codes -- no
+                    // code map. Single-pass swatches are logical inks, so those
+                    // DO go through it.
                     let v = codesFor(idx[i], p) & 3;
-                    if (multi && deviceDriveModes.codeMap) v = deviceDriveModes.codeMap[v] & 3;
+                    if (!multi && deviceDriveModes.codeMap) v = deviceDriveModes.codeMap[v] & 3;
                     codes[i] = v;
                 }
                 parts.push(bleLib.packWireCodes2bpp(codes, w, h, displayRotation));
