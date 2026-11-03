@@ -1902,7 +1902,22 @@ function collectPacketBytes(){ if(!schema) { tbFlash('The configuration schema i
   const pktBytes = [];
   const sortedPackets = instances.packets.slice().sort(comparePacketInstancesById);
   let seq=0;
-  for(const inst of sortedPackets){ const def = schema.packet_types[inst.pid]; const packet=[];
+  for(const inst of sortedPackets){
+    // LENGTH-PREFIXED packets (ids 0x80+, structs 2.2) are carried as opaque
+    // body blobs (inst.raw, hex): [seq][id][length:2 LE][body]. The schema is
+    // not consulted -- their bodies are variable and generated elsewhere
+    // (panels.yaml -> gen_simple_config_drive.py), never hand-edited.
+    if (inst.raw != null) {
+      const body = parseValueToBytes(inst.raw);
+      pktBytes.push(seq & 0xFF);
+      pktBytes.push(parseInt(inst.pid) & 0xFF);
+      pktBytes.push(body.length & 0xFF);
+      pktBytes.push((body.length >> 8) & 0xFF);
+      for (const bt of body) pktBytes.push(bt);
+      seq++;
+      continue;
+    }
+    const def = schema.packet_types[inst.pid]; const packet=[];
     packet.push(seq & 0xFF);
     const pidNum = parseInt(inst.pid);
     packet.push(pidNum & 0xFF);
@@ -2204,7 +2219,23 @@ function parseRawBytes(bytes){
   const result = {length:len,version:version,crcGiven:hexPad(crcGiven,4),crcCheck:hexPad(crcCheck,4),packets:[]};
   let offset = 3;
   let pktIndex = 0;
-  while(offset < view.length-2){ if(offset+2>view.length-2) break; const num = view[offset]; const id = view[offset+1]; offset +=2; const pdef = schema.packet_types['0x'+Number(id).toString(16).padStart(2,'0')] || schema.packet_types[id] || schema.packet_types[id.toString()]; const pkt={number:num,id:hexPad(id),fields:[]};
+  while(offset < view.length-2){ if(offset+2>view.length-2) break; const num = view[offset]; const id = view[offset+1]; offset +=2;
+      // LENGTH-PREFIXED range (0x80+): [length:2 LE][body], skippable without
+      // a schema entry. Kept as an opaque raw body so a read-modify-write
+      // cannot eat the drive packets (0xAE-0xB1) or any future 0x80+ type.
+      if (id >= 0x80) {
+        if (offset + 2 > view.length-2) break;
+        const exLen = view[offset] | (view[offset+1] << 8);
+        offset += 2;
+        if (offset + exLen > view.length-2) break;
+        result.packets.push({number:num, id:hexPad(id), lengthPrefixed:true,
+                             rawBody: bytesToHex(view.slice(offset, offset+exLen)).replace(/ /g,''),
+                             fields:[]});
+        offset += exLen;
+        pktIndex++;
+        continue;
+      }
+      const pdef = schema.packet_types['0x'+Number(id).toString(16).padStart(2,'0')] || schema.packet_types[id] || schema.packet_types[id.toString()]; const pkt={number:num,id:hexPad(id),fields:[]};
       if(!pdef){
          pkt.fields.push({name:'raw',value: bytesToHex(view.slice(offset, view.length-2))}); offset = view.length-2; result.packets.push(pkt); break;
       }
@@ -2244,6 +2275,15 @@ function parseRawBytes(bytes){
   console.log('Parsed packets:', result.packets);
   for(const p of result.packets){ 
     const idNum = parseInt(p.id,16); 
+    if (p.lengthPrefixed) {
+      instances.packets.push({
+        uid: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+        pid: String(idNum),
+        raw: p.rawBody,
+        fields: {}
+      });
+      continue;
+    }
     const pidKey = '0x' + idNum.toString(16).padStart(2,'0').toUpperCase(); 
     console.log(`Processing packet ${p.id} -> ${pidKey}`);
     console.log('Available schema keys:', Object.keys(schema.packet_types));
@@ -4169,33 +4209,40 @@ function mergeSimpleConfigToFull() {
   // mode_index for display_mode, lut_slot for display_lut. Keying on
   // instance_number alone would collapse every mode onto one packet.
   if (simpleConfigSelections.display && simpleConfigSelections.display.drivePackets) {
-    const driveKey = function (pid, fields) {
-      const inst = (fields && fields.instance_number) || '0x0';
+    // Rev 2 drive packets are length-prefixed blobs {pid, raw}. The per-type
+    // discriminator lives at body[1] (mode_index for 0xAE, lut_slot for 0xAF),
+    // instance_number at body[0].
+    const driveKey = function (pid, raw) {
+      const b0 = raw ? parseInt(raw.slice(0, 2), 16) : 0;
+      const b1 = raw && raw.length >= 4 ? parseInt(raw.slice(2, 4), 16) : 0;
       let disc = '';
-      if (pid === '46') disc = ':' + String((fields && fields.mode_index) || '0');
-      else if (pid === '47') disc = ':' + String((fields && fields.lut_slot) || '0');
-      return pid + '/' + inst + disc;
+      if (pid === '174' || pid === '175') disc = ':' + String(b1);   // 0xAE / 0xAF
+      return pid + '/' + b0 + disc;
     };
     // Drop drive packets from any previously selected display before adding
     // this one's: a 2.9" preset leaves 2 modes behind that a 1-mode panel would
     // never overwrite, and the stale mode would still be offered to a host.
+    // ALSO drop burned Rev 1 drive packets (pids 46-49 = 0x2E-0x31) a stale
+    // config may carry: the firmware ignores them, so they only waste space.
     instances.packets = instances.packets.filter(function (p) {
+      if (['46', '47', '48', '49'].includes(String(p.pid))) return false;
       return !(p._simpleDrive && !simpleConfigSelections.display.drivePackets.some(
-        function (dp) { return driveKey(dp.pid, dp.fields) === driveKey(p.pid, p.fields); }));
+        function (dp) { return driveKey(dp.pid, dp.raw) === driveKey(p.pid, p.raw); }));
     });
     simpleConfigSelections.display.drivePackets.forEach(function (dp) {
-      const key = driveKey(dp.pid, dp.fields);
+      const key = driveKey(dp.pid, dp.raw);
       const existing = instances.packets.find(function (p) {
-        return driveKey(p.pid, p.fields) === key && p.pid === dp.pid;
+        return driveKey(p.pid, p.raw) === key && p.pid === dp.pid;
       });
       if (existing) {
-        existing.fields = { ...dp.fields };
+        existing.raw = dp.raw;
         existing._simpleDrive = true;
       } else {
         instances.packets.push({
           uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
           pid: dp.pid,
-          fields: { ...dp.fields },
+          raw: dp.raw,
+          fields: {},
           _simpleDrive: true
         });
       }

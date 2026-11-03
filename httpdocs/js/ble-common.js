@@ -3444,10 +3444,36 @@ class OpenDisplayBLE {
       
       const packetNumber = view[offset];
       const packetId = view[offset + 1];
-      
+
+      // LENGTH-PREFIXED range (structs 2.2): ids 0x80+ carry [length:2 LE]
+      // after the header, so ANY of them -- known (0xAE-0xB1 drive data) or
+      // not -- parses without a schema entry and an unknown one no longer
+      // abandons the tail.
+      if (packetId >= 0x80) {
+        if (offset + 4 > dataEnd) {
+          this.log(`Packet 0x${packetId.toString(16)} at ${offset}: truncated length header`, 'warning');
+          break;
+        }
+        const exLen = view[offset + 2] | (view[offset + 3] << 8);
+        if (offset + 4 + exLen > dataEnd) {
+          this.log(`Packet 0x${packetId.toString(16)}: body ${exLen} B runs past the CRC`, 'warning');
+          break;
+        }
+        result.packets.push({
+          number: packetNumber,
+          id: packetId,
+          idHex: '0x' + packetId.toString(16).padStart(2, '0').toUpperCase(),
+          data: Array.from(view.slice(offset + 4, offset + 4 + exLen)),
+          dataLength: exLen,
+          lengthPrefixed: true
+        });
+        offset += 4 + exLen;
+        continue;
+      }
+
       // Get packet payload size from YAML schema (does not include header)
       const payloadSize = this.getPacketSize(packetId);
-      
+
       if (payloadSize === null) {
         // Unknown packet type - skip it and stop parsing
         this.log(`Unknown packet type 0x${packetId.toString(16).padStart(2, '0')}, skipping`, 'warning');
@@ -3936,34 +3962,45 @@ class OpenDisplayBLE {
 
     for (const pkt of parsedConfig.packets) {
       const d = pkt.data;
-      if (pkt.id === 0x31 && d.length >= 11) {
+      if (pkt.id === 0xB1 && d.length >= 11) {
         out.codeMap = d.slice(7, 11);
-      } else if (pkt.id === 0x30 && d.length >= 116) {
-        const n = Math.min(d[2], 16);
+      } else if (pkt.id === 0xB0 && d.length >= 4) {
+        // 4-byte head [inst, mode_index, cal_flags, entry_count] + 8 B/entry:
+        // codes:u16 LE (pass p in bits [2p+1:2p], LSB-first -- structs 2.2)
+        // + CIELAB x100 as 3 x int16 LE.
+        const n = Math.min(d[3], Math.floor((d.length - 4) / 8));
         const codes = [], lab = [];
+        const rd = (k) => { const u = d[k] | (d[k + 1] << 8); return (u > 32767 ? u - 65536 : u) / 100; };
         for (let i = 0; i < n; i++) {
-          const v = d[4 + i];
-          codes.push([(v >> 4) & 3, (v >> 2) & 3, v & 3]);
-          const o = 20 + i * 6;
-          const rd = (k) => { const u = d[k] | (d[k + 1] << 8); return (u > 32767 ? u - 65536 : u) / 100; };
-          lab.push([rd(o), rd(o + 2), rd(o + 4)]);
+          const o = 4 + i * 8;
+          const cw = d[o] | (d[o + 1] << 8);
+          const triple = [];
+          for (let p = 0; p < 8; p++) triple.push((cw >> (2 * p)) & 3);
+          codes.push(triple);
+          lab.push([rd(o + 2), rd(o + 4), rd(o + 6)]);
         }
-        calByMode.set(d[1], { codes, lab, measured: (d[3] & 1) === 1 });
+        calByMode.set(d[1], { codes, lab, measured: (d[2] & 1) === 1 });
       }
     }
     for (const pkt of parsedConfig.packets) {
-      if (pkt.id !== 0x2E) continue;
+      if (pkt.id !== 0xAE) continue;
       const d = pkt.data;
-      if (d.length < 29) continue;
+      if (d.length < 37) continue;
       let name = '';
       for (let i = 2; i < 14 && d[i]; i++) name += String.fromCharCode(d[i]);
       const modeIndex = d[1];
-      const passes = d[14];
+      const passes = d[15];
       const cal = calByMode.get(modeIndex) || null;
+      if (cal) {
+        // The stored code words cover 8 passes; the encoder wants exactly
+        // this mode's pass count per triple.
+        cal.codes = cal.codes.map((t) => t.slice(0, passes));
+      }
       out.modes.push({
         modeIndex, name: name || `mode ${modeIndex}`, passes,
-        tempMinC: d[24] > 127 ? d[24] - 256 : d[24],
-        tempMaxC: d[25] > 127 ? d[25] - 256 : d[25],
+        colorScheme: d[14],
+        tempMinC: d[16] > 127 ? d[16] - 256 : d[16],
+        tempMaxC: d[17] > 127 ? d[17] - 256 : d[17],
         palette: cal,
         // Colour count is a property of the PALETTE, not of the pass count --
         // 3 passes give 64 possible code triples, of which a measured palette
@@ -4771,6 +4808,9 @@ if (supportsStreamingDecompression) {
         const hdr = [driveModeIndex & 0xFF, useFastRefresh ? 1 : 0, flags, 0x00, 0x00];
         startPrefixHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
         startCommandHex = startPrefixHex;
+        // Remembered so the ACK handler can flag a temp_policy substitution
+        // (the device may answer with a DIFFERENT, temperature-legal mode).
+        this.directWriteState.requestedDriveMode = driveModeIndex & 0xFF;
         // 0x0085's own header eats into the START budget.
         maxStartPayload = Math.max(0, maxStartPayload - 5);
       }
@@ -5160,7 +5200,23 @@ if (supportsStreamingDecompression) {
     // with "Direct write ack timeout (start)".
     if (responseType === 0x85) {
       if (bytes.length >= 4) {
-        this.log(`Drive-write START accepted: mode ${bytes[2]}, ${bytes[3]} pass(es)`, 'success');
+        // Protocol 2.3 ACK is [mode][passes][temp_c]: `mode` is the mode the
+        // device ACTUALLY selected -- its temp_policy may have substituted a
+        // temperature-legal one -- and temp_c is its estimate (int8, 0x7F =
+        // unknown). A substitution matters to the user (different colours
+        // may render), so say it loudly rather than burying it.
+        const mode = bytes[2], passes = bytes[3];
+        let tempTxt = '';
+        if (bytes.length >= 5 && bytes[4] !== 0x7F) {
+          tempTxt = ` at ${bytes[4] > 127 ? bytes[4] - 256 : bytes[4]}°C`;
+        }
+        this.log(`Drive-write START accepted: mode ${mode}, ${passes} pass(es)${tempTxt}`, 'success');
+        if (this.directWriteState.requestedDriveMode !== undefined &&
+            this.directWriteState.requestedDriveMode !== null &&
+            mode !== this.directWriteState.requestedDriveMode) {
+          this.log(`Device substituted drive mode ${mode} for requested ` +
+                   `${this.directWriteState.requestedDriveMode} (temperature policy)`, 'warning');
+        }
       }
       responseType = 0x70;
     }
