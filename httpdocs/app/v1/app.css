@@ -1,0 +1,394 @@
+/* OD App (M0 skeleton) — layered over common.css. */
+.odapp {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+
+.odapp__header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.odapp__brand {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.odapp__title {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.odapp__beta {
+  font-size: 0.7rem;
+  vertical-align: super;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.odapp__nav {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.odapp__navbtn {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.odapp__navbtn--active {
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.odapp__navbtn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.odapp__gate {
+  border: 1px solid #d09000;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(208, 144, 0, 0.08);
+}
+
+.odapp__note {
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.odapp__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.odapp__btn {
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.odapp__btn--primary {
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.odapp__btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.odapp__status {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.odapp__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.odapp__empty {
+  opacity: 0.75;
+  padding: 2rem 0;
+  text-align: center;
+}
+
+.odapp__footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.9rem;
+}
+
+/* --- M1: device cards, chips, dialogs --- */
+.odapp-card {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.odapp-card__name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.odapp-card__meta {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.odapp-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.odapp-chip {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.odapp-chip--connected { border-color: #2c8a2c; color: #2c8a2c; }
+.odapp-chip--granted { border-color: #4a7ab8; color: #4a7ab8; }
+/* Deliberately NOT a warning colour: "choose on connect" and "not linked yet"
+   are normal states, not faults. Amber here read as "something is wrong". */
+.odapp-chip--neutral { border-color: rgba(128, 128, 128, 0.55); opacity: 0.85; }
+.odapp-chip--missing { border-color: #b8862c; color: #b8862c; }
+
+.odapp__filebtn { display: inline-block; }
+
+.odapp__status[data-kind="error"] { color: #c33; opacity: 1; }
+
+.odapp-dialog {
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  max-width: 420px;
+}
+
+.odapp-dialog h2 { margin-top: 0; font-size: 1.15rem; }
+.odapp-dialog__input { width: 100%; font-family: monospace; padding: 0.4rem 0.5rem; }
+.odapp-dialog__error { color: #c33; min-height: 1.2em; margin: 0.4rem 0; }
+.odapp-dialog__check { display: block; margin: 0.5rem 0 1rem; }
+.odapp-dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.odapp-dialog__list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
+
+/* --- M2: composer -------------------------------------------------------
+   Laid out after od-app's ComposerView: the canvas is a fixed, aspect-locked
+   box on a neutral field, with an action row, a horizontally-scrolling chip
+   bar, and only the ACTIVE tool's controls below it. */
+.composer__bar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.composer__spacer { flex: 1; }
+
+.composer__stage {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* A neutral field so a white panel reads as the panel rather than as page
+     background, and so the area an overhanging element bleeds into is visibly
+     "off the canvas" (od-app gets this for free from the system background). */
+  background: rgba(128, 128, 128, 0.12);
+  min-height: 12rem;
+}
+
+.composer__canvas {
+  image-rendering: pixelated;
+  touch-action: none; /* pointer events own the gestures */
+  background: #fff;
+  cursor: crosshair;
+  /* The panel's edge. od-app draws a 1px systemGray4 border for exactly this:
+     the boundary has to be legible now that elements can cross it. */
+  box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.55), 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.composer__canvas[data-tool="select"] { cursor: default; }
+
+.composer__panelinfo {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+  text-align: center;
+}
+
+.composer__warning {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  text-align: center;
+  color: #b8862c;
+}
+
+.composer__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+
+/* Tool chips: capsules with an icon and a label, exactly one active. */
+.composer__chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 0.5rem;
+  scrollbar-width: thin;
+}
+
+.composer__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  background: rgba(128, 128, 128, 0.08);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.composer__chip:hover { border-color: rgba(128, 128, 128, 0.7); }
+
+.composer__chip--active {
+  background: #2b6cb0;
+  border-color: #2b6cb0;
+  color: #fff;
+  font-weight: 600;
+}
+
+.composer__chipicon { width: 1em; height: 1em; flex: 0 0 auto; }
+
+.composer__panels {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.composer__panel { display: flex; flex-direction: column; gap: 0.6rem; }
+/* display:flex outranks the UA's [hidden]{display:none}, so every panel would
+   otherwise render at once — the whole point of the chips is that only one
+   does. Same for the photo controls inside the Photo panel. */
+.composer__panel[hidden] { display: none; }
+
+.composer__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.composer__label { min-width: 6.5rem; opacity: 0.8; }
+.composer__field { flex: 1 1 12rem; padding: 0.35rem 0.5rem; font: inherit; }
+.composer__row input[type="range"] { flex: 1 1 10rem; }
+.composer__check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.composer__row[hidden], .composer__check[hidden], .composer__swatches[hidden] { display: none; }
+
+.composer__subhead {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.composer__hint { margin: 0; font-size: 0.85rem; opacity: 0.75; }
+
+.odapp__btn--link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Ink swatches, in place of a colour <select> (od-app's colorSwatchPicker). */
+.composer__swatches { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.composer__swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.55);
+  padding: 0;
+  cursor: pointer;
+  background-clip: padding-box;
+}
+
+.composer__swatch--active {
+  outline: 2px solid #2b6cb0;
+  outline-offset: 2px;
+}
+
+.composer__photo { display: flex; flex-direction: column; gap: 0.6rem; }
+.composer__photo[hidden] { display: none; }
+
+.composer__progress { width: 100%; height: 0.5rem; margin: 0.25rem 0 0.5rem; }
+.composer__bar label { display: flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; }
+
+/*
+ * The wrapper is sized by JS to the panel's aspect ratio in the space
+ * available — od-app's .aspectRatio(ar, .fit) box — and takes the ROTATED
+ * footprint when the canvas view is turned a quarter. It is never itself
+ * transformed, so it stays a reliable frame of reference for pointer
+ * coordinates.
+ *
+ * Both canvases are laid out by ONE rule: they must keep the UNROTATED pixel
+ * size and share an identical position and transform, or they stop being
+ * registered with each other and the selection chrome drifts off the image it
+ * is describing. Upscaling is deliberate and `pixelated` keeps it honest: an
+ * e-paper panel really is that coarse.
+ */
+.composer__canvaswrap { position: relative; display: block; max-width: 100%; }
+
+.composer__canvaswrap > canvas {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--od-canvas-w, 100%);
+  height: var(--od-canvas-h, 100%);
+  transform: translate(-50%, -50%) rotate(var(--od-view-rot, 0deg));
+}
+
+.composer__canvaswrap[data-view-rot="1"] { --od-view-rot: 90deg; }
+.composer__canvaswrap[data-view-rot="2"] { --od-view-rot: 180deg; }
+.composer__canvaswrap[data-view-rot="3"] { --od-view-rot: 270deg; }
+
+.composer__overlay {
+  pointer-events: none; /* input belongs to the render canvas underneath */
+}
