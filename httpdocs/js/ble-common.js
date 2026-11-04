@@ -4498,7 +4498,11 @@ class OpenDisplayBLE {
       // 0 for a single-pass upload, which disables the boundary logic entirely.
       frameBytes: prepared.frameBytes || 0,
       passes: prepared.passes || 1,
-      passesDone: 0
+      passesDone: 0,
+      // Which mode 0x0085 was told to use, so the ACK handler can warn when
+      // the device substitutes a different, temperature-legal one. Null on a
+      // legacy 0x0070 upload, where no mode was ever requested.
+      requestedDriveMode: prepared.requestedDriveMode ?? null
     };
     this.directWriteState = state;
     if (prepared.onStatusChange) {
@@ -4803,6 +4807,7 @@ if (supportsStreamingDecompression) {
       // answered FF 70 -- it had been told nothing about the mode or the 3x size.
       const useDriveWrite = isMultipass;
       let startPrefixHex = '0070';
+      let requestedDriveMode = null;
       if (useDriveWrite) {
         const flags = useCompressed ? 0x01 : 0x00;   // bit1 PIPELINED is Firmware-only
         const hdr = [driveModeIndex & 0xFF, useFastRefresh ? 1 : 0, flags, 0x00, 0x00];
@@ -4810,7 +4815,11 @@ if (supportsStreamingDecompression) {
         startCommandHex = startPrefixHex;
         // Remembered so the ACK handler can flag a temp_policy substitution
         // (the device may answer with a DIFFERENT, temperature-legal mode).
-        this.directWriteState.requestedDriveMode = driveModeIndex & 0xFF;
+        // It rides on `prepared`, NOT on this.directWriteState: that object
+        // does not exist yet here -- _activateFullDirectWrite builds it from
+        // `prepared` further down, so assigning to it here threw
+        // "Cannot set properties of null".
+        requestedDriveMode = driveModeIndex & 0xFF;
         // 0x0085's own header eats into the START budget.
         maxStartPayload = Math.max(0, maxStartPayload - 5);
       }
@@ -4867,6 +4876,9 @@ if (supportsStreamingDecompression) {
           : 0,
         // Pass count drives the end-ack budget: each pass owes a panel refresh.
         passes: isMultipass ? (multipassPalette.codes[0].length || 1) : 1,
+        // null for a legacy 0x0070 upload; the ACK handler skips the
+        // substitution check unless the device was actually told a mode.
+        requestedDriveMode,
         supportsCompression,
         supportsStreamingDecompression,
         STREAMING_ZLIB_WINDOW_BITS,

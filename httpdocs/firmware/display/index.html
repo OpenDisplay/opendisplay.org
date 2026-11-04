@@ -3395,7 +3395,19 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const legend = document.getElementById('inkLegend');
             if (!bar || !legend) return;
             const total = result.indices.length || 1;
-            const swatches = lib.idealPalette(scheme);
+            // Scheme 10 (bwry16) has no static palette -- its 16 colours are
+            // per-unit and must come from the device, so idealPalette() THROWS
+            // when it is not passed one. This ink readout is decorative, and an
+            // unguarded call here aborted the whole render (and with it the
+            // preview) for every bwry16 image.
+            let swatches;
+            try {
+                swatches = lib.idealPalette(scheme, driveModePaletteRGB());
+            } catch (err) {
+                bar.innerHTML = '';
+                legend.innerHTML = '';
+                return;
+            }
             bar.innerHTML = '';
             legend.innerHTML = '';
             result.counts.forEach((count, i) => {
