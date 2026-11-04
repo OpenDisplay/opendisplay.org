@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.23.0...1.24.0) (2026-11-04)
+
+
+### Features
+
+* **toolbox:** add 4.2" BWR GDEY042Z98 display preset ([3b8430a](https://github.com/OpenDisplay/opendisplay.org/commit/3b8430a5a8271ce38173ccf8a0621b3e51db7b03))
+
 ## [1.23.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.22.1...1.23.0) (2026-11-04)
 
 
