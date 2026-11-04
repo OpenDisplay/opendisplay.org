@@ -705,6 +705,9 @@ ble_proto:
           76:
             name: ep27_176x264_4gray
             description: Badger2350 4-gray
+          77:
+            name: ep42r3_400x300
+            description: DEPG0420 / GDEY042Z98 4.2" B/W/R (SSD1683)
           1000:
             name: uc8176_420_bw
             description: UC8176 4.2" B/W
