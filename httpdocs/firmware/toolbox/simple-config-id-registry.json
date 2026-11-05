@@ -82,8 +82,9 @@
     "m5-papers3-960x540": 44,
     "m5-papers3-960x540-4gray": 45,
     "ep37yr-240x416": 46,
-    "m5-paper-960x540": 47,
-    "m5-paper-960x540-4gray": 48
+    "ep42r-400x300": 47,
+    "m5-paper-960x540": 48,
+    "m5-paper-960x540-4gray": 49
   },
   "powerOptions": {
     "usb": 1,

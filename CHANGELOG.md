@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.22.1...1.23.0) (2026-11-04)
+
+
+### Features
+
+* Update product descriptions and links for Seeed OpenDisplay kits ([7dbc11d](https://github.com/OpenDisplay/opendisplay.org/commit/7dbc11deece0d13e26487b980c46bd3f48de2adf))
+
 ## [1.22.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.22.0...1.22.1) (2026-10-13)
 
 
