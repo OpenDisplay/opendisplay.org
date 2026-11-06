@@ -4210,13 +4210,14 @@ function mergeSimpleConfigToFull() {
   // instance_number alone would collapse every mode onto one packet.
   if (simpleConfigSelections.display && simpleConfigSelections.display.drivePackets) {
     // Rev 2 drive packets are length-prefixed blobs {pid, raw}. The per-type
-    // discriminator lives at body[1] (mode_index for 0xAE, lut_slot for 0xAF),
-    // instance_number at body[0].
+    // discriminator lives at body[1] (mode_index for 0xAE and 0xB0, lut_slot
+    // for 0xAF), instance_number at body[0]. 0xB0 is the multi-pass mode's
+    // palette: without it the web tool will not upload to that mode.
     const driveKey = function (pid, raw) {
       const b0 = raw ? parseInt(raw.slice(0, 2), 16) : 0;
       const b1 = raw && raw.length >= 4 ? parseInt(raw.slice(2, 4), 16) : 0;
       let disc = '';
-      if (pid === '174' || pid === '175') disc = ':' + String(b1);   // 0xAE / 0xAF
+      if (pid === '174' || pid === '175' || pid === '176') disc = ':' + String(b1);   // 0xAE / 0xAF / 0xB0
       return pid + '/' + b0 + disc;
     };
     // Drop drive packets from any previously selected display before adding
