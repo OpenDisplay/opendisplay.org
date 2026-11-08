@@ -237,7 +237,7 @@
          "defaultPower": "battery-3000",
          "installConfig": {
             "type": "esp32",
-            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8-extuart_full.json",
+            "manifest": "https://opendisplay.org/firmware/toolbox/bin/esp32-s3-N16R8_full.json",
             "firmwareLetter": "O",
             "githubRepo": "https://github.com/OpenDisplay/Firmware"
          },
