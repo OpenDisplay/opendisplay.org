@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.24.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.24.0...1.24.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **toolbox:** keep EE03 SPI attached and add battery sense ([15a544e](https://github.com/OpenDisplay/opendisplay.org/commit/15a544eb74b8428e98f25413c59c6c9d2d79d941))
+* **toolbox:** keep EE03 SPI attached and add battery sense ([00973ef](https://github.com/OpenDisplay/opendisplay.org/commit/00973ef79b6281cb2ae9139b9533d9ed93385d1a))
+
 ## [1.24.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.23.0...1.24.0) (2026-11-08)
 
 
