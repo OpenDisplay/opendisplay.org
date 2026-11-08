@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.24.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.23.0...1.24.0) (2026-11-08)
+
+
+### Features
+
+* **toolbox:** add 4.2" BWR GDEY042Z98 display preset ([3b8430a](https://github.com/OpenDisplay/opendisplay.org/commit/3b8430a5a8271ce38173ccf8a0621b3e51db7b03))
+
+
+### Bug Fixes
+
+* **toolbox:** install non-extuart build on EE03 ([0cc741d](https://github.com/OpenDisplay/opendisplay.org/commit/0cc741d2786c6710bec2fda15dabfe0f1e099b79))
+* **toolbox:** install non-extuart build on EE03 ([61d3024](https://github.com/OpenDisplay/opendisplay.org/commit/61d3024b94e2c24eb3d2723cd690af27c33c962f))
+
 ## [1.23.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.22.1...1.23.0) (2026-11-04)
 
 
