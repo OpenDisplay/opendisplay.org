@@ -214,7 +214,7 @@
             "ic_type": "2",
             "communication_modes": "0x1",
             "device_flags": "0x0",
-            "pwr_pin": "0x2b",
+            "pwr_pin": "0xFF",
             "reserved": "000000000000000000000000000000",
             "pwr_pin_2": "0x2b",
             "pwr_pin_3": "0xfe"
@@ -232,6 +232,12 @@
             "cs": "0x2c",
             "data": "0x9",
             "clk": "0x7"
+         },
+         "powerDefaults": {
+            "battery_sense_pin": "0x1",
+            "battery_sense_enable_pin": "0x6",
+            "voltage_scaling_factor": "0xb1",
+            "deep_sleep_current_ua": "0"
          },
          "defaultDisplay": "seeed-ed103-1872x1404",
          "defaultPower": "battery-3000",
