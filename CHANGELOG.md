@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.0](https://github.com/OpenDisplay/opendisplay.org/compare/1.24.1...1.25.0) (2026-11-08)
+
+
+### Features
+
+* **toolbox:** add original M5Stack M5Paper preset ([fbf8328](https://github.com/OpenDisplay/opendisplay.org/commit/fbf83282442c49ea0c3d963fa08ad4feab1e1498))
+* **toolbox:** M5Paper RTC power-off preset (sensor type 8, PCF8563/BM8563) ([a1216df](https://github.com/OpenDisplay/opendisplay.org/commit/a1216dfb6c8f9d6eb4ed6a67d45daa7a0e6a99a3))
+
 ## [1.24.1](https://github.com/OpenDisplay/opendisplay.org/compare/1.24.0...1.24.1) (2026-11-08)
 
 
