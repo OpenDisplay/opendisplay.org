@@ -1,0 +1,28 @@
+{
+  "name": "OpenDisplay Firmware 3",
+  "version": "3.0.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "opendisplay-esp32-n4-bootloader.bin",
+          "offset": 4096
+        },
+        {
+          "path": "opendisplay-esp32-n4-partition-table.bin",
+          "offset": 32768
+        },
+        {
+          "path": "opendisplay-esp32-n4-ota-data.bin",
+          "offset": 57344
+        },
+        {
+          "path": "opendisplay-esp32-n4-app.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

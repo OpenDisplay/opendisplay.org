@@ -5052,25 +5052,34 @@ async function tbFirmwareOptions(board) {
   if (v3 && tbV3Installable(cfg, v3.entry)) list.unshift({ tag: v3.version, prerelease: false, bundled: true, generation: 'v3', v3: v3.entry });
   return { cfg, repo, bundled, latest, versions: list };
 }
-// Can this page install the 3.x image for this board over USB?
+// Can this page install the 3.x image for this board over USB? Driven by the release manifest's
+// flows (v3/index.json, from Firmware_Unified docs/RELEASE_ARTEFACTS.md). A flow that is not
+// there is not offered, and nothing falls back to another flow.
+//   ESP32:    usb-install through its esp-web-tools manifest (erases the config).
+//   nRF54:    usb-install with one merged .hex (web DAP, as for 2.x).
+//   nRF52840: NOT offered here. Its usb-install is two serial-DFU packages applied in order
+//             (SoftDevice erase, then MCUboot + app); NrfWebTools runs one package, and the
+//             two-step web flow is unbuilt and untested. upgrade-3.html#nrf52840 has the steps.
+//   BG22:     not a USB board here; 3.x arrives by BLE OTA plus a config migration (HA).
 function tbV3Installable(cfg, e) {
-  if (cfg.type === 'esp32') return !!e.installManifest;
-  if (cfg.type === 'nrf52840') return !!e.serialDfu;
-  if (cfg.type === 'nrf54l15' || cfg.type === 'nrf54lm20') return !!e.hex;
+  const inst = e && e.flows && e.flows['usb-install'];
+  if (!inst || !inst.hosted) return false;
+  if (cfg.type === 'esp32') return !!inst.webManifest;
+  if (cfg.type === 'nrf54l15' || cfg.type === 'nrf54lm20') return inst.files.length === 1 && inst.types[0] === 'merged-hex';
   return false;
 }
 function tbV3Source(options, v) {
-  const cfg = options.cfg, e = v.v3;
+  const cfg = options.cfg, flows = v.v3.flows;
   if (cfg.type === 'esp32') {
-    // An update of a device that already runs 3.x keeps its NVS (config + key): the update manifest
-    // has no part in 0x9000-0xDFFF. Anything else (new setup, or 2.x -> 3.x, where the settings
-    // cannot survive anyway) uses the erasing install manifest.
+    // usb-update keeps NVS (config + key) and is only for a device that already runs 3.x. Every
+    // other case (new setup, or 2.x -> 3.x, where the settings cannot survive) uses usb-install.
     const from3 = OpenDisplayV3.firmwareGeneration(tbFirmwareVersion) === 'v3';
-    const m = tbKeepsSettings() && from3 && e.updateManifest ? e.updateManifest : e.installManifest;
-    return { version: v.tag, url: 'v3/' + m, bundled: true, generation: 'v3' };
+    const upd = flows['usb-update'];
+    const flow = tbKeepsSettings() && from3 && upd && upd.hosted && upd.webManifest ? upd : flows['usb-install'];
+    return { version: v.tag, url: 'v3/' + flow.webManifest, bundled: true, generation: 'v3', erasesConfig: flow.erasesConfig };
   }
-  if (cfg.type === 'nrf52840') return { version: v.tag, url: 'v3/' + e.serialDfu, bundled: true, generation: 'v3' };
-  return { version: v.tag, url: 'v3/' + e.hex, bundled: true, generation: 'v3' };
+  const inst = flows['usb-install'];
+  return { version: v.tag, url: 'v3/' + inst.files[0], bundled: true, generation: 'v3', erasesConfig: inst.erasesConfig };
 }
 // ESP Web Tools reads a manifest: the bundled one, with this version's file (null: the bundled file). An update's
 // manifest asks before erasing, so the settings can be kept.
@@ -5161,14 +5170,9 @@ function tbInitFirmwareVersionPicker() {
     tbApplyFirmwareChoice(simpleConfigSelections.driverBoard);
   });
 }
+// "v3.0.0" and "3.0.0" compare equal (the leading v is ignored); see OpenDisplayV3.compareVersions.
 function tbCompareVersions(a, b) {
-  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
-  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d) return d;
-  }
-  return 0;
+  return OpenDisplayV3.compareVersions(a, b);
 }
 // latest: null while unknown (or not checkable), otherwise the version this page would install.
 function renderFirmwareCard(board, latest) {

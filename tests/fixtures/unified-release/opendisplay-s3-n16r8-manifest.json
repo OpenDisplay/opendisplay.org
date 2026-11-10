@@ -1,0 +1,28 @@
+{
+  "name": "OpenDisplay Firmware 3",
+  "version": "3.0.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "opendisplay-s3-n16r8-bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "opendisplay-s3-n16r8-partition-table.bin",
+          "offset": 32768
+        },
+        {
+          "path": "opendisplay-s3-n16r8-ota-data.bin",
+          "offset": 57344
+        },
+        {
+          "path": "opendisplay-s3-n16r8-app.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

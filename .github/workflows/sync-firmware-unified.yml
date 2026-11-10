@@ -36,9 +36,11 @@ jobs:
         id: sync
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Through env, not interpolated into the script. "3.0.0" and "v3.0.0" are both accepted.
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            node .github/scripts/sync-firmware-unified-release.js --tag "${{ github.event.inputs.tag }}"
+          if [ -n "$TAG" ]; then
+            node .github/scripts/sync-firmware-unified-release.js --tag "$TAG"
           else
             node .github/scripts/sync-firmware-unified-release.js
           fi

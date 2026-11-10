@@ -91,6 +91,22 @@
   }
   function isConfigDriven(gen) { return gen === 'v3'; }
 
+  /**
+   * Compare two version strings numerically, part by part. A leading "v" is ignored on either
+   * side, so a "v3.0.0" release tag and a "3.0.0" one sort the same (Firmware_Unified
+   * RELEASE_ARTEFACTS.md § 1 rule 5). Without this, "v3.0.0" parsed as 0 and sorted below 2.x.
+   * @returns {number} <0, 0 or >0
+   */
+  function compareVersions(a, b) {
+    const parts = v => String(v == null ? '' : v).trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+    const pa = parts(a), pb = parts(b);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+    return 0;
+  }
+
   // ---- targets and config size limits ---------------------------------------
   /** system_config (0x01) ic_type -> target family. */
   function targetFromIcType(ic) {
@@ -668,7 +684,7 @@
   return {
     PID, DRIVE_PIDS, BURNED_SIZES, VERIFIED, BACKUP_FORMAT,
     num, hexToBytes, bytesToHex, normalizePid, isDrivePid, isBurnedPid,
-    firmwareGeneration, isConfigDriven,
+    firmwareGeneration, isConfigDriven, compareVersions,
     targetFromIcType, targetFromInstallType, configSizeLimit, checkConfigSize,
     panelNeedsDriveData, buildDriveDb, driveAvailability, badgeText,
     drivePacketsOf, hasPanelPacket, syncDrivePackets,

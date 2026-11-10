@@ -9,13 +9,14 @@
  *   node .github/scripts/sync-firmware-unified-release.js \
  *        --manifest path/manifest.json --assets-dir path/   [--out dir]  # offline, from local files
  *
- * Writes `changed=true|false` and `tag=` to $GITHUB_OUTPUT. Contract: lib/unified-release.js.
+ * --tag accepts `3.0.0` or `v3.0.0` (both are tried). Writes `changed=true|false` and `tag=` to
+ * $GITHUB_OUTPUT. Contract: Firmware_Unified docs/RELEASE_ARTEFACTS.md; see lib/unified-release.js.
  */
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { REPOSITORY, planSync } = require('./lib/unified-release.js');
+const { REPOSITORY, planSync, validateWebManifest, artefactFor, bareVersion } = require('./lib/unified-release.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -40,12 +41,6 @@ async function getBytes(url) {
 }
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
 
-/** Find a file description (for sha256/size checks) by name in the manifest. */
-function fileInfo(manifest, name) {
-  for (const img of manifest.images) for (const f of Object.values(img.files)) if (f.name === name) return f;
-  return null;
-}
-
 async function main() {
   const outDir = path.resolve(arg('out') || path.join(REPO_ROOT, 'httpdocs', 'firmware', 'toolbox', 'v3'));
   const localManifest = arg('manifest');
@@ -59,7 +54,17 @@ async function main() {
   } else {
     const tag = arg('tag');
     // Drafts are invisible to /releases/latest, which is what we want: only published releases ship.
-    release = await getJson(`https://api.github.com/repos/${REPOSITORY}/releases/` + (tag ? 'tags/' + encodeURIComponent(tag) : 'latest'));
+    const base = `https://api.github.com/repos/${REPOSITORY}/releases/`;
+    if (!tag) release = await getJson(base + 'latest');
+    else {
+      // The contract allows either tag form; try the one given, then the other.
+      const forms = [tag, /^v/i.test(tag) ? bareVersion(tag) : 'v' + tag];
+      let last;
+      for (const t of forms) {
+        try { release = await getJson(base + 'tags/' + encodeURIComponent(t)); last = null; break; } catch (e) { last = e; }
+      }
+      if (last) throw last;
+    }
     const assets = new Map((release.assets || []).map(a => [a.name, a.browser_download_url]));
     if (!assets.has('manifest.json')) throw new Error(`release ${release.tag_name} has no manifest.json; refusing to guess its files`);
     manifest = JSON.parse((await getBytes(assets.get('manifest.json'))).toString('utf8'));
@@ -80,12 +85,23 @@ async function main() {
   }
   plan.warnings.forEach(w => console.warn('warning: ' + w));
 
-  fs.mkdirSync(outDir, { recursive: true });
+  // Fetch and check everything in memory first, so a bad release leaves v3/ untouched.
+  const got = new Map();
   for (const name of plan.downloads) {
     const buf = await fetchAsset(name);
-    const info = fileInfo(manifest, name);
+    const info = artefactFor(manifest, name);
     if (info && info.sha256 && sha256(buf) !== info.sha256) throw new Error(`${name}: sha256 mismatch`);
     if (info && Number.isInteger(info.size) && buf.length !== info.size) throw new Error(`${name}: size ${buf.length} != ${info.size}`);
+    got.set(name, buf);
+  }
+  // The upstream esp-web-tools manifests are used as shipped, so check them before anything points at them.
+  for (const wm of plan.webManifests) {
+    const json = JSON.parse(got.get(wm.file).toString('utf8'));
+    const errs = validateWebManifest(json, wm.flow, manifest.artefacts, wm.kind);
+    if (errs.length) throw new Error(`${wm.file}: ${errs.join('; ')}`);
+  }
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const [name, buf] of got) {
     fs.writeFileSync(path.join(outDir, name), buf);
     console.log(`  ${name} -> ${path.relative(REPO_ROOT, outDir)}/`);
   }

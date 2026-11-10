@@ -214,7 +214,7 @@ table code {
       <li>Press <strong>Connect and restore the settings</strong>. The Toolbox writes the saved settings back, adds the drive data for your panel, reads the configuration back and checks it.</li>
       <li>Send an image and look at the panel.</li>
     </ol>
-    <p>Later 3.x updates keep the settings: they do not write the settings area of the flash. <code>esp32-s3-N4R2</code> and <code>esp32-wrover-e-N4R8</code> boards have no 3.x build yet and stay on 2.x.</p>
+    <p>Later 3.x updates keep the settings: the Toolbox then installs only the bootloader, partition table, OTA data and app (<code>opendisplay-&lt;board&gt;-manifest.json</code>), which never write the settings area of the flash (0x9000-0xDFFF). It does this only when the connected device already runs 3.x; a move from 2.x always uses the full image (<code>opendisplay-&lt;board&gt;-install-manifest.json</code>). A board is offered firmware 3 only when the release has a build for it.</p>
   </div>
 
   <div class="col panel">
@@ -223,13 +223,16 @@ table code {
       <h3>The settings are erased, and the first install is over USB</h3>
       <p>3.x stores its settings differently from 2.x. It also uses a different bootloader layout (MCUboot) so that later updates can be made over Bluetooth; moving to it is a one-time USB install. The images are signed with MCUboot's published development key.</p>
     </div>
+    <p id="nrf52840">The Toolbox does not install firmware 3 on nRF52840 yet. The first install is two serial-DFU packages that must be applied in order, and the browser flasher runs one package at a time; until that is built and tested, use <code>adafruit-nrfutil</code>:</p>
     <ol>
-      <li>Save the settings as for ESP32 (Toolbox, <strong>Update the firmware</strong>, firmware 3, <strong>Connect and save the settings</strong>).</li>
-      <li>Install over USB. The EN04 has no USB drive; the Toolbox uses serial DFU.</li>
-      <li>Restore the settings with <strong>Connect and restore the settings</strong> and look at the panel.</li>
+      <li>Save the settings as for ESP32 (Toolbox, connect, <strong>Save the settings to a file</strong>). The file contains the encryption key; keep it private.</li>
+      <li>Put the board in its bootloader (double-tap reset) and run, with the files from the Firmware_Unified release:
+        <pre><code>adafruit-nrfutil dfu serial --package opendisplay-xiao_nrf52840-usb-1-sd-erase.zip -p &lt;port&gt; -b 115200 --singlebank
+adafruit-nrfutil dfu serial --package opendisplay-xiao_nrf52840-usb-2-install.zip -p &lt;port&gt; -b 115200 --singlebank</code></pre>
+        Step 1 removes the SoftDevice that 2.x used and returns to the bootloader; step 2 installs MCUboot and the app. Step 1 is only for a board that still runs 2.x.</li>
+      <li>Connect in the Toolbox and press <strong>Restore settings from a file</strong>. It adds the drive data for your panel, reads the configuration back and checks it. Then send an image and look at the panel.</li>
     </ol>
-    <p>Later 3.x updates can be made over Bluetooth with the OTA image from the release (nRF Connect Device Manager or Home Assistant).</p>
-    <p class="small"><strong>Provisional:</strong> how the one-time MCUboot install is packaged for the browser (a serial-DFU package or a USB-drive image) is decided with the 3.0 release files. Until the Toolbox offers firmware 3 for your board, use the release notes of Firmware_Unified.</p>
+    <p>Later 3.x updates are made over Bluetooth with <code>opendisplay-xiao_nrf52840-ota.bin</code> or <code>-dfu.zip</code> (nRF Connect Device Manager or Home Assistant), or over USB with step 2 alone. The <code>-dfu.zip</code> (MCUboot) and the <code>-usb-*.zip</code> (serial DFU) packages are different formats and are not interchangeable.</p>
   </div>
 
   <div class="col panel">
@@ -237,7 +240,7 @@ table code {
     <p>The settings are kept across the update: 3.x reads the same storage. The panel stays blank after the update until the drive data is written, so do the steps in this order:</p>
     <ol>
       <li>Optional: save the settings to a file (Toolbox, connect, <strong>Save the settings to a file</strong>).</li>
-      <li>Install the 3.x <code>.gbl</code> over Bluetooth (Home Assistant or Simplicity Connect; the website does not install BG22 firmware).</li>
+      <li>Install <code>opendisplay-bg22-ota.gbl</code> over Bluetooth (Home Assistant or Simplicity Connect; the website does not install BG22 firmware).</li>
       <li>Connect in the Toolbox. It sees a 3.x device without drive data and offers to add it. Confirm.</li>
       <li>Send an image and look at the panel.</li>
     </ol>
@@ -246,7 +249,7 @@ table code {
 
   <div class="col panel">
     <h2>nRF54L15 / nRF54LM20A (XIAO)</h2>
-    <p>Install the 3.x image over USB from the Toolbox, then set the display up again or restore saved settings. Drive data is added as for the other boards.</p>
+    <p>Install the 3.x image (<code>opendisplay-xiao_nrf54l15-merged.hex</code> / <code>opendisplay-xiao_nrf54lm20a-merged.hex</code>) over USB from the Toolbox, then set the display up again or restore saved settings. Drive data is added as for the other boards. Later updates can go over Bluetooth with the <code>-ota.bin</code> / <code>-dfu.zip</code> from the release.</p>
   </div>
 
   <div class="col panel">

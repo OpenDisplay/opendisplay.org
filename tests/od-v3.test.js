@@ -265,3 +265,13 @@ test('parseReadIdent: records and the optional flags byte', () => {
   assert.equal(V3.parseReadIdent([0, 0x43, 1]), null);
   assert.equal(V3.parseReadIdent(null), null);
 });
+
+test('compareVersions: a leading v is ignored, so v3.0.0 sorts above 2.x like 3.0.0', () => {
+  assert.equal(V3.compareVersions('v3.0.0', '3.0.0'), 0);
+  assert.ok(V3.compareVersions('v3.0.0', '2.27.1') > 0);
+  assert.ok(V3.compareVersions('3.0.0', 'v2.27.1') > 0);
+  assert.ok(V3.compareVersions('3.0.1', 'v3.0.0') > 0);
+  assert.ok(V3.compareVersions('2.9', '2.10') < 0);
+  const sorted = ['2.27.1', 'v3.0.0', '2.3.0', '3.1.0'].sort((a, b) => V3.compareVersions(b, a));
+  assert.deepEqual(sorted, ['3.1.0', 'v3.0.0', '2.27.1', '2.3.0']);
+});
