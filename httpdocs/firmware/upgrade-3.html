@@ -1,0 +1,282 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How to move an OpenDisplay device from firmware 2.x to 3.x on ESP32, nRF52840, EFR32BG22 and nRF54, and what happens to its settings.">
+  <link rel="canonical" href="https://opendisplay.org/firmware/upgrade-3.html">
+  <meta property="og:title" content="Upgrading to Firmware 3 - OpenDisplay">
+  <meta property="og:description" content="Moving an OpenDisplay device from firmware 2.x to 3.x, per board.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://opendisplay.org/firmware/upgrade-3.html">
+  <link rel="shortcut icon" href="install/favicon.ico"> 
+  <link rel="stylesheet" href="/common.css">
+  <title>Upgrading to Firmware 3 - OpenDisplay</title>
+<style>
+/* Page-specific styles */
+h4 {
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+.code-block {
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9rem;
+  overflow-x: auto;
+  margin: 12px 0;
+  white-space: pre-wrap;
+}
+.code-block code {
+  color: var(--foreground);
+}
+.step-box {
+  background: var(--card-background);
+  border-left: 4px solid var(--accent);
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 4px;
+}
+.step-box h4 {
+  color: var(--foreground);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.step-box p {
+  color: var(--muted-foreground);
+  margin: 0;
+  line-height: 1.6;
+}
+.step-box ul, .step-box ol {
+  color: var(--muted-foreground);
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.step-box code {
+  background: var(--card-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+.warning-box {
+  background: #fef3c7;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.warning-box h3 {
+  color: #92400e;
+  font-size: 1.2rem;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.warning-box p {
+  color: #78350f;
+  margin: 0;
+  line-height: 1.6;
+}
+.info-box {
+  background: #dbeafe;
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.info-box h3 {
+  color: #1e40af;
+  font-size: 1.2rem;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.info-box p {
+  color: #1e3a8a;
+  margin: 0;
+  line-height: 1.6;
+}
+@media (prefers-color-scheme: dark) {
+  .warning-box {
+    background: #78350f;
+    border-color: #f59e0b;
+  }
+  .warning-box h3 {
+    color: #fef3c7;
+  }
+  .warning-box p {
+    color: #fef3c7;
+  }
+  .info-box {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+  }
+  .info-box h3 {
+    color: #dbeafe;
+  }
+  .info-box p {
+    color: #dbeafe;
+  }
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+table th, table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+table th {
+  font-weight: 600;
+  color: var(--foreground);
+  background: var(--card-background);
+}
+table code {
+  background: var(--card-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+.breadcrumb {
+  margin-bottom: 20px;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+}
+.breadcrumb a {
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+.breadcrumb a:hover {
+  color: var(--accent);
+}
+.breadcrumb-separator {
+  margin: 0 8px;
+  color: var(--muted-foreground);
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+.back-link:hover {
+  color: var(--accent);
+}
+.back-link::before {
+  content: "← ";
+  margin-right: 4px;
+}
+</style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <main id="main-content">
+  <div class="col" style="max-width: 1200px; margin-bottom: 10px;">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-separator">/</span>
+      <a href="index.html">Firmware</a><span class="breadcrumb-separator">/</span>
+      <span>Upgrading to Firmware 3</span>
+    </div>
+  </div>
+  <h1>Upgrading to Firmware 3</h1>
+
+  <div class="col panel">
+    <h2>What changes</h2>
+    <p class="intro-text">Firmware 3 drives the e-paper panel from the device's configuration: the panel's init sequence, waveforms and colour codes are packets in the config (<a href="adding-displays.html">how panels are described</a>). A configuration made for 2.x does not have them, so after the upgrade the Toolbox adds them for your panel. It shows you what it will add and asks first; it changes nothing else.</p>
+    <ul>
+      <li>Firmware 3 comes from <a href="https://github.com/OpenDisplay/Firmware_Unified" target="_blank">OpenDisplay/Firmware_Unified</a>. Firmware 2.x from OpenDisplay/Firmware stays available in the Toolbox.</li>
+      <li>In the Toolbox's version list, firmware 3 is marked <em>firmware 3, config-driven</em>. It is not installed unless you pick it.</li>
+      <li>Some panels are not available on firmware 3 yet. The Toolbox shows them as <em>not yet on 3.x</em> with the reason; keep those displays on 2.x. Panels converted from the 2.x driver but not yet seen working on a real panel are marked <em>untested on glass</em>.</li>
+    </ul>
+  </div>
+
+  <div class="col panel">
+    <h2>ESP32 (S3, C3, C6, classic)</h2>
+    <div class="warning-box">
+      <h3>The settings are erased</h3>
+      <p>2.x keeps its settings in a file system that 3.x does not read, and some boards change their partition table. Installing 3.x starts the board without settings, including its encryption key.</p>
+    </div>
+    <ol>
+      <li>Connect to the display in the <a href="toolbox/index.html">Toolbox</a> and choose <strong>Update the firmware</strong>.</li>
+      <li>Pick the firmware 3 version, then <strong>Connect and save the settings</strong>. A file is downloaded; it contains the encryption key, so keep it private.</li>
+      <li>Install over USB.</li>
+      <li>Press <strong>Connect and restore the settings</strong>. The Toolbox writes the saved settings back, adds the drive data for your panel, reads the configuration back and checks it.</li>
+      <li>Send an image and look at the panel.</li>
+    </ol>
+    <p>Later 3.x updates keep the settings: they do not write the settings area of the flash. <code>esp32-s3-N4R2</code> and <code>esp32-wrover-e-N4R8</code> boards have no 3.x build yet and stay on 2.x.</p>
+  </div>
+
+  <div class="col panel">
+    <h2>nRF52840 (Seeed EN04, XIAO nRF52840, OpenDisplay kits)</h2>
+    <div class="warning-box">
+      <h3>The settings are erased, and the first install is over USB</h3>
+      <p>3.x stores its settings differently from 2.x. It also uses a different bootloader layout (MCUboot) so that later updates can be made over Bluetooth; moving to it is a one-time USB install. The images are signed with MCUboot's published development key.</p>
+    </div>
+    <ol>
+      <li>Save the settings as for ESP32 (Toolbox, <strong>Update the firmware</strong>, firmware 3, <strong>Connect and save the settings</strong>).</li>
+      <li>Install over USB. The EN04 has no USB drive; the Toolbox uses serial DFU.</li>
+      <li>Restore the settings with <strong>Connect and restore the settings</strong> and look at the panel.</li>
+    </ol>
+    <p>Later 3.x updates can be made over Bluetooth with the OTA image from the release (nRF Connect Device Manager or Home Assistant).</p>
+    <p class="small"><strong>Provisional:</strong> how the one-time MCUboot install is packaged for the browser (a serial-DFU package or a USB-drive image) is decided with the 3.0 release files. Until the Toolbox offers firmware 3 for your board, use the release notes of Firmware_Unified.</p>
+  </div>
+
+  <div class="col panel">
+    <h2>EFR32BG22 (M3 Pro, M3 Core)</h2>
+    <p>The settings are kept across the update: 3.x reads the same storage. The panel stays blank after the update until the drive data is written, so do the steps in this order:</p>
+    <ol>
+      <li>Optional: save the settings to a file (Toolbox, connect, <strong>Save the settings to a file</strong>).</li>
+      <li>Install the 3.x <code>.gbl</code> over Bluetooth (Home Assistant or Simplicity Connect; the website does not install BG22 firmware).</li>
+      <li>Connect in the Toolbox. It sees a 3.x device without drive data and offers to add it. Confirm.</li>
+      <li>Send an image and look at the panel.</li>
+    </ol>
+    <p>BG22 stores at most 3120 bytes of configuration on 3.x (2048 on 2.x). The Toolbox refuses to write a larger one and says by how much it is over.</p>
+  </div>
+
+  <div class="col panel">
+    <h2>nRF54L15 / nRF54LM20A (XIAO)</h2>
+    <p>Install the 3.x image over USB from the Toolbox, then set the display up again or restore saved settings. Drive data is added as for the other boards.</p>
+  </div>
+
+  <div class="col panel">
+    <h2>nRF52811 boards (M3 with Firmware_NRF)</h2>
+    <p>These cannot be updated to firmware 3. They keep working with the Toolbox as they are.</p>
+  </div>
+
+  <div class="col panel">
+    <h2>If something goes wrong</h2>
+    <ul>
+      <li><strong>The panel stays blank on 3.x:</strong> connect in the Toolbox. If it offers to add drive data, confirm. If it says the panel is not available on 3.x yet, install 2.x again and restore your settings file.</li>
+      <li><strong>Yellow and red are swapped:</strong> the panel's colour code map is wrong in the panel database. Report it with the panel's part number.</li>
+      <li><strong>Restoring fails with a size error:</strong> remove something you do not need (Wi-Fi, Find My, an extra drive mode) in the Toolbox editor and write again.</li>
+    </ul>
+  </div>
+
+  <div class="col panel">
+    <div class="footer-links">
+      <a href="../index.html">Home</a>
+      <span class="footer-separator">•</span>
+      <a href="https://github.com/OpenDisplay/" target="_blank" aria-label="View on GitHub (opens in new tab)">GitHub</a>
+      <span class="footer-separator">•</span>
+      <a href="https://discord.gg/XmTHz8RfJE" target="_blank" aria-label="Join OpenDisplay Discord community (opens in new tab)">Discord</a>
+      <span class="footer-separator">•</span>
+      <a href="../impressum.html">imprint (Impressum)</a>
+      <span class="footer-separator">•</span>
+      <a href="../datenschutz.html">privacy (Datenschutz)</a>
+    </div>
+  </div>
+  </main>
+</body>
+</html>
+

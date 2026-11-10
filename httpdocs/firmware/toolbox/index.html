@@ -5006,12 +5006,36 @@ function tbProxyUrl(repo, tag, asset) {
   u.searchParams.set('asset', asset);
   return u.href;
 }
-// Every version that can be installed on this board: { bundled, versions: [{ tag, prerelease, bundled }], latest }.
+// ---- Firmware 3.x (Firmware_Unified), bundled under v3/ by sync-firmware-unified-release.js ----
+// Kept apart from the 2.x files and names on purpose: a 2.x path never resolves to a 3.x image.
+const TB_V3_INDEX_FILE = 'v3/index.json';
+let tbV3IndexPromise = null;
+function tbV3Index() {
+  if (!tbV3IndexPromise) tbV3IndexPromise = tbFetchJson(TB_V3_INDEX_FILE, { cache: 'no-cache' });
+  return tbV3IndexPromise;
+}
+// The key v3/index.json uses for a board preset: the ESP32 manifest stem, else the install type.
+function tbV3BoardKey(cfg) {
+  if (cfg.type === 'esp32') {
+    const m = /([^/]+)_full\.json$/.exec(cfg.manifest || '');
+    return m ? m[1] : null;
+  }
+  return cfg.type;
+}
+async function tbV3Firmware(cfg) {
+  const idx = await tbV3Index();
+  const key = tbV3BoardKey(cfg);
+  const b = idx && idx.boards && key ? idx.boards[key] : null;
+  return b ? { version: idx.version, entry: b } : null;
+}
+// Every version that can be installed on this board: { bundled, versions: [{ tag, prerelease, bundled, generation }], latest }.
+// "latest" stays the newest 2.x until the maintainer makes 3.x the default (the 3.x entry is
+// offered in the picker, labelled, never chosen implicitly).
 async function tbFirmwareOptions(board) {
   const cfg = board && board.installConfig;
   if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type)) return null;
   const repo = tbRepoName(cfg);
-  const [bundled, releases] = await Promise.all([tbBundledFirmware(cfg), repo ? tbReleases(repo) : null]);
+  const [bundled, releases, v3] = await Promise.all([tbBundledFirmware(cfg), repo ? tbReleases(repo) : null, tbV3Firmware(cfg)]);
   const withFile = (releases || []).filter(r => r.assets.includes(tbReleaseAssetName(cfg, bundled, r.tag)));
   const proxy = withFile.length ? await tbProxyAvailable() : false;
   const versions = [];
@@ -5023,7 +5047,30 @@ async function tbFirmwareOptions(board) {
   // Recent versions only (old ones may not read today's settings), and pre-releases only when newer than the latest.
   const shown = versions.filter(v => v.prerelease ? !latest || tbCompareVersions(v.tag, latest) > 0 : true);
   const cut = shown.filter(v => !v.prerelease).slice(0, TB_FW_VERSIONS_SHOWN).pop();
-  return { cfg, repo, bundled, latest, versions: shown.filter(v => !cut || tbCompareVersions(v.tag, cut.tag) >= 0) };
+  const list = shown.filter(v => !cut || tbCompareVersions(v.tag, cut.tag) >= 0);
+  list.forEach(v => { v.generation = 'v2'; });
+  if (v3 && tbV3Installable(cfg, v3.entry)) list.unshift({ tag: v3.version, prerelease: false, bundled: true, generation: 'v3', v3: v3.entry });
+  return { cfg, repo, bundled, latest, versions: list };
+}
+// Can this page install the 3.x image for this board over USB?
+function tbV3Installable(cfg, e) {
+  if (cfg.type === 'esp32') return !!e.installManifest;
+  if (cfg.type === 'nrf52840') return !!e.serialDfu;
+  if (cfg.type === 'nrf54l15' || cfg.type === 'nrf54lm20') return !!e.hex;
+  return false;
+}
+function tbV3Source(options, v) {
+  const cfg = options.cfg, e = v.v3;
+  if (cfg.type === 'esp32') {
+    // An update of a device that already runs 3.x keeps its NVS (config + key): the update manifest
+    // has no part in 0x9000-0xDFFF. Anything else (new setup, or 2.x -> 3.x, where the settings
+    // cannot survive anyway) uses the erasing install manifest.
+    const from3 = OpenDisplayV3.firmwareGeneration(tbFirmwareVersion) === 'v3';
+    const m = tbKeepsSettings() && from3 && e.updateManifest ? e.updateManifest : e.installManifest;
+    return { version: v.tag, url: 'v3/' + m, bundled: true, generation: 'v3' };
+  }
+  if (cfg.type === 'nrf52840') return { version: v.tag, url: 'v3/' + e.serialDfu, bundled: true, generation: 'v3' };
+  return { version: v.tag, url: 'v3/' + e.hex, bundled: true, generation: 'v3' };
 }
 // ESP Web Tools reads a manifest: the bundled one, with this version's file (null: the bundled file). An update's
 // manifest asks before erasing, so the settings can be kept.
@@ -5041,16 +5088,17 @@ function tbEspManifestUrl(options, version, fileUrl) {
 function tbFirmwareSource(options, tag) {
   const want = tag || options.latest;
   const v = options.versions.find(x => x.tag === want);
+  if (v && v.generation === 'v3') return tbV3Source(options, v);
   if (!v || v.bundled) {
     const b = options.bundled;
     if (!b) return null;
     const url = options.cfg.type === 'esp32' && tbKeepsSettings() ? tbEspManifestUrl(options, b.version, null) : b.url;
-    return { version: b.version, url, bundled: true };
+    return { version: b.version, url, bundled: true, generation: 'v2' };
   }
   const cfg = options.cfg;
   const url = tbProxyUrl(options.repo, v.tag, tbReleaseAssetName(cfg, options.bundled, v.tag));
-  if (cfg.type !== 'esp32') return { version: v.tag, url, bundled: false };
-  return { version: v.tag, url: tbEspManifestUrl(options, v.tag, url), bundled: false };
+  if (cfg.type !== 'esp32') return { version: v.tag, url, bundled: false, generation: 'v2' };
+  return { version: v.tag, url: tbEspManifestUrl(options, v.tag, url), bundled: false, generation: 'v2' };
 }
 // "Latest" is the newest version this page can actually install for the board.
 function tbLatestFirmwareVersion(board) {
@@ -5072,19 +5120,25 @@ async function tbApplyFirmwareChoice(board) {
   if (gen !== tbFwGeneration) return;
   const src = options && tbFirmwareSource(options, tbFwChoice);
   if (!src) { box.hidden = true; return; }
+  // The 2.x / 3.x gate for configs built before a device is connected (setup) and for the
+  // update flow's "save the settings first" step.
+  tbInstallGeneration = src.generation || 'v2';
+  tbAnnotateDisplayOptions();
+  tbRenderUpdateBackupStep();
   if (cfg.type === 'esp32') document.getElementById('firmwareInstallButton').setAttribute('manifest', src.url);
   else if (cfg.type === 'nrf52840' && nrfInstaller) nrfInstaller.zipPath = src.url;
   else if (nrf54Installer) nrf54Installer.setHex(src.url);
   const latest = src.version === options.latest;
   // "Install the latest firmware" would be wrong for an older pick.
   if (tbMode === 'update') document.getElementById('toolboxStep2Title').textContent = latest ? 'Install the latest firmware' : 'Install version ' + src.version;
-  document.getElementById('tbFwVersionText').textContent = src.version ? 'Version ' + src.version + (latest ? ', the latest.' : '.') : '';
+  document.getElementById('tbFwVersionText').textContent = src.version ? 'Version ' + src.version
+    + (src.generation === 'v3' ? ' (firmware 3). See the upgrade guide before installing.' : latest ? ', the latest.' : '.') : '';
   const select = document.getElementById('tbFwVersionSelect');
   select.innerHTML = '';
   options.versions.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.tag;
-    opt.textContent = v.tag + (v.tag === options.latest ? ' (latest)' : v.prerelease ? ' (pre-release)' : '');
+    opt.textContent = v.tag + (v.generation === 'v3' ? ' (firmware 3, config-driven)' : v.tag === options.latest ? ' (latest)' : v.prerelease ? ' (pre-release)' : '');
     select.appendChild(opt);
   });
   select.value = src.version || '';
