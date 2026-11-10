@@ -1,0 +1,74 @@
+name: Sync Firmware 3.x Release
+
+# 3.x firmware comes from OpenDisplay/Firmware_Unified and lands in
+# httpdocs/firmware/toolbox/v3/ only. The 2.x sync (sync-firmware.yml,
+# OpenDisplay/Firmware -> bin/ and firmware/) is unchanged and keeps running.
+
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to sync (default: latest published)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    if: github.repository == 'OpenDisplay/opendisplay.org'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Unit tests for the sync
+        run: node --test tests/unified-release.test.js
+
+      - name: Sync 3.x firmware from the latest published release
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            node .github/scripts/sync-firmware-unified-release.js --tag "${{ github.event.inputs.tag }}"
+          else
+            node .github/scripts/sync-firmware-unified-release.js
+          fi
+
+      - name: Close superseded automated PRs
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for pr_number in $(gh pr list --repo "${{ github.repository }}" --head "automated/firmware-unified-sync" --state open --json number --jq '.[].number'); do
+            gh pr close "$pr_number" --repo "${{ github.repository }}" --comment "Superseded by a newer firmware sync."
+          done
+
+      - name: Create Pull Request
+        if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'fix: sync firmware 3.x binaries to OpenDisplay/Firmware_Unified ${{ steps.sync.outputs.tag }}'
+          title: 'fix: sync firmware 3.x binaries to OpenDisplay/Firmware_Unified ${{ steps.sync.outputs.tag }}'
+          body: |
+            New release detected in [OpenDisplay/Firmware_Unified](https://github.com/OpenDisplay/Firmware_Unified).
+
+            - Tag: **${{ steps.sync.outputs.tag }}**
+            - Updated: `httpdocs/firmware/toolbox/v3/` only (2.x files untouched)
+
+            Merge this PR, then publish a GitHub Release on opendisplay.org to deploy to production.
+
+            ---
+            *Automated by the sync-firmware-unified workflow*
+          branch: automated/firmware-unified-sync
+          delete-branch: true
+          labels: automated

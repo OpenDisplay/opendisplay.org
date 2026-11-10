@@ -17,7 +17,7 @@
 
 const GITHUB_ORG = 'OpenDisplay';
 // Repos whose release assets we serve.
-const ALLOWED_REPOS = ['Firmware', 'Firmware_NRF', 'Firmware_NRF54', 'Firmware_Silabs'];
+const ALLOWED_REPOS = ['Firmware', 'Firmware_NRF', 'Firmware_NRF54', 'Firmware_Silabs', 'Firmware_Unified'];
 
 // A notice printed into the response would corrupt the firmware file; log only.
 ini_set('display_errors', '0');
