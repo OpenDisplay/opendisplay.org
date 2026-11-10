@@ -649,11 +649,18 @@
 
       <script src="/js/js-yaml.min.js"></script>
       <script src="/js/ble-common.js"></script>
+      <script src="/js/od-v3.js"></script>
   <script src="/js/pako.js"></script>
   <script>
     let currentPreset = null;
     let designerSimplePresetsCache = null;
     let displayConfig = { width: 800, height: 480, colorScheme: 0, panelIcType: null };
+    let designerFirmwareVersion = null;
+    // Firmware 3.x: 4-colour codes from the device's 0xB1 code_map; 2.x: null (unchanged path).
+    function deviceCodeMap4() {
+      if (!OpenDisplayV3.isConfigDriven(OpenDisplayV3.firmwareGeneration(designerFirmwareVersion))) return null;
+      return OpenDisplayV3.wireMapFromCodeMap(deviceDriveModes.codeMap) || [0, 1, 2, 3];
+    }
     // Drive modes read off the CONNECTED device (config packets 0x2E/0x30/0x31).
     // Deliberately not a static table: which modes exist, how many passes each
     // takes and what colours they produce are all per-device, and the 16-colour
@@ -4131,6 +4138,10 @@
             ? bleLib.baseColorScheme(displayCfg.colorScheme)
             : displayCfg.colorScheme;
           displayConfig.panelIcType = displayCfg.panelIcType != null ? Number(displayCfg.panelIcType) : null;
+          // The 2.x / 3.x gate for the 4-colour code mapping (see deviceCodeMap4).
+          try {
+            bleLib.readFirmwareVersion((v, err) => { designerFirmwareVersion = v && !err ? v : null; });
+          } catch (e) { designerFirmwareVersion = null; }
 
           document.getElementById('displayWidth').value = displayCfg.pixelWidth;
           document.getElementById('displayHeight').value = displayCfg.pixelHeight;
@@ -4198,6 +4209,7 @@
           rotation: 0,
           useFastRefresh: false,
           panelIcType: displayConfig.panelIcType,
+          codeMap4: deviceCodeMap4(),
           ...extra,
           onProgress: (current, total) => {
             const progress = Math.floor((current / total) * 100);

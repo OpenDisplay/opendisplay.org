@@ -1102,6 +1102,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
       <script src="/js/js-yaml.min.js"></script>
       <script src="/l/qrcode.js"></script>
       <script src="/js/ble-common.js"></script>
+      <script src="/js/od-v3.js"></script>
       <!-- ?v= is a cache buster, and it is load-bearing. Browsers cache ES
            modules by URL, so a plain reload keeps serving the previous
            dither.js. This page now depends on dither.js knowing colour scheme
@@ -1225,6 +1226,15 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         // Not a static list: which modes exist, their pass counts and their
         // colours are per-device, and a multi-pass palette is per-UNIT.
         let deviceDriveModes = { modes: [], codeMap: null };
+        /**
+         * 4-colour panel codes for the connected device: on firmware 3.x the 0xB1 code_map
+         * (identity when the device carries none -- it cannot drive without 0xB1 anyway); on
+         * 2.x / unknown null, so the 2.x per-panel-id mapping stays exactly as it was.
+         */
+        function deviceCodeMap4() {
+            if (!OpenDisplayV3.isConfigDriven(OpenDisplayV3.firmwareGeneration(firmwareVersionPreview))) return null;
+            return OpenDisplayV3.wireMapFromCodeMap(deviceDriveModes.codeMap) || [0, 1, 2, 3];
+        }
 
         function populateDriveModes(parsedConfig) {
             const sel = document.getElementById('driveModeSelect');
@@ -3739,7 +3749,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const bytes = bleLib.encodeCanvasToByteData(
                 canvas, scheme, displayRotation, widthInput, heightInput, displayPanelIcType,
                 usable ? usable.indices : null,
-                usable ? usable.wireMap : null
+                usable ? usable.wireMap : null,
+                deviceCodeMap4()
             );
             downloadBlob(new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }), `opendisplay-${canvas.width}x${canvas.height}-scheme${scheme}.bin`);
             addLog(`Exported ${bytes.length} bytes for color scheme ${scheme}.`, 'info');
@@ -3942,6 +3953,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 panelIcType: displayPanelIcType,
                 ditherIndices: dither.indices,
                 ditherWireMap: dither.wireMap,
+                codeMap4: deviceCodeMap4(),
                 onProgress: extraOptions.onProgress || ((current, total) => {
                     const progress = Math.floor((current / total) * 100);
                     setProgressBar(true, progress);

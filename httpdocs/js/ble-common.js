@@ -3768,8 +3768,24 @@ class OpenDisplayBLE {
    * @param {number[]|null} ditherWireMap - Palette index to wire value
    * @returns {Uint8Array}
    */
-  buildWireCodes(pixels, count, colorScheme, panelIcType, ditherIndices, ditherWireMap) {
+  buildWireCodes(pixels, count, colorScheme, panelIcType, ditherIndices, ditherWireMap, codeMap4 = null) {
     const codes = new Uint8Array(count);
+    // Firmware 3.x (config-driven): the 4-colour panel codes come from the device's 0xB1
+    // code_map (logical index black/white/yellow/red -> panel code), applied here and nowhere
+    // else -- the per-panel-id yellow/red swap of 2.x (dither.js wireMap) must not stack on it.
+    // Callers pass codeMap4 only for 3.x devices; 2.x keeps the code below unchanged.
+    if (colorScheme === 3 && codeMap4 && codeMap4.length === 4) {
+      if (ditherIndices && ditherIndices.length === count) {
+        for (let i = 0; i < count; i++) codes[i] = codeMap4[ditherIndices[i] & 3] ?? 0;
+        return codes;
+      }
+      const logical = { black: 0, white: 1, yellow: 2, red: 3 };
+      for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        codes[i] = codeMap4[logical[this.detectColor(pixels[p], pixels[p + 1], pixels[p + 2], colorScheme)] ?? 0];
+      }
+      return codes;
+    }
     if (ditherIndices && ditherWireMap && ditherIndices.length === count) {
       for (let i = 0; i < count; i++) codes[i] = ditherWireMap[ditherIndices[i]] ?? 0;
       return codes;
@@ -4134,7 +4150,7 @@ class OpenDisplayBLE {
     return out;
   }
 
-  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null, ditherIndices = null, ditherWireMap = null) {
+  encodeCanvasToByteData(canvas, colorScheme, rotation = 0, originalWidth = null, originalHeight = null, panelIcType = null, ditherIndices = null, ditherWireMap = null, codeMap4 = null) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let imageWidth = imageData.width;
@@ -4148,7 +4164,8 @@ class OpenDisplayBLE {
       colorScheme,
       panelIcType,
       ditherIndices,
-      ditherWireMap
+      ditherWireMap,
+      codeMap4
     );
 
     if (rotation === 1 || rotation === 3) {
@@ -4703,6 +4720,8 @@ class OpenDisplayBLE {
       panelIcType = null,
       ditherIndices = null,
       ditherWireMap = null,
+      // 3.x only: 0xB1 code_map for the 4-colour path (see buildWireCodes). null on 2.x.
+      codeMap4 = null,
       // Multi-pass (colour scheme 10 / bwry16). Both come from the DEVICE's own
       // config -- multipassPalette from 0x30, driveModeIndex from 0x2E -- so the
       // website never has to carry a per-unit palette or guess a mode number.
@@ -4761,7 +4780,7 @@ class OpenDisplayBLE {
       const byteData = isMultipass
         ? this.encodeCanvasMultipass(canvas, multipassPalette,
                                      multipassPalette && multipassPalette.codeMap, rotation)
-        : this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType, ditherIndices, ditherWireMap);
+        : this.encodeCanvasToByteData(canvas, colorScheme, rotation, originalWidth, originalHeight, panelIcType, ditherIndices, ditherWireMap, codeMap4);
       const uncompressedSize = byteData.length;
       const byteDataUint8 = new Uint8Array(byteData);
       
