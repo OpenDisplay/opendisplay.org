@@ -21,7 +21,7 @@ ble_proto:
 
         '
   version: 1
-  minor_version: 5
+  minor_version: 6
   packet_structure:
     description: 'outer_packet wraps the overall transfer and contains a sequence of single_packet entries.
       single_packet defines the structure of each entry contained in the packets field of outer_packet.
@@ -1920,191 +1920,74 @@ ble_proto:
         size: 32
         type: bytes
         description: Reserved bytes for future extensions; must be zero
-    46:
+  # Ids 46-49 (0x2E-0x31) are BURNED: pre-release lab drafts of the drive packets used them with
+  # fixed sizes 157/541/116/36. They must never be reused; readers step over them by those sizes
+  # (Firmware_Unified shared/core/od_config_tlv.h) and the Toolbox keeps them verbatim on 2.x
+  # devices and removes them when migrating a config to 3.x.
+  burned_packet_ids:
+    46: 157
+    47: 541
+    48: 116
+    49: 36
+  # Length-prefixed packets (ids 0x80-0xFF, config minor 6): framed [number][id][length:2 LE][body],
+  # always written AFTER every legacy packet. `length` counts body bytes. A reader that does not
+  # know an id steps over it by its length. Bodies are generated from the panel database
+  # (Firmware_Unified panels/generated/drive_presets.json), never hand-edited, so the editor shows
+  # them read-only. `head` is the fixed part of the body; `tail` is the variable part after it.
+  # Source of truth: Firmware_Unified shared/protocol/opendisplay_structs.h (1.6).
+  length_prefixed_types:
+    174:
       name: display_mode
-      required: false
-      repeatable: true
-      max_instances: 16
-      description: 'How one drive mode of one display is driven. Replaces knowledge that used to live
-        in the vendored bb_epaper library: the init sequence, whether a custom LUT is used and where it
-        goes, how many passes, and the advisory temperature window. A new panel becomes a config change
-        instead of a firmware release.'
-      fields:
-      - name: instance_number
-        size: 1
-        description: 0-based display index this mode belongs to
-      - name: mode_index
-        size: 1
-        description: 0-based mode index within the display (0-3)
-      - name: mode_name
-        size: 12
-        type: text
-        description: human-readable mode name, NUL-padded (e.g. 'full', 'colour16')
-      - name: passes
-        size: 1
-        description: number of drive passes; 1 for a normal refresh, 3 for 16-colour
-      - name: lut_slot
-        size: 4
-        type: bytes
-        description: 'per-pass LUT slot index as 4 separate bytes, pass 0 first; 0xFF = no custom LUT
-          for that pass. type bytes is load-bearing: a size-4 field without it is serialized as one
-          little-endian integer, which would reverse the passes.'
-      - name: vsn1
-        size: 4
-        type: bytes
-        description: per-pass patch of waveform byte 3 (vsn1) as 4 separate bytes, pass 0 first; 0 = no patch
-      - name: mode_flags
-        size: 1
-        description: 'Reserved; must be 0. Was analog_from_wave (take PWRR/PLL/VCOM from the waveform
-          analog header rather than from the sequence). It is now implied by whether the sequence
-          contains any wave-substitution step (0x00 0x02), so a separate flag could only ever
-          contradict the sequence it described. Kept as a byte so the packet size does not move.'
-      - name: temp_min_c
-        size: 1
-        description: advisory minimum ambient for this mode, signed C; host enforces
-      - name: temp_max_c
-        size: 1
-        description: advisory maximum ambient, signed C
-      - name: temp_policy
-        size: 1
-        description: 0 advise, 1 discourage, 2 refuse (host-side policy)
-        enum:
-          '0':
-            name: advise
-          '1':
-            name: discourage
-          '2':
-            name: refuse
-      - name: seq_len
-        size: 2
-        description: used length of init_seq
-      - name: init_seq
-        size: 128
-        description: 'The COMPLETE recipe for one pass, not just the registers: [len][cmd][data...];
-          0x00 0x01 = wait BUSY; 0x00 0x02 n (is_wave,value)*n = step with wave-header substitution;
-          0x00 0x03 = stream the image here; 0x00 0x04 = stream the waveform here; 0x00 0x05 lo hi =
-          wait N ms; 0x00 0x00 = end. Forward-only, no jumps. The POSITION of 0x00 0x04 is what used
-          to be a lut_placement enum: the 7.5in GDEM075F52 silently discards a waveform uploaded
-          before power-on (two different waveforms then render identically to within 0.2/255, which
-          looks like proof the panel ignores waveforms and is not), while the 2.9in and 4.2in require
-          it there. Encoding it as a position means the fact sits where it takes effect. Measured
-          encoded sequences are 71-113 B.'
-    47:
+      description: One drive mode of a display (0xAE). Firmware 3.x drives the panel from these; mode 0 is the default.
+      max_instances: 32
+      head:
+      - {name: instance_number, size: 1, description: Display instance this mode belongs to}
+      - {name: mode_index, size: 1, description: Mode number; the host selects it in CMD 0x0085 DRIVE_WRITE_START}
+      - {name: mode_name, size: 12, type: text, description: 'ASCII, NUL-padded, at most 11 characters'}
+      - {name: color_scheme, size: 1, description: 'Colour scheme of this mode; 0xFF = inherit display.color_scheme; 10 = bwry16 (valid ONLY here, never in packet 32)'}
+      - {name: passes, size: 1, description: Number of refresh passes (1-8)}
+      - {name: temp_min_c, size: 1, description: Lowest panel temperature for this mode, signed degrees C}
+      - {name: temp_max_c, size: 1, description: Highest panel temperature for this mode, signed degrees C}
+      - {name: temp_policy, size: 1, description: 'Outside the window: 0 advisory, 1 substitute mode, 2 reject'}
+      - {name: lut_slot, size: 8, description: Waveform slot (packet 175) per pass; 0xFF = none}
+      - {name: vsn1, size: 8, description: Per-pass sequence variant bytes}
+      - {name: seq_len, size: 2, description: Byte length of the drive sequence that follows}
+      tail: {name: seq, description: 'Drive-sequence bytecode (END/BUSY/SUBST/IMAGE/LUT/DELAY/SET_PIN/IMAGE_SLICE/CS_SELECT/READ_SCRATCH/WRITE_SCRATCH/LUT_SLICE)'}
+    175:
       name: display_lut
-      required: false
-      repeatable: true
+      description: One waveform slot (0xAF) at its real length.
       max_instances: 8
-      description: 'A custom waveform (LUT). 7-byte analog header + 528-byte body, where each body nibble
-        is one frame and 0xF is idle. NOT compressible in practice: the colour wave is 59% idle but the
-        idle frames are interleaved, so RLE inflates it to 245%. Share identical waves between passes
-        by pointing at the same slot.'
-      fields:
-      - name: instance_number
-        size: 1
-        description: 0-based display index
-      - name: lut_slot
-        size: 1
-        description: slot index referenced by display_mode.lut_slot
-      - name: lut_len
-        size: 2
-        description: used length of data (535 for a full waveform)
-      - name: crc16
-        size: 2
-        description: CRC16-CCITT over data[0:lut_len]; a slot failing CRC is treated as absent so an interrupted
-          write falls back to no-custom-LUT rather than driving a half-written waveform
-      - name: data
-        size: 535
-        description: waveform bytes
-    49:
-      name: display_panel
-      required: false
-      repeatable: true
-      max_instances: 4
-      description: 'Per-panel drive properties that display (0x20) never carried: whether the BUSY
-        line can be believed, which level means idle, the logical-to-panel colour code map, and the
-        sleep sequence. display has busy_pin but says nothing about whether polling it works -- the
-        4.2in GDEM042F52 reads busy immediately after power-up with nothing sent and never releases
-        after a refresh, so a driver that polls it stalls forever. bb_epaper encoded that as an
-        undocumented local patch to its vendored tree. Without this packet a firmware still needs a
-        compiled-in per-panel table, which is what these packets exist to delete.'
-      fields:
-      - name: instance_number
-        size: 1
-        description: display instance this describes
-      - name: panel_flags
-        size: 1
-        description: panel capability bits
-        bits:
-          '0':
-            name: busy_usable
-          '1':
-            name: lut_supported
-      - name: busy_idle_level
-        size: 1
-        description: 'pin level that means not-busy (0 or 1). Not guessable: getting it wrong either
-          reports idle forever or hangs every poll.'
-      - name: busy_timeout_ms
-        size: 2
-        description: poll ceiling when busy_usable is set
-      - name: busy_fixed_delay_ms
-        size: 2
-        description: 'blind wait used instead of polling when busy_usable is clear. A sequence needing
-          both a short and a long wait uses the 0x00 0x05 delay step for the short one.'
-      - name: code_map
-        size: 4
-        type: bytes
-        description: 'logical colour index -> panel 2-bit code, 4 separate bytes. BWRY panels want [0,1,3,2] because the
-          hardware order is black,white,RED,YELLOW while the colour enum has yellow=2,red=3 -- the
-          disagreement that produced a yellow/red swap in the lab firmware.'
-      - name: mode_count
-        size: 1
-        description: how many display_mode packets belong to this display
-      - name: sleep_seq_len
-        size: 1
-        description: used length of sleep_seq; 0 = panel declares no sleep sequence
-      - name: sleep_seq
-        size: 16
-        description: encoded sequence run to put the panel to sleep, same format as init_seq
-      - name: reserved
-        size: 7
-        description: Reserved bytes for future extensions; must be zero
-    48:
+      head:
+      - {name: instance_number, size: 1, description: Display instance}
+      - {name: lut_slot, size: 1, description: 'Slot id, global on the device'}
+      - {name: crc16, size: 2, description: CRC16-CCITT of the waveform bytes}
+      tail: {name: data, description: Waveform bytes (535 typical)}
+    176:
       name: display_calibration
-      required: false
-      repeatable: true
-      max_instances: 8
-      description: 'A mode''s palette: the per-pass ENCODING of each entry and the measured CIELAB it
-        produces, per display AND per mode (a 16-colour mode and a BWRY mode are different colour sets).
-        Device-side inert: stored and served, never interpreted -- but a host cannot encode a multi-pass
-        frame without it.
-        Motivated by measurement: two same-part-number 2.9in panels differ by dE00 6.40 with a 14% gamut
-        gap, and a palette tuned on one measured 19% worse on the other.'
-      fields:
-      - name: instance_number
-        size: 1
-        description: 0-based display index
-      - name: mode_index
-        size: 1
-        description: mode this calibration applies to
-      - name: entry_count
-        size: 1
-        description: number of valid palette entries (<=16)
-      - name: calib_flags
-        size: 1
-        description: bit0 measured (vs nominal/derived)
-        bits:
-          '0':
-            name: measured
-      - name: codes
-        size: 16
-        type: bytes
-        description: 'Per-entry ENCODING: which per-pass codes produce each colour, one byte per entry,
-          2 bits per pass -- pass0 in bits 5-4, pass1 in bits 3-2, pass2 in bits 1-0 (bits 7-6 reserved).
-          Stored WITH the measurements rather than in a packet of its own so the two cannot disagree
-          about entry count or order: a measured colour whose codes are unknown cannot be reproduced,
-          and codes with no measurement cannot be chosen between. type bytes is load-bearing -- a
-          size-16 field is a hex blob, but were it ever shrunk below 9 the serializer would treat it as
-          a little-endian integer and reverse the entries.'
-      - name: lab
-        size: 96
-        description: 16 x (L*,a*,b*) as 3 x int16 little-endian, units of 1/100
+      description: 'Measured palette of one mode (0xB0). Host-only: the device stores it and the host dithers against it.'
+      max_instances: 32
+      head:
+      - {name: instance_number, size: 1, description: Display instance}
+      - {name: mode_index, size: 1, description: Mode the palette belongs to}
+      - {name: cal_flags, size: 1, description: 'Bit 0: measured on this unit'}
+      - {name: entry_count, size: 1, description: Number of entries (1-32)}
+      tail: {name: entries, description: 'entry_count x 8 bytes: codes:u16 (per-pass panel codes, 2 bits per pass, already past code_map), L*, a*, b* (x100, int16)'}
+    177:
+      name: display_panel
+      description: 'Per-panel drive properties (0xB1). Its presence is what makes a display drivable on firmware 3.x.'
+      max_instances: 4
+      head:
+      - {name: instance_number, size: 1, description: Display instance}
+      - {name: panel_flags, size: 1, description: 'Bit 0: BUSY line usable (else busy_fixed_delay_ms); bit 1: panel honours custom waveforms'}
+      - {name: busy_idle_level, size: 1, description: Pin level meaning not busy}
+      - {name: busy_timeout_ms, size: 2, description: Poll ceiling when BUSY is usable}
+      - {name: busy_fixed_delay_ms, size: 2, description: Blind wait when it is not}
+      - {name: code_map, size: 4, description: 'Logical colour index -> panel 2-bit code for the 4-colour path. Applied by the HOST when encoding (3.x). Never applied to packet 176 codes.'}
+      - {name: mode_count, size: 1, description: Number of display_mode packets for this display}
+      - {name: sleep_seq_len, size: 1, description: Byte length of the sleep sequence that follows}
+      tail: {name: sleep_seq, description: Sleep sequence bytecode}
+    178:
+      name: action_table
+      description: 'Trigger -> effects table run by the device (0xB2, singleton). BG22 3.x; other targets step over it.'
+      max_instances: 1
+      tail: {name: entries, description: 'per entry: entry_len, trigger, trigger_arg:u16, flags, step_count (<=8), then step_count x 4 bytes (effect, arg0, arg1, delay_cs)'}

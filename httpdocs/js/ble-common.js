@@ -3133,6 +3133,10 @@ class OpenDisplayBLE {
       return null;
     }
     
+    // Burned lab-draft ids 0x2E-0x31 (fixed sizes, never reused; config.yaml burned_packet_ids):
+    // stepped over so the drive packets after them are still found.
+    const BURNED = { 0x2e: 157, 0x2f: 541, 0x30: 116, 0x31: 36 };
+    if (BURNED[packetId] != null && this.packetSizes[packetId] === undefined) return BURNED[packetId];
     const size = this.packetSizes[packetId];
     if (size === undefined) {
       this.log(`Packet size lookup for 0x${packetId.toString(16)} (${packetId}): Unknown packet type. Available: ${Object.keys(this.packetSizes).map(k => '0x' + parseInt(k).toString(16) + '(' + k + ')').join(', ') || 'none'}`, 'warning');
