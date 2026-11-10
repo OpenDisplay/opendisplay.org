@@ -863,6 +863,24 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
     </div>
   </div>
 
+  <div class="col panel" id="config-driven">
+    <h2>Firmware 3.x: config-driven display commands</h2>
+    <p class="intro-text">Firmware 3.x drives the panel from the drive packets in its config (<a href="yaml-config.html#length-prefixed" style="color: var(--accent);">0xAE-0xB1</a>). A host tells the two models apart by the firmware version (<code>0x0043</code>, major &ge; 3).</p>
+    <table>
+      <tr><th>Opcode</th><th>Name</th><th>Use</th></tr>
+      <tr><td><code>0x0046</code></td><td>READ_IDENT (pre-auth)</td><td>Reply <code>[00][46][proto_minor][target][count]</code> + <code>count</code> &times; <code>{panel_ic_type:u16, width:u16, height:u16, scheme}</code>, then (provisional) one flags byte: bit 0 config-driven, bit 1 <strong>needs migration</strong> (a configured display has no 0xB1 + 0xAE). Older firmware does not answer.</td></tr>
+      <tr><td><code>0x0085</code></td><td>DRIVE_WRITE_START</td><td><code>[00][85][mode][refresh][flags][rsv:2]</code>(+ <code>uncompressed_size:4</code> if compressed). Names the drive mode up front; the reply <code>[00][85][mode][passes][temp_c]</code> gives the mode actually used (the device may substitute one for temperature) and the number of frames it expects.</td></tr>
+      <tr><td><code>0x0084</code></td><td>SPI_RAW</td><td>Raw controller access for bring-up and lab work.</td></tr>
+    </table>
+    <h3>Moving a 2.x config to 3.x</h3>
+    <ol>
+      <li>Read the config (and keep a copy; ESP32 and nRF52840 lose it when 2.x is replaced by 3.x).</li>
+      <li>After the update, if the config has no 0xB1/0xAE (or READ_IDENT says <em>needs migration</em>), look up the drive packets for the stored <code>panel_ic_type</code> in the panel database, remove any old 0xAE-0xB1 and burned 0x2E-0x31 packets, and append the new ones after all legacy packets. Keep every other packet.</li>
+      <li>Write the config, read it back, and check that it matches and carries 0xB1 and at least one 0xAE.</li>
+    </ol>
+    <p>The Toolbox does this on connect, after asking. The logic is in <code>/js/od-v3.js</code> (pure functions, unit-tested) so other clients can mirror it.</p>
+  </div>
+
   <div class="col panel" id="firmware-variants-summary">
     <h2>Reference firmware variants</h2>
     <p class="intro-text">

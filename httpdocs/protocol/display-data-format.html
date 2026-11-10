@@ -377,6 +377,14 @@
     <p><strong>Bit pairs (left to right):</strong> 01 (White), 00 (Black), 10 (Yellow), 11 (Red)</p>
   </div>
 
+  <div class="col panel" id="config-driven-colours">
+    <h2>Firmware 3.x: colour codes and multi-pass modes</h2>
+    <ul>
+      <li><strong>4-colour panels (scheme 3).</strong> On 2.x the firmware's panel driver crossed yellow and red where a panel needed it (and clients swapped them by <code>panel_ic_type</code> for a few panels). On 3.x the firmware streams the frame as it is, so the <strong>host</strong> maps the logical colours (black 0, white 1, yellow 2, red 3) through the display's <code>code_map</code> in packet 0xB1 before packing. It must not also apply the 2.x per-panel swap.</li>
+      <li><strong>Multi-pass modes (scheme 10, bwry16).</strong> Selected with <code>0x0085</code>. One frame per pass, each packed like scheme 3; a pixel's colour is set by its code in every pass. The codes come from the mode's 0xB0 palette and are already panel codes: do not apply <code>code_map</code> to them. Scheme 10 is never written into packet 32.</li>
+    </ul>
+  </div>
+
   <div class="col panel">
     <h2>Color Scheme 4: 6-Color (B/W + Green + Blue + Red + Yellow)</h2>
     <p class="intro-text">

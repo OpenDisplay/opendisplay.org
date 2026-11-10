@@ -274,7 +274,7 @@ table code {
     </p>
     <p class="intro-text">
       This page documents every packet type and field in the schema (canonical source: 
-      <code>firmware/toolbox/config.yaml</code>, version 1.2). See 
+      <code>firmware/toolbox/config.yaml</code>, version 1.6). See 
       <strong><a href="flex-standard.html" style="color: var(--accent);">OpenDisplay Flex</a></strong> for an overview 
       and which packet types reference firmware parses today.
     </p>
@@ -546,6 +546,26 @@ table code {
       and reset-pin fields per schema. If the key is all zeros, encryption is off. See 
       <a href="ble-flow.html#encryption-authentication" style="color: var(--accent);">Encryption and authentication</a> in the communication protocol.</p>
     </div>
+  </div>
+
+  <div class="col panel" id="length-prefixed">
+    <h2>Length-prefixed packets (0x80-0xFF) and panel drive data</h2>
+    <p class="intro-text">Config minor 6 (firmware 3.x) adds a packet range that carries its own length, so a reader can step over any id it does not know:</p>
+    <div class="code-block">[number:1][id:1][length:2 LE][body: length bytes]</div>
+    <ul>
+      <li>Writers put every 0x80+ packet <strong>after</strong> all legacy packets. A 2.x parser stops at the first id it does not know and keeps everything before it, so a 3.x config still works on 2.x firmware (without the drive data).</li>
+      <li>Ids 0x00-0x7F stay fixed-size and implied by the id; 0x2D is the last one ever. Ids <strong>0x2E-0x31 are burned</strong> (pre-release lab drafts, 157/541/116/36 bytes): readers step over them by those sizes, writers never use them.</li>
+    </ul>
+    <table>
+      <tr><th>Id</th><th>Name</th><th>Max</th><th>Purpose</th></tr>
+      <tr><td><code>0xAE</code></td><td>display_mode</td><td>32</td><td>One drive mode: name, colour scheme (10 = bwry16, valid only here), passes, temperature window and policy, waveform slots, drive sequence.</td></tr>
+      <tr><td><code>0xAF</code></td><td>display_lut</td><td>8</td><td>One waveform slot with its CRC16.</td></tr>
+      <tr><td><code>0xB0</code></td><td>display_calibration</td><td>32</td><td>Measured palette of a mode (per-pass panel codes + CIELAB). Host-only.</td></tr>
+      <tr><td><code>0xB1</code></td><td>display_panel</td><td>4</td><td>BUSY policy, 4-colour <code>code_map</code>, mode count, sleep sequence. Its presence makes a display drivable on 3.x.</td></tr>
+      <tr><td><code>0xB2</code></td><td>action_table</td><td>1</td><td>Trigger &rarr; effects run by the device (BG22).</td></tr>
+    </table>
+    <p>On firmware 3.x the drive packets are the panel driver; <code>panel_ic_type</code> in packet 32 is informational (still written accurately: older clients use it to pick colour codes). On 2.x, <code>panel_ic_type</code> selects the bb_epaper driver and the drive packets are ignored. Field layouts: <code>length_prefixed_types</code> in <code>config.yaml</code>; source of truth Firmware_Unified <code>shared/protocol/opendisplay_structs.h</code>. Bodies come from the panel database, see <a href="adding-displays.html" style="color: var(--accent);">Adding displays</a>.</p>
+    <p><strong>Size limits</strong> (whole config): BG22 3.x 3120 bytes, BG22 2.x 2048, nRF52811 (Firmware_NRF) 512, ESP32 / nRF52840 / nRF54 4096. The size cannot be queried from the device.</p>
   </div>
 
   <div class="col panel">
