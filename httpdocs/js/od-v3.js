@@ -135,7 +135,7 @@
     const genText = gen === 'v3' ? ' 3.x' : gen === 'v2' ? ' 2.x' : '';
     const who = (TARGET_LABEL[target] || TARGET_LABEL.unknown) + (target === 'unknown' ? '' : genText);
     return {
-      ok, limit, length, target,
+      ok, limit, length, target, who,
       message: ok ? `${length} of ${limit} bytes (${who})`
         : `This configuration is ${length} bytes, but ${who} stores at most ${limit} bytes. ` +
           `Remove ${length - limit} bytes (for example an unused drive mode, Wi-Fi or Find My) before writing.`

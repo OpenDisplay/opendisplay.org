@@ -201,6 +201,8 @@
           <div class="bt-card__head"><span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></span><h2>Settings</h2><p>Display, power, buttons and more.</p></div>
           <button type="button" class="bt-btn bt-btn--outline bt-btn--block" id="tbHomeEditBtn">Change settings</button>
           <button type="button" class="tb-link tb-card-link" id="tbHomeResetupBtn">Set it up again for different hardware</button>
+          <button type="button" class="tb-link tb-card-link" id="tbHomeBackupBtn">Save the settings to a file</button>
+          <button type="button" class="tb-link tb-card-link" id="tbHomeRestoreBtn">Restore settings from a file</button>
         </div>
         <div class="panel bt-card">
           <div class="bt-card__head"><span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></span><h2>Firmware</h2><p id="tbHomeFwText">Updating keeps the settings.</p></div>
@@ -241,6 +243,12 @@
         <div id="toolboxStep2Body">
           <p class="tb-screen__text" id="toolboxStep2Hint">Connect it to this computer with a USB cable.</p>
           <p class="tb-screen__text" id="tbNoUsbInstallNote" hidden></p>
+          <div class="bt-notice tb-inline-notice" id="tbUpdateBackup" hidden>
+            <p id="tbUpdateBackupText"></p>
+            <p><button type="button" class="bt-btn bt-btn--outline" id="tbUpdateBackupBtn">Connect and save the settings</button></p>
+            <p class="small" id="tbUpdateBackupStatus" role="status"></p>
+            <p class="small">The file contains the display&rsquo;s encryption key. Keep it private.</p>
+          </div>
           <div id="installButtonContainer" style="display: none;">
             <esp-web-install-button id="firmwareInstallButton" style="display: none; width: 100%;">
               <button slot="activate" id="installFirmwareBtn" class="bt-btn bt-btn--primary bt-btn--block">Install firmware</button>
@@ -350,6 +358,7 @@
         </div>
         <div class="tb-actions">
           <a class="bt-btn bt-btn--primary" id="tbDoneTesterLink" href="../display/index.html">Send an image</a>
+          <button type="button" class="bt-btn bt-btn--primary" id="tbDoneRestoreBtn" hidden>Connect and restore the settings</button>
           <button type="button" class="bt-btn bt-btn--outline" id="tbDoneAgainBtn">Set up another device</button>
         </div>
       </section>
@@ -382,6 +391,8 @@
           </label>
           <button type="button" class="bt-btn bt-btn--quiet" id="importJsonBtn">Import JSON</button>
           <button type="button" class="bt-btn bt-btn--quiet" id="exportJsonBtn">Export JSON</button>
+          <button type="button" class="bt-btn bt-btn--quiet" id="editorBackupBtn" title="Reads the device's configuration and saves it (including its encryption key) to a file">Save backup</button>
+          <button type="button" class="bt-btn bt-btn--quiet" id="editorRestoreBtn" title="Writes a saved configuration back; on firmware 3.x it adds the panel drive data">Restore backup</button>
           <button type="button" class="bt-btn bt-btn--quiet" id="shareConfigBtn">Copy link</button>
         </div>
       </div>
@@ -446,6 +457,7 @@
      unversioned tag here would keep a stale dither.js alive in the same
      browser session. See the note in firmware/display/index.html. -->
 <script type="module" src="/js/dither.js?v=2"></script>
+<script src="/js/od-v3.js"></script>
 <script>
 let bleLib = null;
 // Live resolve/reject for the current connectToBleDevice() attempt. The persistent
@@ -737,6 +749,10 @@ function ensureToolboxBleLib(namePrefix) {
       addLog("BLE Connection established successfully!", 'success');
       setStatus("Connected", true);
       await ensureAuthenticatedOnConnect();
+      // The 2.x / 3.x gate (OpenDisplayV3.firmwareGeneration) needs this before any config is built or read.
+      tbFirmwareVersion = await tbReadFirmwareVersion();
+      if (tbFirmwareVersion) addLog('Firmware ' + tbFirmwareVersion + ' (' + OpenDisplayV3.firmwareGeneration(tbFirmwareVersion) + ')', 'info');
+      if (typeof tbAnnotateDisplayOptions === 'function') tbAnnotateDisplayOptions();
       updateEditorDeviceBar();
       if (tbMode === 'edit' && !bleConnectResolve) {
         // Don't overwrite a configuration the user prepared before connecting.
@@ -752,6 +768,7 @@ function ensureToolboxBleLib(namePrefix) {
     },
     onDisconnect: () => {
       addLog('Device disconnected.');
+      tbFirmwareVersion = '';
       setStatus("Disconnected");
       updateEditorDeviceBar();
       // The device's page only makes sense while connected.
@@ -881,6 +898,7 @@ async function editorReadConfig() {
   tbDeviceBusy(false);
   tbClearBusy(readBtn, result === 'ok' ? { ok: true, label: 'Read' } : { ok: false, label: 'Failed' });
   if (notConfigured) notConfigured.hidden = result !== 'empty';
+  if (result === 'ok' && typeof tbMigrateIfNeeded === 'function') void tbMigrateIfNeeded();
   if (status) {
     status.textContent = {
       ok: 'Configuration read from the device.',
@@ -899,6 +917,8 @@ async function writeConfig() {
   }
   const packetBytes = collectPacketBytes();
   if (!packetBytes) return false;
+  const fit = tbCheckConfigSize(packetBytes.length);
+  if (!fit.ok) { addLog(fit.message, 'error'); tbFlash(fit.message); return false; }
   addLog("Writing config to device...", 'info');
   try {
     await bleLib.writeConfig(new Uint8Array(packetBytes));
@@ -1125,7 +1145,8 @@ function updateTotalBytesDisplay() {
   const totalBytes = collectPacketBytes();
   if (!totalBytes) return;
   const totalLength = totalBytes.length;
-  const maxLength = 4096;
+  const sizeCheck = tbCheckConfigSize(totalLength);
+  const maxLength = sizeCheck.limit;
   const percentage = (totalLength / maxLength) * 100;
   const bytesView = document.getElementById('bytesView');
   const existingCounter = document.getElementById('bytesCounter');
@@ -1138,7 +1159,7 @@ function updateTotalBytesDisplay() {
   if (percentage > 100) {
     barClass = 'over-limit';
     textClass = 'usage-over-limit';
-    warningMessage = `<div class="warning-message">⚠️ PACKET EXCEEDS 4kB LIMIT! Current: ${totalLength} bytes (${percentage.toFixed(1)}%)</div>`;
+    warningMessage = `<div class="warning-message">⚠️ ${sizeCheck.message}</div>`;
   } else if (percentage > 90) {
     barClass = 'danger';
     textClass = 'usage-danger-text';
@@ -1158,7 +1179,7 @@ function updateTotalBytesDisplay() {
       <div class="usage-bar ${barClass}" style="width: ${Math.min(percentage, 100)}%"></div>
     </div>
     <div class="usage-text ${textClass}">
-      ${percentage.toFixed(1)}% of 4kB limit
+      ${percentage.toFixed(1)}% of the ${maxLength}-byte limit for ${sizeCheck.who}
     </div>
     ${warningMessage}
   `;
@@ -1233,6 +1254,7 @@ async function loadSimpleConfigPresets() {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     simpleConfigPresets = await response.json();
+    if (typeof tbLoadDriveDb === 'function') void tbLoadDriveDb();
     return simpleConfigPresets;
   } catch (error) {
     console.error('Error loading simple config presets:', error);
@@ -1598,7 +1620,28 @@ function renderEditor() {
     add.appendChild(sel);
     container.appendChild(add);
   }
+  renderOpaquePacketsCard(container);
   updateEditorChanges();
+}
+// Packets the editor has no fields for (panel drive data 0xAE-0xB1, actions 0xB2, burned or
+// unknown ids): listed read-only so the user sees they are there and are written back as they are.
+function renderOpaquePacketsCard(container) {
+  const opaque = instances.packets.filter(p => p.raw != null || p.rawLegacy != null || p.rawTail != null);
+  if (!opaque.length) return;
+  const card = document.createElement('section');
+  card.className = 'panel bt-card tb-packet';
+  card.innerHTML = '<div class="bt-card__head"><span class="bt-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24">'
+    + EDITOR_GROUP_ICONS.Display + '</svg></span><h2 class="tb-packet__name">Panel drive data and other packets</h2>'
+    + '<p class="tb-packet__summary">Kept exactly as they are when you write. Choosing a different display replaces the drive data.</p></div><ul class="tb-opaque-list"></ul>';
+  const ul = card.querySelector('ul');
+  opaque.slice().sort(comparePacketInstancesById).forEach(p => {
+    const li = document.createElement('li');
+    if (p.raw != null) li.textContent = OpenDisplayV3.decodeDrivePacket(p.pid, p.raw).text;
+    else if (p.rawLegacy != null) li.textContent = 'Obsolete lab packet 0x' + Number(p.pid).toString(16).toUpperCase() + ' (' + (p.rawLegacy.length / 2) + ' bytes; ignored by firmware 3.x)';
+    else li.textContent = 'Unknown packet 0x' + Number(p.pid).toString(16).toUpperCase() + ' and everything after it (' + (p.rawTail.length / 2) + ' bytes), kept verbatim';
+    ul.appendChild(li);
+  });
+  container.appendChild(card);
 }
 function renderPacketCard(inst, group) {
   const def = schema.packet_types[inst.pid];
@@ -1888,6 +1931,8 @@ function renderEditorField(inst, def, f, body, onChange, opts) {
   return row;
 }
 function comparePacketInstancesById(a, b) {
+  // A verbatim tail holds the original blob from an unknown id onwards: it stays last.
+  if ((a.rawTail != null) !== (b.rawTail != null)) return a.rawTail != null ? 1 : -1;
   const pidA = parseInt(a.pid, 10) || 0;
   const pidB = parseInt(b.pid, 10) || 0;
   if (pidA !== pidB) return pidA - pidB;
@@ -1907,6 +1952,18 @@ function collectPacketBytes(){ if(!schema) { tbFlash('The configuration schema i
     // body blobs (inst.raw, hex): [seq][id][length:2 LE][body]. The schema is
     // not consulted -- their bodies are variable and generated elsewhere
     // (panels.yaml -> gen_simple_config_drive.py), never hand-edited.
+    if (inst.rawLegacy != null) {          // burned fixed-size id, verbatim
+      pktBytes.push(seq & 0xFF, parseInt(inst.pid) & 0xFF);
+      for (const bt of parseValueToBytes(inst.rawLegacy)) pktBytes.push(bt);
+      seq++;
+      continue;
+    }
+    if (inst.rawTail != null) {            // unknown id + the rest of the original blob, verbatim
+      pktBytes.push(seq & 0xFF);
+      for (const bt of parseValueToBytes(inst.rawTail)) pktBytes.push(bt);
+      seq++;
+      continue;
+    }
     if (inst.raw != null) {
       const body = parseValueToBytes(inst.raw);
       pktBytes.push(seq & 0xFF);
@@ -2235,9 +2292,22 @@ function parseRawBytes(bytes){
         pktIndex++;
         continue;
       }
+      // Burned lab-draft ids 0x2E-0x31: fixed sizes, kept byte-for-byte (a 2.x device keeps
+      // them; a 3.x migration removes them, see OpenDisplayV3.syncDrivePackets).
+      if (OpenDisplayV3.isBurnedPid(id)) {
+        const size = OpenDisplayV3.BURNED_SIZES[id];
+        if (offset + size > view.length-2) break;
+        result.packets.push({number:num, id:hexPad(id), rawLegacy: bytesToHex(view.slice(offset, offset+size)).replace(/ /g,''), fields:[]});
+        offset += size;
+        pktIndex++;
+        continue;
+      }
       const pdef = schema.packet_types['0x'+Number(id).toString(16).padStart(2,'0')] || schema.packet_types[id] || schema.packet_types[id.toString()]; const pkt={number:num,id:hexPad(id),fields:[]};
       if(!pdef){
-         pkt.fields.push({name:'raw',value: bytesToHex(view.slice(offset, view.length-2))}); offset = view.length-2; result.packets.push(pkt); break;
+         // An id this schema doesn't know has no known size: keep it AND everything after it
+         // verbatim (id byte included), so a write-back never strips what a newer firmware wrote.
+         result.packets.push({number:num, id:hexPad(id), rawTail: bytesToHex(view.slice(offset-1, view.length-2)).replace(/ /g,''), fields:[]});
+         offset = view.length-2; break;
       }
       let fixedLen = 0; let variableFields = [];
       for(const f of pdef.fields){ const s = parseSizeToken(f.size); if(s) fixedLen += s; else variableFields.push(f); }
@@ -2275,6 +2345,12 @@ function parseRawBytes(bytes){
   console.log('Parsed packets:', result.packets);
   for(const p of result.packets){ 
     const idNum = parseInt(p.id,16); 
+    if (p.rawLegacy != null || p.rawTail != null) {
+      const inst = { uid: Date.now().toString(36)+Math.random().toString(36).slice(2,6), pid: String(idNum), fields: {} };
+      if (p.rawLegacy != null) inst.rawLegacy = p.rawLegacy; else inst.rawTail = p.rawTail;
+      instances.packets.push(inst);
+      continue;
+    }
     if (p.lengthPrefixed) {
       instances.packets.push({
         uid: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
@@ -2592,6 +2668,7 @@ async function writeConfigToDevice() {
   if (!packetBytes) {
     throw new Error('No packet built');
   }
+  tbAssertConfigFits(packetBytes);
   addLog("Writing config to device...", 'info');
   try {
     await bleLib.writeConfig(new Uint8Array(packetBytes));
@@ -3219,12 +3296,14 @@ function handleDriverBoardChange() {
   });
   
   displaySelect.disabled = false;
+  tbAnnotateDisplayOptions();
   
   // Apply default display if not already selected and default is defined
   if (selectedBoard.defaultDisplay && !displaySelect.value) {
     // Check if the default display is compatible and available
     const defaultDisplayExists = compatibleDisplays.some(d => d.id === selectedBoard.defaultDisplay);
-    if (defaultDisplayExists) {
+    const defaultOpt = Array.from(displaySelect.options).find(o => o.value === selectedBoard.defaultDisplay);
+    if (defaultDisplayExists && !(defaultOpt && defaultOpt.disabled)) {
       displaySelect.value = selectedBoard.defaultDisplay;
       handleDisplayChange();
     }
@@ -3694,6 +3773,17 @@ async function startSimpleAutoInstall() {
     await connectToBleDevice();
     tbConnectTarget = null;
     step(30, 'Connected to ' + (toolboxDeviceName() || 'the device') + '\u2026');
+    if (!tbSharedConfig) {
+      // Now the firmware version is known: rebuild so a 3.x device gets drive packets and a 2.x one doesn't.
+      const avail = tbDisplayAvailability(simpleConfigSelections.display);
+      if (!avail.selectable) { const e = new Error(avail.reason); e.tbFriendly = true; throw e; }
+      mergeSimpleConfigToFull();
+    } else if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
+      // A shared config written to a 3.x device must carry drive data for its panel too.
+      const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb });
+      if (plan.needed && plan.blocked) { const e = new Error(plan.reason); e.tbFriendly = true; throw e; }
+      if (plan.needed) instances.packets = OpenDisplayV3.applyMigration(instances.packets, plan);
+    }
     await bleLib.delay(3000);
     step(55, 'Writing the settings\u2026');
     await writeConfigToDevice();
@@ -3758,11 +3848,13 @@ function showDone(kind) {
     tester.className = 'bt-btn bt-btn--outline';
     tester.href = '../display/index.html';
     again.textContent = 'Update another device';
+    if (typeof tbRenderUpdateRestoreStep === 'function') tbRenderUpdateRestoreStep();
   } else {
     title.textContent = tbSharedConfig ? 'Configuration applied' : 'Your display is set up';
     text.textContent = 'It restarts in a moment.';
     keyBox.hidden = !lastAutoInstallRedirectKeyHex;
     document.getElementById('tbDoneKeyValue').textContent = (lastAutoInstallRedirectKeyHex || '').toUpperCase();
+    document.getElementById('tbDoneRestoreBtn').hidden = true;
     tester.textContent = 'Send an image';
     tester.className = 'bt-btn bt-btn--primary';
     tester.href = displayTesterUrlForDevice();
@@ -3903,7 +3995,8 @@ function enumEntryLabel(entry) {
   return '';
 }
 
-function mergeSimpleConfigToFull() {
+function mergeSimpleConfigToFull(opts) {
+  opts = opts || {};
   if (!schema) {
     tbFlash('The configuration schema is still loading.');
     return;
@@ -4195,60 +4288,15 @@ function mergeSimpleConfigToFull() {
     });
   }
 
-  // Panel DRIVE data from the display preset: display_panel (49/0x31),
-  // display_mode (46/0x2E) and display_lut (47/0x2F).
-  //
-  // Firmware that has dropped the vendored bb_epaper library has NO built-in
-  // panel table, so a device configured without these cannot drive its panel at
-  // all. They are generated into simple-config-presets.json by
-  // Firmware_Silabs/panels/gen_simple_config_drive.py -- a waveform is 535
-  // bytes, so hand-maintaining them is not an option.
-  //
-  // Unlike extraPackets, these are repeatable types that all share
-  // instance_number 0, so identity needs the per-type discriminator as well:
-  // mode_index for display_mode, lut_slot for display_lut. Keying on
-  // instance_number alone would collapse every mode onto one packet.
-  if (simpleConfigSelections.display && simpleConfigSelections.display.drivePackets) {
-    // Rev 2 drive packets are length-prefixed blobs {pid, raw}. The per-type
-    // discriminator lives at body[1] (mode_index for 0xAE and 0xB0, lut_slot
-    // for 0xAF), instance_number at body[0]. 0xB0 is the multi-pass mode's
-    // palette: without it the web tool will not upload to that mode.
-    const driveKey = function (pid, raw) {
-      const b0 = raw ? parseInt(raw.slice(0, 2), 16) : 0;
-      const b1 = raw && raw.length >= 4 ? parseInt(raw.slice(2, 4), 16) : 0;
-      let disc = '';
-      if (pid === '174' || pid === '175' || pid === '176') disc = ':' + String(b1);   // 0xAE / 0xAF / 0xB0
-      return pid + '/' + b0 + disc;
-    };
-    // Drop drive packets from any previously selected display before adding
-    // this one's: a 2.9" preset leaves 2 modes behind that a 1-mode panel would
-    // never overwrite, and the stale mode would still be offered to a host.
-    // ALSO drop burned Rev 1 drive packets (pids 46-49 = 0x2E-0x31) a stale
-    // config may carry: the firmware ignores them, so they only waste space.
-    instances.packets = instances.packets.filter(function (p) {
-      if (['46', '47', '48', '49'].includes(String(p.pid))) return false;
-      return !(p._simpleDrive && !simpleConfigSelections.display.drivePackets.some(
-        function (dp) { return driveKey(dp.pid, dp.raw) === driveKey(p.pid, p.raw); }));
-    });
-    simpleConfigSelections.display.drivePackets.forEach(function (dp) {
-      const key = driveKey(dp.pid, dp.raw);
-      const existing = instances.packets.find(function (p) {
-        return driveKey(p.pid, p.raw) === key && p.pid === dp.pid;
-      });
-      if (existing) {
-        existing.raw = dp.raw;
-        existing._simpleDrive = true;
-      } else {
-        instances.packets.push({
-          uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          pid: dp.pid,
-          raw: dp.raw,
-          fields: {},
-          _simpleDrive: true
-        });
-      }
-    });
-  }
+  // Panel DRIVE data (0xAE-0xB1) for the selected display, by firmware generation
+  // (OpenDisplayV3.syncDrivePackets): every drive packet of the previously configured panel is
+  // removed; a 3.x target gets the selected panel's packets from the drive database
+  // (drive-presets.json, vendored from Firmware_Unified); a 2.x target gets nothing new.
+  tbSyncDrivePackets();
+
+  // The Toolbox's "Start from a known board" in the editor applies hardware only: the user's
+  // Wi-Fi, encryption key and Find My provisioning are not the preset's to replace.
+  if (opts.hardwareOnly) return;
 
   instances.packets = instances.packets.filter(function (p) {
     return !(p.pid === '38' && p._autoToolboxWifi);
@@ -4660,6 +4708,7 @@ function updateFirmwareScreen() {
     const b = document.getElementById(id);
     if (b) b.textContent = setup ? 'Install and set up' : 'Install firmware';
   });
+  if (typeof tbRenderUpdateBackupStep === 'function') tbRenderUpdateBackupStep();
   const hint = document.getElementById('toolboxStep2Hint');
   if (hint) hint.textContent = setup
     ? 'Connect it with a USB cable. After the install, pick it in the Bluetooth list to finish.'
@@ -4734,6 +4783,11 @@ function tbConfigFacts() {
     : tbSavedKey(toolboxDeviceName()) ? 'On, key saved in this browser' : 'On']);
   const wifi = find('38');
   if (wifi && String(wifi.fields.ssid || '').trim()) facts.push(['Wi-Fi', String(wifi.fields.ssid).trim()]);
+  if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
+    const modes = instances.packets.filter(p => String(p.pid) === '174' && p.raw != null)
+      .map(p => OpenDisplayV3.decodeDrivePacket(p.pid, p.raw).modeName);
+    facts.push(['Panel drive data', modes.length ? modes.join(', ') : 'Missing: the panel can\u2019t be driven']);
+  }
   return facts;
 }
 function renderFacts(dl, facts) {
@@ -4787,12 +4841,13 @@ async function tbConnectBluetooth() {
     return;
   }
   tbSetBusy(row, 'Reading its settings\u2026', 0);
-  tbFirmwareVersion = await tbReadFirmwareVersion();
   const result = await readDeviceConfig(p => tbSetBusy(row, 'Reading its settings\u2026', p));
   tbClearBusy(row);
   updateStartScreen();
   tbPath = 'ble';
   if (result === 'ok') {
+    // A 3.x device with a carried-over 2.x config: offer to add its panel drive data (asks first).
+    await tbMigrateIfNeeded();
     renderDeviceHome();
     showScreen('home');
   } else if (result === 'empty') {
@@ -5122,8 +5177,12 @@ function populateEditorPresetSelect() {
     sel.value = '';
     if (!t) return;
     applySimpleSelection(t);
-    instances.packets = [];
-    mergeSimpleConfigToFull();
+    // Replace only what a board/display/power preset owns; keep everything else the user has
+    // (Wi-Fi, security, Find My, action table, unknown packets). Drive packets are replaced by
+    // mergeSimpleConfigToFull itself.
+    const presetOwned = new Set(['1', '2', '4', '32', '33', '35', '36', '37', '40', '41', '42', '43', '44']);
+    instances.packets = instances.packets.filter(p => !presetOwned.has(String(p.pid)));
+    mergeSimpleConfigToFull({ hardwareOnly: true });
     renderEditor();
     updateEditorDeviceBar();
   };
@@ -5217,6 +5276,7 @@ initToolboxUi();
 loadYamlFromFile();
 tbWatchBluetooth();
 </script>
+<script src="/js/toolbox-v3.js"></script>
 
     </div>
   </main>
