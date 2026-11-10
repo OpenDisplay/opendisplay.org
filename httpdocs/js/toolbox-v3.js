@@ -248,6 +248,12 @@ async function tbMigrateIfNeeded(opts = {}) {
   const gen = tbDeviceGeneration();
   if (!V3.isConfigDriven(gen) || !instances || !instances.packets) return 'none';
   if (!tbDriveDb) await tbLoadDriveDb();
+  // The firmware's own verdict, when it has one (READ_IDENT flags byte; 3.x only, so 2.x devices
+  // never wait on a silent opcode).
+  try {
+    const ident = V3.parseReadIdent(await bleLib.readIdent(1500));
+    if (ident) bleLib.deviceNeedsMigration = ident.needsMigration;
+  } catch (e) { /* keep the config check */ }
   let plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, deviceSaysNeedsMigration: tbDeviceSaysNeedsMigration() });
   if (!plan.needed) return 'none';
   const ident = V3.identifyPreset(instances.packets, simpleConfigPresets);

@@ -250,3 +250,18 @@ test('decodeDrivePacket summaries', () => {
   assert.deepEqual(ae.map(m => m.modeName), ['full', 'colour16']);
   assert.equal(ae[1].passes, 3);
 });
+
+test('parseReadIdent: records and the optional flags byte', () => {
+  const rec = [0x1e, 0, 168, 0, 0x80, 1, 3];
+  const withFlags = V3.parseReadIdent([0, 0x46, 4, 6, 1, ...rec, 0x03]);
+  assert.equal(withFlags.displays[0].panelIcType, 30);
+  assert.equal(withFlags.displays[0].height, 384);
+  assert.equal(withFlags.configDriven, true);
+  assert.equal(withFlags.needsMigration, true);
+  const noFlags = V3.parseReadIdent([0, 0x46, 4, 6, 1, ...rec]);
+  assert.equal(noFlags.flags, null);
+  assert.equal(noFlags.needsMigration, false);
+  assert.equal(V3.parseReadIdent([0, 0x46, 4, 6, 0, 0x01]).configDriven, true);
+  assert.equal(V3.parseReadIdent([0, 0x43, 1]), null);
+  assert.equal(V3.parseReadIdent(null), null);
+});

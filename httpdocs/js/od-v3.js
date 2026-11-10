@@ -587,6 +587,33 @@
     return { ok: true, reason: 'drive packets present' };
   }
 
+  // ---- READ_IDENT (0x0046) -------------------------------------------------------
+  const IDENT_FLAG_CONFIG_DRIVEN = 0x01;
+  const IDENT_FLAG_NEEDS_MIGRATION = 0x02;
+  /**
+   * [0x00][0x46][proto_minor][target][count] + count x {ic:u16, w:u16, h:u16, scheme} (7 B)
+   * + optional flags byte (Firmware_Unified docs/CONFIG_DRIVEN_DISPLAY.md, provisional):
+   * bit0 CONFIG_DRIVEN, bit1 NEEDS_MIGRATION. No flags byte = not config-driven / unknown.
+   */
+  function parseReadIdent(bytes) {
+    const b = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes || []);
+    if (b.length < 5 || b[0] !== 0x00 || b[1] !== 0x46) return null;
+    const count = b[4];
+    const res = { protoMinor: b[2], target: b[3], displays: [], flags: null, configDriven: null, needsMigration: false };
+    let o = 5;
+    for (let i = 0; i < count; i++) {
+      if (o + 7 > b.length) return res;
+      res.displays.push({ panelIcType: b[o] | (b[o + 1] << 8), width: b[o + 2] | (b[o + 3] << 8), height: b[o + 4] | (b[o + 5] << 8), colorScheme: b[o + 6] });
+      o += 7;
+    }
+    if (o < b.length) {
+      res.flags = b[o];
+      res.configDriven = !!(b[o] & IDENT_FLAG_CONFIG_DRIVEN);
+      res.needsMigration = !!(b[o] & IDENT_FLAG_NEEDS_MIGRATION);
+    }
+    return res;
+  }
+
   // ---- backup files ---------------------------------------------------------
   const BACKUP_FORMAT = 'opendisplay-config-backup';
   /**
@@ -648,6 +675,7 @@
     decodeDrivePacket, codeMapFromPackets, wireMapFromCodeMap,
     identifyPreset, planMigration, applyMigration, describePlan,
     crc16ccitt, outerCrc, walkConfig, compareConfigs, verifyDriveReadback,
+    parseReadIdent,
     makeBackup, parseBackup, backupFileName
   };
 });

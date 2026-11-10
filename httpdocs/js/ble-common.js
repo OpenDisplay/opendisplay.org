@@ -213,6 +213,9 @@ class OpenDisplayBLE {
       active: false,
       onComplete: null
     };
+
+    // READ_IDENT (0x0046, firmware 3.x, pre-auth): see readIdent().
+    this.identState = { active: false, resolve: null, timer: null };
     
     this.msdReadState = {
       active: false,
@@ -1151,7 +1154,7 @@ class OpenDisplayBLE {
     if (this.encryptionSession.authenticated && cmd.length >= 2) {
       const commandId = (cmd[0] << 8) | cmd[1];
       // Don't encrypt authentication and firmware version commands
-      if (commandId !== 0x0050 && commandId !== 0x0043) {
+      if (commandId !== 0x0050 && commandId !== 0x0043 && commandId !== 0x0046) {
         try {
           this.log(`Encrypting command 0x${commandId.toString(16).padStart(4, '0')} (${cmd.length} bytes)`, 'info');
           commandToSend = await this.encryptCommand(cmd);
@@ -2274,7 +2277,7 @@ class OpenDisplayBLE {
     if (this.encryptionSession.authenticated && bytes.length >= 2 && isPotentiallyEncrypted) {
       const commandId = (bytes[0] << 8) | bytes[1];
       // Don't decrypt authentication and firmware version responses
-      if (commandId !== 0x0050 && commandId !== 0x0043) {
+      if (commandId !== 0x0050 && commandId !== 0x0043 && commandId !== 0x0046) {
         try {
           bytes = await this.decryptResponse(bytes);
         } catch (error) {
@@ -2309,6 +2312,16 @@ class OpenDisplayBLE {
     
     // Built-in firmware version handler
     if (this.firmwareVersionState.active && this.handleFirmwareVersionNotification(bytes)) {
+      return;
+    }
+
+    // READ_IDENT (0x00 0x46 ...) reply
+    if (this.identState.active && bytes.length >= 2 && bytes[0] === 0x00 && bytes[1] === 0x46) {
+      const st = this.identState;
+      clearTimeout(st.timer);
+      st.active = false;
+      if (st.resolve) st.resolve(Uint8Array.from(bytes));
+      st.resolve = null;
       return;
     }
     
@@ -3336,6 +3349,24 @@ class OpenDisplayBLE {
     }
   }
   
+  /**
+   * READ_IDENT (0x0046): [0x00][0x46][proto_minor][target][count] then count x
+   * {ic:u16, w:u16, h:u16, scheme} and, on firmware that has it, one flags byte
+   * (bit0 config-driven, bit1 needs migration). Pre-auth. Firmware that does not know the
+   * opcode stays silent, so this resolves null after timeoutMs -- only ask 3.x devices.
+   * Resolves the raw reply bytes; parse with OpenDisplayV3.parseReadIdent().
+   */
+  readIdent(timeoutMs = 1500) {
+    if (!this.isConnected) return Promise.resolve(null);
+    return new Promise(resolve => {
+      const st = this.identState;
+      st.active = true;
+      st.resolve = resolve;
+      st.timer = setTimeout(() => { st.active = false; st.resolve = null; resolve(null); }, timeoutMs);
+      this.sendHexCommand('0046').catch(() => { clearTimeout(st.timer); st.active = false; st.resolve = null; resolve(null); });
+    });
+  }
+
   /**
    * Read firmware version from device
    */
