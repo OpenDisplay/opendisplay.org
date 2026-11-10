@@ -32,7 +32,8 @@
     "ee02": 29,
     "good-display-133c02": 30,
     "m5-papers3": 31,
-    "nm-epd-420-4c": 32
+    "nm-epd-420-4c": 32,
+    "m5-paper": 33
   },
   "displays": {
     "ep154-200x200": 1,
@@ -81,7 +82,9 @@
     "m5-papers3-960x540": 44,
     "m5-papers3-960x540-4gray": 45,
     "ep37yr-240x416": 46,
-    "ep42r-400x300": 47
+    "ep42r-400x300": 47,
+    "m5-paper-960x540": 48,
+    "m5-paper-960x540-4gray": 49
   },
   "powerOptions": {
     "usb": 1,
@@ -94,6 +97,7 @@
     "solar": 8,
     "battery-650": 9,
     "inkplate": 10,
-    "battery-5000": 11
+    "battery-5000": 11,
+    "m5paper-1150": 12
   }
 }
