@@ -15,13 +15,13 @@
     blank_panel: "This display reports that its screen does not work, so its code cannot be checked. Claiming is then protected only by claim mode, which you started on the device. Continue only if the display screen really does not work and nobody you distrust is nearby.",
     change_wifi: "Change your WiFi password: it was readable while the display was unclaimed.",
     claim_first: "The display refused the secrets because it is not claimed. Claim this device first.",
-    claim_mode_ended: "The display is no longer in setup mode (it closes after 10 minutes, or the display restarted). Start it again: Put the display into claim mode: switch it off and on, wait about 5 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
+    claim_mode_ended: "The display is no longer in setup mode (it closes after 10 minutes, or the display restarted). Start it again: Put the display into claim mode: switch it off and on, leave it on for about 4 to 10 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
     display_seen: "This display reported a screen before. Claiming without the code is refused, because someone may be interfering.",
-    factory_reset: "Lost the key? Factory-reset the display: switch it off and on five times. Each time, wait about 5 seconds before switching it off, and keep it off for at least 2 seconds. It then shows FACTORY RESET and starts fresh. This ERASES its key, WiFi password, FindMy keys, images and settings. (Twice is claim mode; five times is the reset.)",
-    gesture: "Put the display into claim mode: switch it off and on, wait about 5 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
-    legacy_key_rotated: "The key carried over from the 2.x firmware was replaced by a new key, automatically. Back up the new key now. Going back to a 2.x firmware now needs a factory reset first.",
+    factory_reset: "Lost the key? Factory-reset the display: switch it off and on five times. Each time, leave it on for about 4 to 10 seconds before switching it off, and keep it off for at least 2 seconds. It then shows FACTORY RESET and starts fresh. This ERASES its key, WiFi password, FindMy keys, images and settings. (Twice is claim mode; five times is the reset.)",
+    gesture: "Put the display into claim mode: switch it off and on, leave it on for about 4 to 10 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
     key_dead: "This display was reset to factory state, so the key stored here no longer works. Set it up again; the old key is kept until the new claim succeeds.",
-    legacy_secrets: "This display stores a WiFi password or FindMy keys but is not claimed. Anyone nearby can read them. Claim it now: switch the display off and on, wait about 5 seconds, switch it off and on again.",
+    legacy_key_rotated: "The key carried over from the 2.x firmware was replaced by a new key, automatically. Back up the new key now. Going back to a 2.x firmware now needs a factory reset first.",
+    legacy_secrets: "This display stores a WiFi password or FindMy keys but is not claimed. Anyone nearby can read them. Claim it now: switch the display off and on, leave it on for about 4 to 10 seconds, switch it off and on again.",
     no_panel: "This display reports that it has no screen, so its code cannot be checked. Claiming is then protected only by claim mode, which you started on the device. Continue only if the display really has no screen and nobody you distrust is nearby.",
     no_recovery: "This config switches off the five-power-cycle factory reset and the display has no reset pin. If its key is ever lost, the only way back is a wired reflash (USB/SWD).",
     power_access: "Anyone who can switch the display's power off and on five times can reset it to factory state (your keys and settings are erased, not revealed).",
@@ -29,8 +29,8 @@
     rotation_one_way: "Replacing the key from the 2.x firmware is a one-way step. Afterwards, installing a 2.x firmware image directly no longer gives a working key; going back then needs a factory reset first.",
     rotation_pending: "This display still uses the key from its 2.x firmware. It will be replaced by a new key the next time it connects, once the new key can be stored safely.",
     secrets_need_key: "WiFi passwords and FindMy keys need a key: the display must be claimed first, so that they are sent encrypted and nobody nearby can read them.",
-    show_key_not_stored: "The display keeps the setting to show its key on the screen only while it is claimed, so it stored it as off. Nothing failed. Claim the display first, then switch the setting on again.",
-    show_key: "The display will show its key on the screen, permanently. Anyone who can see the display, or a photo of it, has the key and can control the display and read its WiFi password."
+    show_key: "The display will show its key on the screen, permanently. Anyone who can see the display, or a photo of it, has the key and can control the display and read its WiFi password.",
+    show_key_not_stored: "The display keeps the setting to show its key on the screen only while it is claimed, so it stored it as off. Nothing failed. Claim the display first, then switch the setting on again."
   });
   const WEBSITE = Object.freeze({
     busy_retry: "The display is busy drawing. Trying again in a moment.",
@@ -48,7 +48,7 @@
     no_rotate_migrated: "Do not replace keys carried over from firmware 2.x",
     no_rotate_this_display: "Do not replace the key this display carried over from firmware 2.x",
     not_authorised: "Not authorised: this display is claimed and no stored key works for it. Add its key, or factory-reset it if the key is lost.",
-    not_in_claim_mode: "The display is not in claim mode. Put the display into claim mode: switch it off and on, wait about 5 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
+    not_in_claim_mode: "The display is not in claim mode. Put the display into claim mode: switch it off and on, leave it on for about 4 to 10 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
     panel_busy: "The display panel is busy. Wait a few seconds and try again.",
     rotation_kept: "This display keeps the key from its 2.x firmware, because \"Do not replace keys carried over from firmware 2.x\" is on.",
     rotation_needs_storage: "This browser cannot keep keys safely (private window, or it may delete stored data), so the key was not replaced. Use a normal browser window, or replace it from the Security dialog after downloading the key.",

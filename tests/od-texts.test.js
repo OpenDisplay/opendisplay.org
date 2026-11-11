@@ -14,6 +14,17 @@ test('shared texts equal py-opendisplay user_texts.json, key for key and word fo
   for (const [k, v] of Object.entries(py.texts)) assert.equal(T.SHARED[k], v, k);
 });
 
+// Drift guard against the live py-opendisplay worktree (skipped when it is not checked out here).
+const PY_LIVE = [path.join(__dirname, '..', '..', 'py-v9', 'tests', 'fixtures', 'user_texts.json'),
+  path.join(__dirname, '..', '..', 'py', 'tests', 'fixtures', 'user_texts.json')].find(f => fs.existsSync(f));
+test('shared texts equal the py-opendisplay worktree file (py-v9)', { skip: PY_LIVE ? false : 'no py-opendisplay worktree next to this one (../py-v9 or ../py)' }, () => {
+  const live = JSON.parse(fs.readFileSync(PY_LIVE, 'utf8'));
+  assert.equal(live.schema, T.SCHEMA, PY_LIVE);
+  assert.deepEqual(Object.keys(T.SHARED).sort(), Object.keys(live.texts).sort(), PY_LIVE);
+  for (const [k, v] of Object.entries(live.texts)) assert.equal(T.SHARED[k], v, k + ' differs from ' + PY_LIVE);
+  assert.deepEqual(py, live, 'tests/fixtures/user_texts.json is stale: copy it from ' + PY_LIVE);
+});
+
 test('website texts never shadow a shared key', () => {
   for (const k of Object.keys(T.WEBSITE)) assert.ok(!(k in T.SHARED), k);
 });
