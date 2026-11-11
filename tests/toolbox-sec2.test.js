@@ -32,7 +32,7 @@ function el(tag) {
 /**
  * answers: list of functions (dialog, world) -> {button, value?, checked?}; one per dialog in order.
  */
-function world({ dev, answers = [], href = 'https://opendisplay.org/firmware/toolbox/', v1Keys = {} }) {
+function world({ dev, answers = [], href = 'https://opendisplay.org/firmware/toolbox/', v1Keys = {}, persisted = true, persist = false, beforeLoad = null }) {
   const shown = [];
   const flashes = [];
   const logs = [];
@@ -64,16 +64,17 @@ function world({ dev, answers = [], href = 'https://opendisplay.org/firmware/too
     }
   };
   const panel = el('div'); panel.id = 'bleConnectionPanel'; byId.set('bleConnectionPanel', panel);
-  const np = el('input'); np.id = 'namePrefix'; np.value = 'OD'; const npWrap = el('div'); npWrap.appendChild(np); byId.set('namePrefix', np);
+  const np = el('input'); np.id = 'namePrefix'; np.value = 'OD'; const npWrap = el('div'); npWrap.appendChild(np); byId.set('namePrefix', np); body.appendChild(npWrap);
   const storage = new Map();
   const localStorage = { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) };
   localStorage.setItem('opendisplay.deviceKeys', JSON.stringify(v1Keys));
+  if (beforeLoad) beforeLoad(localStorage);
   const history = { state: null, replaced: [], replaceState(s, t, u) { this.replaced.push(u); } };
   const loc = new URL(href);
   const ctx = {
     console, setTimeout, clearTimeout, setImmediate, crypto: globalThis.crypto, URL, URLSearchParams, Blob: class { constructor(p) { this.p = p; } },
     document, localStorage, history, location: { href: loc.href, search: loc.search },
-    navigator: { storage: { persisted: async () => true } }
+    navigator: { storage: { persisted: async () => persisted, persist: async () => persist } }
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
@@ -177,32 +178,80 @@ test('an open device offers claim (gesture text) or use without a key', async ()
   assert.ok(g.flashes.some(f => /not in claim mode/.test(f)), 'the device was not put into claim mode');
 });
 
-test('a migrated 2.x key: the stored 2.x key opens the session, then it rotates (one-way text shown)', async () => {
+const notices = w => w.ctx.document.body.children.filter(c => c.className === 'tb-notice');
+
+test('a migrated 2.x key rotates AUTOMATICALLY: no prompt, then one notice with a key backup', async () => {
   const kDev = new Uint8Array(16).fill(0x42);
   const dev = new RefDevice({ uid: S.hexToBytes('0102030405060708'), kDev, origin: 'LEGACY' });
-  const w = world({ dev, v1Keys: { [NAME]: S.bytesToHex(kDev) }, answers: [
-    dlg => { assert.match(dlg.text(), /one-way step/); return { button: 'rotate', checked: false }; }
-  ] });
+  const w = world({ dev, v1Keys: { [NAME]: S.bytesToHex(kDev) } });
   await w.connect();
+  assert.equal(w.shown.length, 0, 'no dialog');
   assert.notEqual(S.bytesToHex(dev.kDev), S.bytesToHex(kDev), 'rotated');
   assert.equal(w.TbSec2.keyStore().get(NAME).confirmed, S.bytesToHex(dev.kDev));
+  assert.equal(w.TbSec2.keyStore().get(NAME).candidates.length, 0, 'old key dropped only after the new one authenticated');
   assert.equal(w.ble.sec2Link.session.hasSession, true, 're-authenticated with the new key');
+  const n = notices(w);
+  assert.equal(n.length, 1, 'told once');
+  assert.match(n[0].text(), /replaced by a new key, automatically/);
+  assert.match(n[0].text(), /factory reset/);
+  const backup = n[0].all().find(x => x.tag === 'button' && x.textContent === 'Back up this key');
+  assert.ok(backup);
+  let downloaded = null;
+  const origCreate = w.ctx.document.createElement;
+  w.ctx.URL.createObjectURL = b => { downloaded = b.p.join(''); return 'blob:x'; };
+  w.ctx.URL.revokeObjectURL = () => {};
+  backup.onclick();
+  assert.ok(downloaded && downloaded.includes(S.bytesToHex(dev.kDev)), 'the backup holds the new key');
+  w.ctx.document.createElement = origCreate;
+  // Next connect: the key is not legacy any more; nothing more is said.
+  dev.disconnect(); w.ble.sec2Link.onDisconnect();
+  await w.connect();
+  assert.equal(notices(w).length, 1);
 });
 
-test('rotation opt-out: ticking "Do not replace" keeps the 2.x key and remembers the choice', async () => {
+test('the opt-out setting, set BEFORE connecting, keeps the 2.x key; the per-device box does too', async () => {
   const kDev = new Uint8Array(16).fill(0x42);
   const dev = new RefDevice({ uid: S.hexToBytes('0102030405060708'), kDev, origin: 'LEGACY' });
-  const w = world({ dev, v1Keys: { [NAME]: S.bytesToHex(kDev) }, answers: [() => ({ button: 'rotate', checked: true })] });
+  const w = world({ dev, v1Keys: { [NAME]: S.bytesToHex(kDev) } });
+  const cb = w.ctx.document.getElementById('tbNoRotateAll');
+  assert.ok(cb, 'the setting is on the page before any connect');
+  assert.match(cb.parentNode.text(), /Do not replace keys carried over from firmware 2.x/);
+  cb.checked = true; cb.onchange();
+  assert.equal(w.TbSec2.keyStore().noRotateAll(), true);
   await w.connect();
-  assert.equal(S.bytesToHex(dev.kDev), S.bytesToHex(kDev));
-  assert.equal(w.TbSec2.keyStore().noRotate(NAME), true);
-  // Next connect: no prompt at all.
-  dev.disconnect();
-  w.ble.sec2Link.onDisconnect();
-  const before = w.shown.length;
+  assert.equal(w.shown.length, 0);
+  assert.equal(S.bytesToHex(dev.kDev), S.bytesToHex(kDev), 'kept');
+  assert.ok(w.logs.some(([, m]) => /keeps the key from its 2.x firmware/.test(m)));
+  assert.equal(notices(w).length, 0);
+  // Per device (the Security dialog's box): also kept.
+  const dev2 = new RefDevice({ uid: S.hexToBytes('0102030405060708'), kDev, origin: 'LEGACY' });
+  const w2 = world({ dev: dev2, v1Keys: { [NAME]: S.bytesToHex(kDev) } });
+  w2.TbSec2.keyStore().setNoRotate(NAME, true);
+  await w2.connect();
+  assert.equal(S.bytesToHex(dev2.kDev), S.bytesToHex(kDev));
+  // The setting is honoured by the migration assistant's plan too.
+  const W = require('../httpdocs/js/od-wizard.js');
+  const st = { claimed: true, keyLegacy: true, rotationSuggested: true };
+  assert.deepEqual(W.planMigrationAssistant({ status: st, noRotate: w.TbSec2.keyStore().noRotateFor(NAME) }).steps, []);
+});
+
+test('a browser that may lose the key (not persisted, persistence refused): rotation skipped and reported', async () => {
+  const kDev = new Uint8Array(16).fill(0x42);
+  const dev = new RefDevice({ uid: S.hexToBytes('0102030405060708'), kDev, origin: 'LEGACY' });
+  const w = world({ dev, v1Keys: { [NAME]: S.bytesToHex(kDev) }, persisted: false, persist: false });
   await w.connect();
-  assert.equal(w.shown.length, before);
-  assert.equal(S.bytesToHex(dev.kDev), S.bytesToHex(kDev));
+  assert.equal(w.shown.length, 0);
+  assert.equal(S.bytesToHex(dev.kDev), S.bytesToHex(kDev), 'never attempted');
+  assert.ok(!w.ble.sec2Link.session.rotated);
+  const n = notices(w);
+  assert.equal(n.length, 1);
+  assert.match(n[0].text(), /still uses the key from its 2.x firmware/);
+  assert.match(n[0].text(), /private window/);
+  // Persistence granted on request: it rotates.
+  const dev2 = new RefDevice({ uid: S.hexToBytes('0102030405060708'), kDev, origin: 'LEGACY' });
+  const w2 = world({ dev: dev2, v1Keys: { [NAME]: S.bytesToHex(kDev) }, persisted: false, persist: true });
+  await w2.connect();
+  assert.notEqual(S.bytesToHex(dev2.kDev), S.bytesToHex(kDev));
 });
 
 test('secrets on an unclaimed device: refused, or written without them; then after the claim', async () => {
@@ -260,4 +309,26 @@ test('the claim-mode scan option adds a masked manufacturer filter first and kee
   assert.ok(a.length >= 2, 'fallbacks kept');
   w.ble.claimModeScan = false;
   assert.equal(w.ble.buildRequestDeviceOptionAttempts('OD')[0].filters[0].manufacturerData[0].mask, undefined);
+});
+
+test('SHOW_KEY on an unclaimed display: the device stores 0; that is explained, not reported as a failure', async () => {
+  const dev = new RefDevice({ uid: S.hexToBytes('0102030405060708') });
+  const answer = dlg => {
+    const t = dlg.text();
+    if (/Show the key on the display/.test(t)) {
+      assert.match(t, /only while it is claimed/);
+      return { button: 'ok' };
+    }
+    return { button: /Use without a key/.test(t) ? 'no_key' : 'cancel' };
+  };
+  const w = world({ dev, answers: Array.from({ length: 5 }, () => answer) });
+  await w.connect();
+  const s27 = new Uint8Array(64); s27[0] = 0; s27[19] = P.SEC_FLAG.SHOW_KEY_ON_SCREEN;
+  const blob = P.buildBlob([sysPkt(), { number: 0, type: 0x27, body: s27 }]);
+  await w.ble.writeConfig(blob);   // resolves: not a failed write
+  assert.ok(dev.config, 'written');
+  const stored = P.sec27Of(dev.config);
+  assert.ok(stored && !stored.showKeyOnScreen, 'the device stored the bit as 0');
+  assert.ok(w.flashes.some(m => /only while it is claimed/.test(m) && /Nothing failed/.test(m)));
+  assert.equal(w.TbSec2._state().lastStored, null, 'a later write asks again');
 });

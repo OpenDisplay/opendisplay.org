@@ -21,10 +21,11 @@
   class Sec2Link {
     /**
      * @param {object} ble  OpenDisplayBLE (needs writeCommandValue, isConnected, log)
-     * @param {{keyStore, name, maxFrame?, fragMax?, onError?}} o
+     * @param {{keyStore, name, maxFrame?, mtu?, fragMax?, onError?}} o
+     *   maxFrame / mtu: the frame limit is min(mtu - 3, 244) (244 when the MTU is unknown)
      *   onError(err, {fatal}) is told about refusals that abort what is in flight
      */
-    constructor(ble, { keyStore, name, maxFrame = SS.DEFAULT_MAX_FRAME, fragMax = S.FRAG_MAX_MIN, onError = null, sleep } = {}) {
+    constructor(ble, { keyStore, name, maxFrame = SS.DEFAULT_MAX_FRAME, mtu = null, fragMax = S.FRAG_MAX_MIN, onError = null, sleep } = {}) {
       this.ble = ble;
       this.onError = onError;
       this.waiters = [];
@@ -38,7 +39,7 @@
         },
         receive(match, timeoutMs) { return self._wait(match, timeoutMs); }
       };
-      this.session = new SS.Sec2Session({ transport: this.transport, keyStore, name, maxFrame, fragMax,
+      this.session = new SS.Sec2Session({ transport: this.transport, keyStore, name, maxFrame, mtu, fragMax,
         log: (m, l) => ble.log && ble.log(m, l || 'info'), ...(sleep ? { sleep } : {}) });
       this.tapActive = 0;   // > 0 while a handshake or a session-driver request owns the replies
     }

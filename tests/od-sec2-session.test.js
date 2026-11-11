@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const S = require('../httpdocs/js/od-sec2.js');
 const P = require('../httpdocs/js/od-sec2-policy.js');
 const KS = require('../httpdocs/js/od-keystore.js');
-const { Sec2Session, Sec2SessionError, secretsNeedKey } = require('../httpdocs/js/od-sec2-session.js');
+const { Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit } = require('../httpdocs/js/od-sec2-session.js');
 const { RefDevice, RefTransport } = require('./helpers/sec2-refdevice.js');
 
 const NAME = 'OD1A2B3C';
@@ -183,7 +183,7 @@ test('auth: BUSY backs off and retries; a 2.x key from the old store is a candid
   assert.equal(JSON.parse(storage.getItem(KS.V1_STORE_KEY))[NAME], S.bytesToHex(kDev), '2.x store untouched');
 });
 
-test('rotation: the new key is stored before ROTATE_CONFIRM, promoted after the sealed ACK, then re-auth', async () => {
+test('rotation: the new key is stored before ROTATE_CONFIRM; the old key stays a candidate until the new one authenticated', async () => {
   const kDev = new Uint8Array(16).fill(0x42);
   const r = rig({ kDev, origin: 'LEGACY' });
   r.store.addCandidate(NAME, kDev);
@@ -199,11 +199,18 @@ test('rotation: the new key is stored before ROTATE_CONFIRM, promoted after the 
   const res = await r.s.rotate();
   assert.ok(stagedBeforeConfirm);
   assert.equal(S.bytesToHex(r.dev.kDev), res.key);
-  assert.equal(r.store.get(NAME).confirmed, res.key);
+  // After the ACK: nothing confirmed, the new key first, the old one kept as 'pre-rotation'.
+  const mid = r.store.get(NAME);
+  assert.equal(mid.confirmed, null);
+  assert.deepEqual(r.store.keysToTry(NAME), [res.key, S.bytesToHex(kDev)]);
+  assert.equal(mid.candidates[1].source, 'pre-rotation');
   assert.equal(r.s.hasSession, false);
   await r.s.readStatus();
   const again = await r.s.authenticate();
   assert.equal(again.key, res.key); assert.equal(again.keyLegacy, false);
+  // The new key's first session confirms it; only now is the old key dropped.
+  assert.equal(r.store.get(NAME).confirmed, res.key);
+  assert.deepEqual(r.store.get(NAME).candidates, []);
 });
 
 test('rotation: opt-out, refused confirm and a lost ACK keep the old key usable', async () => {
@@ -232,6 +239,64 @@ test('rotation: opt-out, refused confirm and a lost ACK keep the old key usable'
   reconnect(l);
   await l.s.select();
   assert.equal((await l.s.authenticate()).key, S.bytesToHex(l.dev.kDev));
+});
+
+test('the global opt-out "Do not replace keys carried over from firmware 2.x" applies to every device', async () => {
+  const kDev = new Uint8Array(16).fill(0x42);
+  const r = rig({ kDev, origin: 'LEGACY' });
+  r.store.addCandidate(NAME, kDev);
+  r.store.setNoRotateAll(true);
+  assert.equal(r.store.noRotateFor('ODFFFFFF'), true, 'also for a device never seen before');
+  await r.s.select(); await r.s.authenticate();
+  assert.equal(r.s.rotationWanted(), false);
+  r.store.setNoRotateAll(false);
+  assert.equal(r.s.rotationWanted(), true);
+  const t = new KS.KeyStore({ storage: r.storage });
+  assert.equal(t.noRotateAll(), false);
+  r.store.setNoRotateAll(true);
+  assert.equal(new KS.KeyStore({ storage: r.storage }).noRotateAll(), true, 'persists');
+});
+
+test('automatic rotation needs a store the browser keeps: private window / evictable -> skipped', async () => {
+  const blocked = new KS.KeyStore({ storage: { getItem: () => null, setItem: () => { throw new Error('denied'); }, removeItem() {} }, persisted: async () => true });
+  assert.equal(await blocked.keepsKeys(), false);
+  const evictable = new KS.KeyStore({ storage: KS.memoryStorage(), persisted: async () => false, persist: async () => false });
+  assert.equal(await evictable.keepsKeys(), false);
+  const granted = new KS.KeyStore({ storage: KS.memoryStorage(), persisted: async () => false, persist: async () => true });
+  assert.equal(await granted.keepsKeys(), true);
+  const kept = new KS.KeyStore({ storage: KS.memoryStorage(), persisted: async () => true });
+  assert.equal(await kept.keepsKeys(), true);
+});
+
+test('frame limit: min(MTU - 3, 244) on every target; frag_max 20..limit; sealed frames are refused, never split', async () => {
+  assert.equal(frameLimit(null), 244);
+  assert.equal(frameLimit(247), 244);
+  assert.equal(frameLimit(256), 244);
+  assert.equal(frameLimit(517), 244);
+  assert.equal(frameLimit(185), 182);
+  const tr = new RefTransport(new RefDevice({ uid: UID }));
+  assert.equal(new Sec2Session({ transport: tr, maxFrame: 300 }).maxFrame, 244);
+  assert.equal(new Sec2Session({ transport: tr, mtu: 185 }).maxFrame, 182);
+  assert.equal(new Sec2Session({ transport: tr, mtu: 185, fragMax: 244 }).fragMax, 182);
+  assert.equal(new Sec2Session({ transport: tr, fragMax: 5 }).fragMax, 20);
+  // The HELLO declares the session's frag_max, and no handshake frame exceeds it.
+  const kDev = new Uint8Array(16).fill(0x42);
+  for (const fragMax of [20, 182]) {
+    const dev = new RefDevice({ uid: UID, kDev });
+    const t = new RefTransport(dev);
+    const store = new KS.KeyStore({ storage: KS.memoryStorage(), persisted: async () => true });
+    store.addCandidate(NAME, kDev);
+    const s = new Sec2Session({ transport: t, keyStore: store, name: NAME, sleep: noSleep, mtu: 185, fragMax });
+    await s.select(); await s.authenticate();
+    const hello = t.sent.find(f => f[0] === 0x00 && f[1] === 0x56 && f[2] === 0x01 && (f[3] & 0x7f) === 0);
+    assert.ok(hello, 'HELLO sent');
+    assert.equal(hello[5], fragMax);   // [00][56][sub][frag][ver][frag_max]
+    assert.ok(t.sent.filter(f => f[1] === 0x56).every(f => f.length <= fragMax));
+    // A sealed request one byte over the 182 B limit is refused before anything is sent.
+    const n = t.sent.length;
+    await assert.rejects(s.request(S.concat(Uint8Array.of(0x00, 0x30), new Uint8Array(182 - 18 + 1))), e => e.code === 'frame_too_long');
+    assert.equal(t.sent.length, n);
+  }
 });
 
 test('rotation is refused when the browser cannot store the key', async () => {

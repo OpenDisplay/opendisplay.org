@@ -6,7 +6,9 @@
 //               store, a new key staged before CONFIRM / ROTATE_CONFIRM
 //   sec2        pinned: this device was seen speaking SEC2; never talk v1 to it again
 //   displaySeen the device reported a working panel once (a later "no panel" claim is suspicious)
-//   noRotate    the owner's opt-out for rotating a migrated 2.x key
+//   noRotate    the owner's opt-out for rotating a migrated 2.x key, for this device
+// and, for every device, the persistent setting "Do not replace keys carried over from firmware
+// 2.x" (noRotateAll, its own storage entry; settable before any device was connected).
 //
 // Rules:
 //   - A key is removed ONLY by an explicit user action (forget) or after another key has
@@ -26,6 +28,7 @@
   'use strict';
 
   const STORE_KEY = 'opendisplay.sec2.devices';
+  const NO_ROTATE_KEY = 'opendisplay.sec2.noRotateLegacy';   // the global opt-out ('1' = on)
   const V1_STORE_KEY = 'opendisplay.deviceKeys';   // the toolbox's 2.x key store (name -> hex)
   const FORMAT = 1;
   const MAX_TRY = 3;
@@ -55,10 +58,11 @@
      *   storage    localStorage-like; omitted -> globalThis.localStorage
      *   persisted  async () => boolean, navigator.storage.persisted() in the browser
      */
-    constructor({ storage = null, now = () => Date.now(), persisted = null } = {}) {
+    constructor({ storage = null, now = () => Date.now(), persisted = null, persist = null } = {}) {
       this.storage = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
       this.now = now;
       this._persisted = persisted;
+      this._persist = persist;
     }
 
     _read() {
@@ -101,6 +105,20 @@
     /** navigator.storage.persisted(): false means the browser may evict the store; offer a key download first. */
     async persisted() {
       try { return this._persisted ? !!(await this._persisted()) : false; } catch (e) { return false; }
+    }
+
+    /** navigator.storage.persist(): ask the browser to keep the store. True when it now is persistent. */
+    async requestPersist() {
+      try { return this._persist ? !!(await this._persist()) : false; } catch (e) { return false; }
+    }
+    /**
+     * May a one-way key step run WITHOUT asking (the automatic rotation)? Only when the store is
+     * writable AND the browser keeps it (persisted, or persistence granted now). A private window
+     * or a store the browser may evict gives false: the rotation is then skipped and reported.
+     */
+    async keepsKeys() {
+      if (!this.durable()) return false;
+      return (await this.persisted()) || (await this.requestPersist());
     }
 
     get(name) {
@@ -172,6 +190,33 @@
     displaySeen(name) { const r = this.get(name); return !!(r && r.displaySeen); }
     setNoRotate(name, on) { return this._update(name, rec => { rec.noRotate = !!on; return rec; }); }
     noRotate(name) { const r = this.get(name); return !!(r && r.noRotate); }
+    /** The persistent setting for every device. Throws Sec2StorageError when it cannot be stored. */
+    setNoRotateAll(on) {
+      if (!this.storage) throw new Sec2StorageError('no storage');
+      if (on) this.storage.setItem(NO_ROTATE_KEY, '1'); else this.storage.removeItem(NO_ROTATE_KEY);
+      if (this.noRotateAll() !== !!on) throw new Sec2StorageError('read-back mismatch');
+    }
+    noRotateAll() { try { return !!(this.storage && this.storage.getItem(NO_ROTATE_KEY) === '1'); } catch (e) { return false; } }
+    /** The effective opt-out for this device: the global setting or the per-device choice. */
+    noRotateFor(name) { return this.noRotateAll() || this.noRotate(name); }
+
+    /**
+     * ROTATE_CONFIRM's sealed ACK arrived: `newKey` is the device's key now but has not opened a
+     * session yet. The old confirmed key becomes a candidate ('pre-rotation') AFTER the new one;
+     * nothing is dropped until the new key authenticates (promote()).
+     */
+    demote(name, newKey) {
+      const k = normKey(newKey);
+      if (!k) throw new TypeError('invalid key');
+      return this._update(name, rec => {
+        const others = rec.candidates.filter(c => c.key !== k && c.key !== rec.confirmed);
+        const staged = rec.candidates.find(c => c.key === k) || { key: k, source: 'pending-rotate', added: this.now() };
+        const old = rec.confirmed && rec.confirmed !== k ? [{ key: rec.confirmed, source: 'pre-rotation', added: this.now() }] : [];
+        rec.confirmed = null;
+        rec.candidates = [staged, ...old, ...others];
+        return rec;
+      });
+    }
 
     /**
      * Explicit user action only. Keeps the SEC2 pin unless `unpin` (a pinned device must not be
@@ -214,5 +259,5 @@
     }
   }
 
-  return { KeyStore, Sec2StorageError, memoryStorage, normKey, STORE_KEY, V1_STORE_KEY, MAX_TRY };
+  return { KeyStore, Sec2StorageError, memoryStorage, normKey, STORE_KEY, V1_STORE_KEY, NO_ROTATE_KEY, MAX_TRY };
 });

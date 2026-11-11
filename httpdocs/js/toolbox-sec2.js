@@ -4,7 +4,11 @@
 //
 // What it changes on the page:
 //   - every connect: READ the version, probe SEC_STATUS, pin SEC2 devices, open a session with a
-//     stored key (asking for one if none works), rotate a migrated 2.x key unless opted out;
+//     stored key (asking for one if none works), rotate a migrated 2.x key AUTOMATICALLY unless
+//     the setting "Do not replace keys carried over from firmware 2.x" (next to the scan
+//     filter, usable before connecting) or the device's own opt-out is on. No prompt; one
+//     non-blocking notice afterwards with "Back up this key". Without a store the browser keeps
+//     (private window, eviction allowed) the rotation is skipped and reported, never attempted;
 //   - unclaimed devices: the wizard (claim with the typed code, or use without a key);
 //   - config writes: secrets refused client-side on an unclaimed device (or written after the
 //     claim), confirmations for SHOW_KEY_ON_SCREEN and "no recovery", NACKs explained;
@@ -28,8 +32,10 @@
     if (store) return store;
     let storage = null;
     try { storage = root.localStorage; storage.getItem('x'); } catch (e) { storage = null; }
-    store = new KS.KeyStore({ storage, persisted: () => (root.navigator && root.navigator.storage && root.navigator.storage.persisted
-      ? root.navigator.storage.persisted() : Promise.resolve(false)) });
+    const ns = root.navigator && root.navigator.storage;
+    store = new KS.KeyStore({ storage,
+      persisted: () => (ns && ns.persisted ? ns.persisted() : Promise.resolve(false)),
+      persist: () => (ns && ns.persist ? ns.persist() : Promise.resolve(false)) });
     return store;
   }
 
@@ -229,25 +235,56 @@
     return false;
   }
 
-  /** P7: a migrated key rotates by default (one-way), unless the owner opted out. */
+  /**
+   * P7: a key carried over from 2.x is replaced AUTOMATICALLY (maintainer decision 2026-11-11),
+   * unless the owner opted out. No prompt. The new key is stored and read back before
+   * ROTATE_CONFIRM (stage()); the old key stays a candidate until the new one opened a session.
+   * Skipped (and reported) when this browser cannot keep keys. The user is told once afterwards.
+   */
   async function maybeRotate() {
-    const sess = link.session;
-    if (!sess.keyLegacy) return;
-    if (!sess.rotationWanted()) { addLog(txt('rotation_pending'), 'info'); return; }
-    const a = await ask({ title: 'Replace the key from firmware 2.x', lines: [txt('rotation_pending'), txt('rotation_one_way')],
-      checkbox: { label: txt('no_rotate_migrated'), checked: false },
-      buttons: [{ id: 'later', label: 'Not now' }, { id: 'rotate', label: 'Replace the key', primary: true }] });
-    if (!a) return;
-    if (a.checked) keyStore().setNoRotate(deviceName(), true);
-    if (a.id !== 'rotate' || a.checked) return;
-    try {
-      await link.own(async ss => { await ss.rotate({ beforeOnlyKey }); await ss.readStatus(); await ss.authenticate(); });
-      addLog('Key replaced.', 'success'); tbFlash('Key replaced. The new key is stored in this browser.', 'info');
-      if (P.sec27Of && lastStored && (P.sec27Of(lastStored) || {}).flags & P.SEC_FLAG.SHOW_KEY_ON_SCREEN) tbFlash(txt('rotation_done_show_key'), 'info');
-    } catch (e) {
-      addLog('Key replacement: ' + e.message, 'error');
-      tbFlash(e.textKey ? txt(e.textKey) : e.message);
+    const sess = link.session, name = deviceName();
+    if (!sess.keyLegacy || !sess.hasSession) return;
+    if (!sess.rotationWanted()) { addLog(txt('rotation_kept'), 'info'); return; }
+    if (!(await keyStore().keepsKeys())) {
+      addLog(txt('rotation_pending') + ' ' + txt('rotation_needs_storage'), 'warning');
+      showNotice({ lines: [txt('rotation_pending'), txt('rotation_needs_storage')] });
+      return;
     }
+    let res = null;
+    try {
+      await link.own(async ss => { res = await ss.rotate(); await ss.readStatus(); await ss.authenticate(); });
+      addLog('Key replaced (it was carried over from firmware 2.x).', 'success');
+    } catch (e) {
+      addLog('Key replacement: ' + e.message, res ? 'warning' : 'error');
+      if (!res) tbFlash(e.textKey ? txt(e.textKey) : e.message);
+    } finally {
+      if (res) notifyRotated(name, res.key);
+    }
+  }
+  /** The one notice after the automatic rotation: non-blocking, with a key backup action. */
+  function notifyRotated(name, keyHex) {
+    const lines = [txt('legacy_key_rotated')];
+    if (P.sec27Of && lastStored && (P.sec27Of(lastStored) || {}).flags & P.SEC_FLAG.SHOW_KEY_ON_SCREEN) lines.push(txt('rotation_done_show_key'));
+    showNotice({ lines, actions: [{ label: 'Back up this key', run: () => downloadKey(name, keyHex) }] });
+  }
+  /** A notice that stays until dismissed and blocks nothing (textContent only). */
+  function showNotice({ lines, actions = [] }) {
+    const doc = root.document;
+    if (!doc || !doc.createElement) return null;
+    const box = doc.createElement('div');
+    box.className = 'tb-notice';
+    box.setAttribute('role', 'status');
+    for (const l of lines) { const p = doc.createElement('p'); p.textContent = l; box.appendChild(p); }
+    const acts = doc.createElement('div'); acts.className = 'tb-actions';
+    for (const a of [...actions, { label: 'Dismiss', run: null }]) {
+      const b = doc.createElement('button');
+      b.type = 'button'; b.className = 'bt-btn ' + (a.run ? 'bt-btn--primary' : 'bt-btn--outline'); b.textContent = a.label;
+      b.onclick = () => { if (a.run) a.run(); else box.remove(); };
+      acts.appendChild(b);
+    }
+    box.appendChild(acts);
+    (doc.body || doc.documentElement).appendChild(box);
+    return box;
   }
 
   // ---- the wizard ------------------------------------------------------------------------
@@ -255,7 +292,7 @@
     const sp = setupParams(root.location ? root.location.search : '');
     const plan = W.planWizard({ trigger: sp ? 'qr' : 'toolbox', status, ident, choice,
       url: sp ? { status: sp.newer ? 'generic' : 'setup', kind: sp.kind, name: sp.name, newerFormat: sp.newer, preset: { b: null, d: null, p: null } } : null,
-      noRotate: keyStore().noRotate(deviceName()) });
+      noRotate: keyStore().noRotateFor(deviceName()) });
     addLog('Setup: ' + plan.state + (plan.entry ? ', step ' + plan.entry : ''), 'info');
     if (plan.offer.length) {
       const a = await ask({ title: 'Set up security', lines: plan.textKeys.map(k => txt(k)),
@@ -345,7 +382,9 @@
       const e = new Error(txt(chk.textKey)); e.tbFriendly = true; e.textKey = chk.textKey; throw e;
     }
     if (P.showKeyRequested(blob, lastStored)) {
-      const a = await ask({ title: 'Show the key on the display?', lines: [txt('show_key')],
+      // Rev 5: an unclaimed / LOCKED device stores the bit as 0; say so up front (still confirmed).
+      const lines = [txt('show_key')].concat(!st.claimed || st.locked ? [txt('show_key_not_stored')] : []);
+      const a = await ask({ title: 'Show the key on the display?', lines,
         buttons: [CANCEL, { id: 'ok', label: 'Show the key', primary: true }] });
       if (a !== 'ok') { const e = new Error('Not written.'); e.tbFriendly = true; throw e; }
     }
@@ -369,6 +408,13 @@
         throw e;
       }
       lastStored = blob;
+      const s27 = P.sec27Of ? P.sec27Of(blob) : null;
+      const st = link && link.mode === 'sec2' ? (link.session.status || {}) : null;
+      if (st && s27 && s27.showKeyOnScreen && (!st.claimed || st.locked)) {
+        // Stored as 0 (rev 5 § 10.3): not a failed write. Tell why; the stored state is unknown now.
+        addLog(txt('show_key_not_stored'), 'info'); tbFlash(txt('show_key_not_stored'), 'info');
+        lastStored = null;
+      }
       // 3.0 restarts after a config write; give it at least 30 s to come back (BG22 pauses ~24 s).
       if (link && link.mode === 'sec2') {
         bleLib.maxReconnectAttempts = Math.max(bleLib.maxReconnectAttempts || 0, 5);
@@ -407,7 +453,7 @@
     if (st && !st.claimed) buttons.push({ id: 'claim', label: 'Claim', primary: true });
     if (sess.hasSession) buttons.push({ id: 'rotate', label: 'Replace the key' }, { id: 'unclaim', label: 'Unclaim' });
     if (s.hasAnyKey(name)) buttons.push({ id: 'download', label: 'Download the key' }, { id: 'forget', label: 'Forget the key' });
-    const a = await ask({ title: 'Security', lines, buttons, checkbox: { label: txt('no_rotate_migrated'), checked: s.noRotate(name) } });
+    const a = await ask({ title: 'Security', lines, buttons, checkbox: { label: txt('no_rotate_this_display'), checked: s.noRotate(name) } });
     if (!a) return;
     const id = typeof a === 'string' ? a : a.id;
     if (a && typeof a === 'object') s.setNoRotate(name, !!a.checked);
@@ -444,6 +490,22 @@
     np.parentNode.appendChild(lab);
     cb.onchange = () => { if (typeof OpenDisplayBLE !== 'undefined') OpenDisplayBLE.prototype.claimModeScan = cb.checked; setClaimModeScan(cb.checked); };
   }
+  /** The persistent "Do not replace keys carried over from firmware 2.x" setting, usable before connecting. */
+  function addNoRotateOption() {
+    const doc = root.document;
+    const np = doc && doc.getElementById && doc.getElementById('namePrefix');
+    if (!np || !np.parentNode || doc.getElementById('tbNoRotateAll')) return;
+    const lab = doc.createElement('label'); lab.className = 'tb-switch';
+    lab.title = txt('rotation_one_way');
+    const cb = doc.createElement('input'); cb.type = 'checkbox'; cb.id = 'tbNoRotateAll';
+    cb.checked = keyStore().noRotateAll();
+    const sp = doc.createElement('span'); sp.textContent = txt('no_rotate_migrated');
+    lab.appendChild(cb); lab.appendChild(sp);
+    np.parentNode.appendChild(lab);
+    cb.onchange = () => {
+      try { keyStore().setNoRotateAll(cb.checked); } catch (e) { cb.checked = keyStore().noRotateAll(); tbFlash(txt('storage_not_durable')); }
+    };
+  }
   function applySetupParams() {
     const sp = setupParams(root.location ? root.location.search : '');
     if (!sp) return;
@@ -456,8 +518,8 @@
   function setClaimModeScan(on) { if (typeof bleLib !== 'undefined' && bleLib) bleLib.claimModeScan = !!on; }
 
   captureUrlKey();
-  try { addSecurityButton(); addClaimModeOption(); applySetupParams(); } catch (e) { /* page without these elements */ }
+  try { addSecurityButton(); addClaimModeOption(); addNoRotateOption(); applySetupParams(); } catch (e) { /* page without these elements */ }
 
   root.TbSec2 = { takeKeyFromUrl, setupParams, stripSecrets, checkWrite, onConnect, openSession, runWizard, claim,
-    securityMenu, setClaimModeScan, keyStore, _state: () => ({ link, lastStored, pendingSecrets, linkKey }) };
+    securityMenu, setClaimModeScan, keyStore, maybeRotate, showNotice, _state: () => ({ link, lastStored, pendingSecrets, linkKey }) };
 })(typeof window !== 'undefined' ? window : globalThis);

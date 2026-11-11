@@ -245,6 +245,7 @@ adafruit-nrfutil dfu serial --package opendisplay-xiao_nrf52840-usb-2-install.zi
       <li>Send an image and look at the panel.</li>
     </ol>
     <p>BG22 stores at most 3120 bytes of configuration on 3.x (2048 on 2.x). The Toolbox refuses to write a larger one and says by how much it is over.</p>
+    <p><strong>The encryption key.</strong> A BG22 that had a key on 2.x keeps it after the update. On the first connection to 3.x the Toolbox replaces it with a new key automatically and then shows a notice with <strong>Back up this key</strong>. This is a one-way step: afterwards, installing a 2.x image no longer gives a working key, and going back to 2.x needs a factory reset first. To keep the 2.x key, tick <strong>Do not replace keys carried over from firmware 2.x</strong> next to the device name filter in the Toolbox <em>before</em> you connect to the updated display. A browser that may not keep the new key (a private window, or storage the browser may delete) never replaces it; the Toolbox says so instead.</p>
   </div>
 
   <div class="col panel">

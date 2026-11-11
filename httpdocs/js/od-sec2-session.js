@@ -25,7 +25,17 @@
 })(typeof self !== 'undefined' ? self : this, function (S, P, KS) {
   'use strict';
 
-  const DEFAULT_MAX_FRAME = 244;      // OD_DISPATCH_MAX_BLE; Web Bluetooth cannot read the MTU
+  // The sealed BLE frame limit is 244 B on EVERY target (shared OD_DISPATCH_MAX_BLE). A client
+  // uses min(negotiated ATT MTU - 3, 244); sealed frames are never split, and the handshake
+  // declares frag_max (20..244). Web Bluetooth cannot read the MTU, so the browser assumes 244
+  // (every 3.x target negotiates ATT MTU 256) unless a caller passes `mtu`.
+  const DEFAULT_MAX_FRAME = 244;
+  /** min(MTU - 3, 244); an unknown MTU (null / 0) gives 244. */
+  function frameLimit(mtu) {
+    const m = Number(mtu);
+    if (!Number.isFinite(m) || m <= 0) return DEFAULT_MAX_FRAME;
+    return Math.max(0, Math.min(DEFAULT_MAX_FRAME, Math.floor(m) - 3));
+  }
   const DEFAULT_FRAG_MAX = S.FRAG_MAX_MIN;
   const REPLY_TIMEOUT_MS = 5000;
   const HANDSHAKE_TIMEOUT_MS = 8000;
@@ -53,16 +63,19 @@
      * @param {object} o.transport
      * @param {object} o.keyStore      OpenDisplayKeyStore.KeyStore
      * @param {string} o.name          advertised name, e.g. "OD1A2B3C" (the key-store index)
-     * @param {number} [o.maxFrame]    largest frame the device accepts (sealed frames count whole)
-     * @param {number} [o.fragMax]     handshake fragment size (20 when the MTU is unknown)
+     * @param {number} [o.maxFrame]    largest frame the device accepts (sealed frames count whole);
+     *                                 capped at 244, and at mtu - 3 when `mtu` is given
+     * @param {number} [o.mtu]         negotiated ATT MTU, when the platform exposes it
+     * @param {number} [o.fragMax]     handshake fragment size (20 when the MTU is unknown); 20..maxFrame
      * @param {function} [o.sleep]     async ms => void (tests pass a no-op)
      * @param {function} [o.log]
      */
-    constructor({ transport, keyStore, name, maxFrame = DEFAULT_MAX_FRAME, fragMax = DEFAULT_FRAG_MAX,
+    constructor({ transport, keyStore, name, maxFrame = DEFAULT_MAX_FRAME, mtu = null, fragMax = DEFAULT_FRAG_MAX,
       sleep = ms => new Promise(r => setTimeout(r, ms)), log = () => {}, now = Date.now } = {}) {
       if (!transport) throw new TypeError('transport required');
       this.t = transport; this.store = keyStore; this.name = name;
-      this.maxFrame = maxFrame; this.fragMax = fragMax;
+      this.maxFrame = Math.min(maxFrame, frameLimit(mtu));
+      this.fragMax = Math.max(S.FRAG_MAX_MIN, Math.min(fragMax, this.maxFrame, 244));
       this.sleep = sleep; this.log = log; this.now = now;
       this.mode = null;          // 'sec2' | 'v1' after select()
       this.status = null;        // last parsed SEC_STATUS (advisory, unauthenticated)
@@ -255,7 +268,8 @@
     // ---- rotation / unclaim ----------------------------------------------------------------
     /** Should this session rotate now? A migrated 2.x key rotates unless the owner opted out. */
     rotationWanted() {
-      return this.hasSession && this.keyLegacy && !(this.store && this.store.noRotate(this.name));
+      if (!this.hasSession || !this.keyLegacy || !this.store) return false;
+      return !(this.store.noRotateFor ? this.store.noRotateFor(this.name) : this.store.noRotate(this.name));
     }
     /**
      * Replace K_dev (§ 11). The new key is stored and read back before ROTATE_CONFIRM; the
@@ -278,8 +292,9 @@
         throw new Sec2SessionError('rotation_unconfirmed', 'rotation_pending', 'no answer to ROTATE_CONFIRM; both keys are kept', { cause: e });
       }
       if (ack[0] !== 0x00) fail('rotate_refused', null, 'ROTATE_CONFIRM refused (0x' + (ack[3] || 0).toString(16) + '); the old key still works', { reply: ack });
-      // Authenticated ACK: the new key is THE key now.
-      this.store.promote(this.name, keyHex);
+      // Authenticated ACK: the device took the new key. It is preferred now, but the old key is
+      // kept as a candidate until the new one has opened a session (authenticate() promotes it).
+      this.store.demote(this.name, keyHex);
       this.onDisconnect();          // the device ends the session after the ACK
       this.status = null;
       return { key: keyHex };
@@ -521,5 +536,5 @@
     return !c.ok && c.textKey === 'secrets_need_key';
   }
 
-  return { Sec2Session, Sec2SessionError, secretsNeedKey, DEFAULT_MAX_FRAME, MAX_GATED_WITHOUT_SESSION, BUSY_RETRIES };
+  return { Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit, DEFAULT_MAX_FRAME, MAX_GATED_WITHOUT_SESSION, BUSY_RETRIES };
 });

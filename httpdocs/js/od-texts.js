@@ -1,6 +1,6 @@
 // User-facing texts for the SEC2 / setup flows: ONE module, stable keys.
 // SHARED: copied verbatim from py-opendisplay src/opendisplay/texts.py
-// (tests/fixtures/user_texts.json, schema opendisplay-user-texts/1). Change them there first;
+// (tests/fixtures/user_texts.json, schema opendisplay-user-texts/2). Change them there first;
 // tests/od-texts.test.js fails when the two differ.
 // WEBSITE: texts only the browser needs (prompts, refusals, storage). Each may contain {name}
 // placeholders filled by format().
@@ -9,7 +9,7 @@
   else root.OpenDisplayTexts = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  const SCHEMA = 'opendisplay-user-texts/1';
+  const SCHEMA = 'opendisplay-user-texts/2';
   const SHARED = Object.freeze({
     awaiting_claim: "This display is in setup mode and waiting to be claimed. Setup mode ends after 10 minutes.",
     blank_panel: "This display reports that its screen does not work, so its code cannot be checked. Claiming is then protected only by claim mode, which you started on the device. Continue only if the display screen really does not work and nobody you distrust is nearby.",
@@ -19,6 +19,7 @@
     display_seen: "This display reported a screen before. Claiming without the code is refused, because someone may be interfering.",
     factory_reset: "Lost the key? Factory-reset the display: switch it off and on five times. Each time, wait about 5 seconds before switching it off, and keep it off for at least 2 seconds. It then shows FACTORY RESET and starts fresh. This ERASES its key, WiFi password, FindMy keys, images and settings. (Twice is claim mode; five times is the reset.)",
     gesture: "Put the display into claim mode: switch it off and on, wait about 5 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
+    legacy_key_rotated: "The key carried over from the 2.x firmware was replaced by a new key, automatically. Back up the new key now. Going back to a 2.x firmware now needs a factory reset first.",
     key_dead: "This display was reset to factory state, so the key stored here no longer works. Set it up again; the old key is kept until the new claim succeeds.",
     legacy_secrets: "This display stores a WiFi password or FindMy keys but is not claimed. Anyone nearby can read them. Claim it now: switch the display off and on, wait about 5 seconds, switch it off and on again.",
     no_panel: "This display reports that it has no screen, so its code cannot be checked. Claiming is then protected only by claim mode, which you started on the device. Continue only if the display really has no screen and nobody you distrust is nearby.",
@@ -28,6 +29,7 @@
     rotation_one_way: "Replacing the key from the 2.x firmware is a one-way step. Afterwards, installing a 2.x firmware image directly no longer gives a working key; going back then needs a factory reset first.",
     rotation_pending: "This display still uses the key from its 2.x firmware. It will be replaced by a new key the next time it connects, once the new key can be stored safely.",
     secrets_need_key: "WiFi passwords and FindMy keys need a key: the display must be claimed first, so that they are sent encrypted and nobody nearby can read them.",
+    show_key_not_stored: "The display keeps the setting to show its key on the screen only while it is claimed, so it stored it as off. Nothing failed. Claim the display first, then switch the setting on again.",
     show_key: "The display will show its key on the screen, permanently. Anyone who can see the display, or a photo of it, has the key and can control the display and read its WiFi password."
   });
   const WEBSITE = Object.freeze({
@@ -44,9 +46,12 @@
     locked: "This display is locked. Recover it with a factory reset.",
     needs_migration: "This display runs firmware 3 but its configuration has no drive data for its panel yet. Update the drive data first.",
     no_rotate_migrated: "Do not replace keys carried over from firmware 2.x",
+    no_rotate_this_display: "Do not replace the key this display carried over from firmware 2.x",
     not_authorised: "Not authorised: this display is claimed and no stored key works for it. Add its key, or factory-reset it if the key is lost.",
     not_in_claim_mode: "The display is not in claim mode. Put the display into claim mode: switch it off and on, wait about 5 seconds, switch it off and on again (twice in total, not more). It now shows SETUP MODE. Then claim it within 10 minutes.",
     panel_busy: "The display panel is busy. Wait a few seconds and try again.",
+    rotation_kept: "This display keeps the key from its 2.x firmware, because \"Do not replace keys carried over from firmware 2.x\" is on.",
+    rotation_needs_storage: "This browser cannot keep keys safely (private window, or it may delete stored data), so the key was not replaced. Use a normal browser window, or replace it from the Security dialog after downloading the key.",
     rotation_done_show_key: "The key was replaced. This display shows its key on the boot screen, which now shows the new key.",
     seen_on_sec2: "This display uses secure sessions; this browser will not talk to it without one.",
     setup_confirm_preset: "Check the board, display and power option below before anything is written.",
