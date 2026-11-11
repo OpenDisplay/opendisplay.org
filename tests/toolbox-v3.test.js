@@ -92,7 +92,7 @@ function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', id
     }
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'toolbox-v3.js'), 'utf8') + '\n;this.__api = { tbMigrateIfNeeded, tbLoadDriveDb, tbCheckConfigSize, tbTargetGeneration, tbTargetClassInfo, tbAssertConfigFits, get db() { return tbDriveDb; } };', ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'toolbox-v3.js'), 'utf8') + '\n;this.__api = { tbConfirmUntested, tbMigrateIfNeeded, tbLoadDriveDb, tbCheckConfigSize, tbTargetGeneration, tbTargetClassInfo, tbAssertConfigFits, get db() { return tbDriveDb; } };', ctx);
   return { ctx, api: ctx.__api, asked, writes, logs, flashes, get stored() { return stored; } };
 }
 
@@ -115,6 +115,23 @@ test('3.x device with a 2.x config: confirmed migration writes, reads back and k
   for (const id of [1, 2, 32, 38, 39, 0xb1, 0xae, 0xaf, 0xb0]) assert.ok(ids.includes(id), 'has ' + id);
   assert.ok(!ids.includes(0x2e), 'burned packet removed');
   assert.equal(w.asked.length, 1);
+});
+
+test('untested panel: a second confirmation, declining it writes nothing', async () => {
+  // 0x0002 (ep42) is "equivalent": host-proven, never seen on glass.
+  const no = makeWorld({ packets: carried('0x2'), answer: ['ok', 'cancel'] });
+  assert.equal(await no.api.tbMigrateIfNeeded(), 'declined');
+  assert.equal(no.writes.length, 0);
+  assert.equal(no.asked.length, 2);
+  assert.equal(no.asked[1].title, 'Untested on glass');
+  const yes = makeWorld({ packets: carried('0x2'), answer: ['ok', 'ok'] });
+  assert.equal(await yes.api.tbMigrateIfNeeded(), 'done');
+  assert.equal(yes.writes.length, 1);
+  // Glass-verified data (0x001E) asks once.
+  const glass = makeWorld({ packets: carried() });
+  assert.equal(await glass.api.tbMigrateIfNeeded(), 'done');
+  assert.equal(glass.asked.length, 1);
+  assert.equal(await glass.api.tbConfirmUntested({ verified: 'glass' }), true);
 });
 
 test('declining writes nothing', async () => {

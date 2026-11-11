@@ -3781,12 +3781,19 @@ async function startSimpleAutoInstall() {
       // Now the firmware version is known: rebuild so a 3.x device gets drive packets and a 2.x one doesn't.
       const avail = tbDisplayAvailability(simpleConfigSelections.display);
       if (!avail.selectable) { const e = new Error(avail.reason); e.tbFriendly = true; throw e; }
+      if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration()) && avail.needsDrive &&
+          !(await tbConfirmUntested(avail.entry, simpleConfigSelections.display.name))) {
+        const e = new Error('Setup cancelled: nothing was written.'); e.tbFriendly = true; throw e;
+      }
       mergeSimpleConfigToFull();
     } else if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
       // A shared config written to a 3.x device must carry drive data for its panel too.
       const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb,
         targetClass: tbTargetClass() });
       if (plan.needed && plan.blocked) { const e = new Error(plan.reason); e.tbFriendly = true; throw e; }
+      if (plan.needed && !(await tbConfirmUntested(plan.entry, plan.entry && plan.entry.name))) {
+        const e = new Error('Setup cancelled: nothing was written.'); e.tbFriendly = true; throw e;
+      }
       if (plan.needed) instances.packets = OpenDisplayV3.applyMigration(instances.packets, plan);
     }
     await bleLib.delay(3000);

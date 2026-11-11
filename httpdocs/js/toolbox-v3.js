@@ -258,6 +258,22 @@ function tbAskMigration(opts) {
     d.showModal();
   });
 }
+/**
+ * Maintainer decision: one extra confirmation before 3.x drive data that has not been seen on
+ * glass is written. Resolves true when the user accepts. Glass-verified data needs no step.
+ */
+async function tbConfirmUntested(entry, panelLabel) {
+  if (!entry || entry.verified === 'glass') return true;
+  const ans = await tbAskMigration({
+    title: 'Untested on glass',
+    text: 'The firmware 3.x drive data for ' + (panelLabel || 'this panel') + ' was converted from the 2.x driver '
+      + 'and has not been seen working on a real panel yet.',
+    lines: ['If the display does not draw correctly, you can go back to firmware 2.x.',
+      'Save the settings first (Back up) so they can be restored.'],
+    okLabel: 'Continue anyway'
+  });
+  return !!ans.ok;
+}
 function tbPickableDisplays(gen, board) {
   return (simpleConfigPresets.displays || [])
     .filter(d => !board || (d.connectorPins || []).some(p => (board.connectorPins || []).includes(p)))
@@ -318,6 +334,7 @@ async function tbMigrateIfNeeded(opts = {}) {
     lines
   });
   if (!ans.ok) return 'declined';
+  if (!(await tbConfirmUntested(e, ident.display ? ident.display.name : 'panel id ' + plan.panelIcType))) return 'declined';
   const before = instances.packets;
   tbMigrationInFlight = true;
   try {
