@@ -61,6 +61,13 @@ test('pickerGeneration / defaultInstallGeneration: follow the device, 3.x when n
   assert.equal(V3.defaultInstallGeneration({ connected: true, deviceGen: 'v2' }), 'v2');
 });
 
+test('downgradeWarning: 3.x -> 2.x is allowed, with the rewrite warning', () => {
+  assert.match(V3.downgradeWarning('v3', 'v2'), /allowed, but the configuration must be rewritten for 2\.x/);
+  assert.equal(V3.downgradeWarning('v2', 'v3'), '');
+  assert.equal(V3.downgradeWarning('v3', 'v3'), '');
+  assert.equal(V3.downgradeWarning('unknown', 'v2'), '');
+});
+
 test('config size limit per target and generation', () => {
   assert.equal(V3.configSizeLimit('bg22', 'v3'), 3120);
   assert.equal(V3.configSizeLimit('bg22', 'v2'), 2048);

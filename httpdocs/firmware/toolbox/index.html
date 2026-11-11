@@ -5157,8 +5157,11 @@ async function tbApplyFirmwareChoice(board) {
   const latest = src.version === options.latest;
   // "Install the latest firmware" would be wrong for an older pick.
   if (tbMode === 'update') document.getElementById('toolboxStep2Title').textContent = latest ? 'Install the latest firmware' : 'Install version ' + src.version;
+  const down = OpenDisplayV3.downgradeWarning(OpenDisplayV3.firmwareGeneration(tbFirmwareVersion), src.generation || 'v2');
   document.getElementById('tbFwVersionText').textContent = src.version ? 'Version ' + src.version
-    + (src.generation === 'v3' ? ' (firmware 3). See the upgrade guide before installing.' : latest ? ', the latest.' : '.') : '';
+    + (src.generation === 'v3' ? ' (firmware 3). See the upgrade guide before installing.' : latest ? ', the latest.' : '.')
+    + (down ? ' ' + down : '') : '';
+  if (down) addLog(down, 'warning');
   const select = document.getElementById('tbFwVersionSelect');
   select.innerHTML = '';
   options.versions.forEach(v => {

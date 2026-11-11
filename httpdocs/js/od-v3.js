@@ -103,6 +103,17 @@
     return chosenInstallGen || 'v3';
   }
   /**
+   * 3.x -> 2.x is allowed (maintainer decision 2026-11-11), with this warning: 2.x reads the
+   * panel from panel_ic_type and ignores the 3.x drive packets, and ESP32 / nRF52840 lose the
+   * stored config across the change, so the configuration must be rewritten for 2.x.
+   * @returns {string} the warning, or '' when it is not a downgrade
+   */
+  function downgradeWarning(fromGen, toGen) {
+    if (fromGen !== 'v3' || toGen !== 'v2') return '';
+    return 'Going back from firmware 3.x to 2.x is allowed, but the configuration must be rewritten for 2.x '
+      + 'afterwards: set the display up again (or restore a backup saved on 2.x). 3.x drive data is not used by 2.x.';
+  }
+  /**
    * The install screen's default firmware line when the user has not picked one: 2.x only for a
    * connected 2.x device (it follows the device), 3.x otherwise, where the board has a 3.x image.
    */
@@ -909,7 +920,7 @@
   return {
     PID, DRIVE_PIDS, BURNED_SIZES, VERIFIED, BACKUP_FORMAT,
     num, hexToBytes, bytesToHex, normalizePid, isDrivePid, isBurnedPid,
-    firmwareGeneration, isConfigDriven, pickerGeneration, defaultInstallGeneration, compareVersions,
+    firmwareGeneration, isConfigDriven, pickerGeneration, defaultInstallGeneration, downgradeWarning, compareVersions,
     targetFromIcType, targetFromInstallType, configSizeLimit, checkConfigSize,
     TARGET_CLASS_LIMITS, RESTRICTIVE_CLASS, targetClassFromIdent, targetClassFromTarget, deviceTargetClass,
     walkSequence, checkDrivePacketsFit,

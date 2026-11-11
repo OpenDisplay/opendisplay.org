@@ -435,7 +435,7 @@ function tbUpdateLosesConfig() {
   const from = V3.firmwareGeneration(tbFirmwareVersion);
   const to = tbInstallGeneration;
   const t = tbConfigTarget();
-  return from !== 'v3' && to === 'v3' && (t === 'esp32' || t === 'nrf52840');
+  return from !== to && (from === 'v3' || to === 'v3') && (t === 'esp32' || t === 'nrf52840');
 }
 function tbRenderUpdateBackupStep() {
   const box = document.getElementById('tbUpdateBackup');
@@ -444,7 +444,8 @@ function tbRenderUpdateBackupStep() {
   box.hidden = !show;
   if (!show) return;
   const loses = tbUpdateLosesConfig();
-  document.getElementById('tbUpdateBackupText').textContent = loses
+  const down = V3.downgradeWarning(V3.firmwareGeneration(tbFirmwareVersion), tbInstallGeneration);
+  document.getElementById('tbUpdateBackupText').textContent = down ? down : loses
     ? 'Installing firmware 3.x on this board erases its settings. Save them first; after the install the Toolbox writes them back, with the panel drive data 3.x needs.'
     : 'Optional: save the display’s settings to a file before updating.';
   const st = document.getElementById('tbUpdateBackupStatus');
@@ -455,7 +456,7 @@ function tbRenderUpdateRestoreStep() {
   const btn = document.getElementById('tbDoneRestoreBtn');
   if (!btn) return;
   btn.hidden = !(tbMode === 'update' && tbLastBackup);
-  if (tbMode === 'update' && tbUpdateLosesConfig()) {
+  if (tbMode === 'update' && tbUpdateLosesConfig() && tbInstallGeneration === 'v3') {
     document.getElementById('tbDoneText').textContent = tbLastBackup
       ? 'Firmware 3.x is installed; it started without settings. Connect to restore the saved ones.'
       : 'Firmware 3.x is installed; it started without settings. Set it up again, or restore a saved settings file.';
