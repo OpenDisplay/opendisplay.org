@@ -88,45 +88,141 @@ test('drive db: generated file covers every bb_epaper preset, glass entries matc
   }
 });
 
+// A schema-minor-0 style document whose top level is blocked (the generator may emit this again
+// for a panel no class can drive). Independent of the shipped data, so it cannot go stale.
+const blockedDoc = {
+  schema: 'opendisplay.drive_presets', schema_version: 1,
+  panels: { '0x0063': { panel_ic_type: 99, name: 'FIXTURE_BLOCKED', status: 'blocked', verified: 'untested',
+    blocked_on: ['SEQ_MAX'], modes_blocked: [{ name: 'full', blocked_on: ['SEQ_MAX'], seq_bytes: 600, steps: 120 }], packets: [] } }
+};
+
 test('drive db: blocked entries are not usable and say why; the 4.2in palette is flagged', () => {
-  const blocked = db.get(14);  // ep154-152x152: SEQ_MAX
+  const fx = V3.buildDriveDb({ generated: blockedDoc });
+  const blocked = fx.get(99);
   assert.equal(blocked.usable, false);
   assert.equal(blocked.packets.length, 0);
   assert.match(blocked.blockedReason, /SEQ_MAX/);
+  for (const cls of ['default', 'bg22', null]) {
+    const e = V3.driveEntryFor(fx, 99, cls);
+    assert.equal(e.usable, false, String(cls));
+    assert.equal(e.packets.length, 0, String(cls));
+  }
+  // Shipped data: ep154-152x152 (0x000E) is equivalent on the default class, blocked on BG22.
+  const bg = V3.driveEntryFor(db, 14, 'bg22');
+  assert.equal(bg.usable, false);
+  assert.equal(bg.packets.length, 0);
+  assert.equal(bg.targetClass, 'bg22');
+  assert.match(bg.blockedReason, /^Not available on this target \(needs \d+ B sequence, limit 128 B/);
+  assert.equal(bg.alternativeAvailable, true);
+  assert.equal(V3.driveEntryFor(db, 14, 'default').usable, true);
+  // A BG22-blocked panel with no alternative, and one that is blocked on steps as well.
+  const b35 = V3.driveEntryFor(db, 0x35, 'bg22');
+  assert.equal(b35.usable, false);
+  assert.ok(!b35.alternativeAvailable);
+  assert.match(b35.blockedReason, /needs \d+ B sequence \/ \d+ steps, limit 128 B \/ 64 steps/);
   assert.equal(db.get(58).paletteVerified, false);
   const alias = db.get(1004);
   assert.equal(alias.aliasOf, '0x003A');
   assert.equal(alias.packets.length, db.get(58).packets.length);
 });
 
-test('driveAvailability: 3.x blocks undriveable panels, badges unverified ones, 2.x is untouched', () => {
+test('driveAvailability: 3.x blocks undriveable panels per target class, badges unverified ones, 2.x is untouched', () => {
   const byId = id => presets.displays.find(d => d.id === id);
-  const a = V3.driveAvailability(byId('ep154-152x152'), db, 'v3');
+  const a = V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'bg22');
   assert.equal(a.selectable, false);
+  assert.match(a.reason, /limit 128 B/);
+  assert.match(a.reason, /untested single-init alternative exists \(opt-in/);
   assert.match(a.reason, /firmware 2\.x/);
-  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v2').selectable, true);
-  assert.equal(V3.driveAvailability(byId('ep29yr-168x384'), db, 'v3').badge, null);
-  assert.equal(V3.driveAvailability(byId('ep42-400x300'), db, 'v3').badge, 'untested');
-  assert.equal(V3.badgeText(V3.driveAvailability(byId('ep42-400x300'), db, 'v3')), 'untested on glass');
-  assert.ok(V3.driveAvailability(byId('ep42yr-400x300'), db, 'v3').paletteWarning);
-  // FastEPD / IT8951 boards are not drive-packet panels.
-  assert.equal(V3.driveAvailability(byId('m5-paper-960x540'), db, 'v3').selectable, true);
-  // Without the generated file, a panel without inline drive data is blocked on 3.x.
-  assert.equal(V3.driveAvailability(byId('ep42-400x300'), dbFallback, 'v3').selectable, false);
+  assert.equal(a.alternativeAvailable, true);
+  // Unknown class = the restrictive one.
+  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v3', null).selectable, false);
+  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'default').selectable, true);
+  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v2', 'bg22').selectable, true);
+  // The opt-in makes it selectable, clearly labelled.
+  const alt = V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'bg22', { allowAlternative: true });
+  assert.equal(alt.selectable, true);
+  assert.equal(alt.badge, 'alternative');
+  assert.match(V3.badgeText(alt), /UNTESTED alternative, not 2\.x-equivalent/);
+  assert.match(alt.warning, /not equivalent to 2\.x behaviour/);
+  // No alternative: the opt-in changes nothing.
+  assert.equal(V3.driveAvailability(byId('ep37yr-240x416'), db, 'v3', 'bg22', { allowAlternative: true }).selectable, false);
+  for (const cls of ['default', 'bg22']) {
+    assert.equal(V3.driveAvailability(byId('ep29yr-168x384'), db, 'v3', cls).badge, null, cls);
+    assert.equal(V3.driveAvailability(byId('ep42-400x300'), db, 'v3', cls).badge, 'untested', cls);
+    assert.equal(V3.badgeText(V3.driveAvailability(byId('ep42-400x300'), db, 'v3', cls)), 'untested on glass');
+    assert.ok(V3.driveAvailability(byId('ep42yr-400x300'), db, 'v3', cls).paletteWarning);
+    // FastEPD / IT8951 boards are not drive-packet panels.
+    assert.equal(V3.driveAvailability(byId('m5-paper-960x540'), db, 'v3', cls).selectable, true);
+    // Without the generated file, a panel without inline drive data is blocked on 3.x.
+    assert.equal(V3.driveAvailability(byId('ep42-400x300'), dbFallback, 'v3', cls).selectable, false);
+  }
+});
+
+test('deviceTargetClass: READ_IDENT fw_target first, chip family second, restrictive otherwise', () => {
+  assert.deepEqual(V3.deviceTargetClass({ identTarget: 0x03 }), { cls: 'bg22', how: 'read-ident', restrictive: false });
+  assert.equal(V3.deviceTargetClass({ identTarget: 0x01 }).cls, 'default');
+  assert.equal(V3.deviceTargetClass({ identTarget: 0x02 }).cls, 'default');
+  assert.equal(V3.deviceTargetClass({ identTarget: 0x01, target: 'esp32' }).how, 'read-ident');
+  assert.deepEqual(V3.deviceTargetClass({ target: 'esp32' }), { cls: 'default', how: 'chip', restrictive: false });
+  assert.equal(V3.deviceTargetClass({ target: 'nrf54' }).cls, 'default');
+  assert.equal(V3.deviceTargetClass({ target: 'bg22' }).cls, 'bg22');
+  assert.equal(V3.deviceTargetClass({ identTarget: 6, target: 'bg22' }).cls, 'bg22');      // not a fw_target value
+  assert.deepEqual(V3.deviceTargetClass({ identTarget: 0x01, target: 'bg22' }), { cls: 'bg22', how: 'conflict', restrictive: true });
+  assert.deepEqual(V3.deviceTargetClass({}), { cls: 'bg22', how: 'unknown', restrictive: true });
+  assert.equal(V3.deviceTargetClass({ identTarget: 0x04, target: 'nrf52811' }).cls, 'bg22');
+  assert.equal(V3.deviceTargetClass({ target: V3.targetFromIcType(6) }).cls, 'bg22');
+});
+
+test('checkDrivePacketsFit: the pre-write gate per class', () => {
+  // Every shipped per-class view fits its own class; 0x0002's default data does not fit BG22.
+  for (const [k, e] of Object.entries(generated.panels)) {
+    for (const [cls, v] of Object.entries(e.targets || {})) {
+      if (v.packets.length) assert.ok(V3.checkDrivePacketsFit(v.packets, cls).ok, k + ' ' + cls);
+    }
+    for (const a of e.alternatives || []) assert.ok(V3.checkDrivePacketsFit(a.packets, a.target_class).ok, k + ' alt');
+  }
+  const d2 = V3.checkDrivePacketsFit(generated.panels['0x0002'].packets, 'bg22');
+  assert.equal(d2.ok, false);
+  assert.ok(d2.problems.some(p => /WINDOW\/FILL/.test(p)));
+  assert.equal(V3.checkDrivePacketsFit(generated.panels['0x0002'].packets, 'default').ok, true);
+  // Synthetic modes: 130 B of steps (> 128 B), and 70 one-byte steps (> 64 steps).
+  const head = n => '00' + '00' + '66756c6c0000000000000000' + '01' + '01' + '00' + '00' + '00' + 'ff'.repeat(8) + '00'.repeat(8) + V3.bytesToHex([n & 0xff, n >> 8]);
+  const long = '7f20' + 'aa'.repeat(126) + '0000';           // one 128-byte step + END = 130 B
+  assert.equal(long.length / 2, 130);
+  const many = '0112'.repeat(70) + '0000';                     // 71 steps incl. END, 142 B
+  const r1 = V3.checkDrivePacketsFit([{ pid: '174', raw: head(130) + long }], 'bg22');
+  assert.equal(r1.ok, false);
+  assert.match(r1.problems[0], /130 B sequence, limit 128 B/);
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(130) + long }], 'default').ok, true);
+  const short = '0112'.repeat(40) + '0000';                    // 41 steps, 82 B
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(82) + short }], 'bg22').ok, true);
+  assert.ok(V3.checkDrivePacketsFit([{ pid: '174', raw: head(142) + many }], 'bg22').problems.some(p => /71 steps, limit 64/.test(p)));
+  // Malformed / unknown escapes are refused, not guessed at; so is a sequence with no END.
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(4) + '00800000' }], 'default').ok, false);
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(2) + '0112' }], 'default').ok, false);
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(9) + '0112' }], 'default').ok, false);  // seq_len lies
+  // Unknown class name = the restrictive class.
+  assert.equal(V3.checkDrivePacketsFit(generated.panels['0x0002'].packets, 'nonsense').ok, false);
 });
 
 test('syncDrivePackets: switching panels removes the previous panel\'s packets', () => {
   const base = [{ pid: '32', fields: { panel_ic_type: '30' } }, { pid: '178', raw: 'aabb' }, { pid: '46', rawLegacy: '00' }];
-  const after29 = V3.syncDrivePackets(base, db.get(30), 'v3');
+  const after29 = V3.syncDrivePackets(base, db.get(30), 'v3', null, 'default');
   assert.equal(after29.filter(p => V3.isDrivePid(p.pid)).length, 6);
   assert.ok(after29.some(p => p.pid === '178'), '0xB2 kept');
   assert.ok(!after29.some(p => p.pid === '46'), 'burned dropped on v3');
-  const afterMono = V3.syncDrivePackets(after29, db.get(2), 'v3');
+  const afterMono = V3.syncDrivePackets(after29, db.get(2), 'v3', null, 'default');
   const drive = afterMono.filter(p => V3.isDrivePid(p.pid));
   assert.deepEqual(drive.map(p => p.raw).sort(), db.get(2).packets.map(p => p.raw).sort());
   // A panel with no data on v3 leaves no stale drive packets behind.
   assert.equal(V3.syncDrivePackets(after29, null, 'v3').filter(p => V3.isDrivePid(p.pid)).length, 0);
-  assert.equal(V3.syncDrivePackets(after29, db.get(14), 'v3').filter(p => V3.isDrivePid(p.pid)).length, 0);
+  assert.equal(V3.syncDrivePackets(after29, V3.driveEntryFor(db, 14, 'bg22'), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid)).length, 0);
+  // Default-class packets handed over for a BG22 (or an unknown class) are not added.
+  assert.equal(V3.syncDrivePackets(after29, db.get(2), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid)).length, 0);
+  assert.equal(V3.syncDrivePackets(after29, db.get(2), 'v3').filter(p => V3.isDrivePid(p.pid)).length, 0);
+  assert.equal(V3.syncDrivePackets(after29, db.get(2), 'v3', null, 'default').filter(p => V3.isDrivePid(p.pid)).length, 4);
+  const bg2 = V3.syncDrivePackets(after29, V3.driveEntryFor(db, 2, 'bg22'), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid));
+  assert.deepEqual(bg2.map(p => p.raw), generated.panels['0x0002'].targets.bg22.packets.map(p => p.body_hex));
   // v2: never adds, keeps burned packets.
   const v2 = V3.syncDrivePackets(base, db.get(30), 'v2');
   assert.equal(v2.filter(p => V3.isDrivePid(p.pid)).length, 0);
@@ -146,7 +242,7 @@ const carried2x = () => [
 test('planMigration / applyMigration: adds drive data, keeps everything else', () => {
   const pk = carried2x();
   assert.equal(V3.planMigration({ packets: pk, gen: 'v2', db }).needed, false);
-  const plan = V3.planMigration({ packets: pk, gen: 'v3', db });
+  const plan = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' });
   assert.equal(plan.needed, true);
   assert.equal(plan.blocked, false);
   assert.equal(plan.panelIcType, 30);
@@ -164,12 +260,64 @@ test('planMigration / applyMigration: adds drive data, keeps everything else', (
 
 test('planMigration: blocked panel is reported, never written', () => {
   const pk = carried2x();
+  pk[2].fields.panel_ic_type = '99';
+  const fx = V3.planMigration({ packets: pk, gen: 'v3', db: V3.buildDriveDb({ generated: blockedDoc }), targetClass: 'default' });
+  assert.equal(fx.needed, true);
+  assert.equal(fx.blocked, true);
+  assert.equal(fx.add.length, 0);
+  assert.match(fx.reason, /blank/);
+  // BG22 device + BG22-blocked panel (ep154, 0x000E): nothing to write, the reason says why.
   pk[2].fields.panel_ic_type = '14';
-  const plan = V3.planMigration({ packets: pk, gen: 'v3', db });
+  const plan = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' });
   assert.equal(plan.needed, true);
   assert.equal(plan.blocked, true);
   assert.equal(plan.add.length, 0);
-  assert.match(plan.reason, /blank/);
+  assert.equal(plan.targetClass, 'bg22');
+  assert.match(plan.reason, /not available on this target \(needs \d+ B sequence, limit 128 B/i);
+  assert.equal(plan.alternativeAvailable, true);
+  assert.throws(() => V3.applyMigration(pk, Object.assign({}, plan, { add: db.get(2).packets })), /does not run on this target/);
+  // Unknown class: restrictive, same answer.
+  assert.equal(V3.planMigration({ packets: pk, gen: 'v3', db }).blocked, true);
+  // Default-class device: the same panel migrates.
+  const d = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'default' });
+  assert.equal(d.blocked, false);
+  assert.deepEqual(d.add.map(p => p.raw), generated.panels['0x000E'].packets.map(p => p.body_hex));
+});
+
+test('planMigration: per-class packets; the single-init alternative only on explicit opt-in', () => {
+  const pk = carried2x();
+  pk[2].fields.panel_ic_type = '2';
+  const raw = (pl) => pl.add.map(p => p.raw);
+  // BG22 + available panel: the bg22-class packets (no WINDOW), not the default ones.
+  const bg = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' });
+  assert.equal(bg.blocked, false);
+  assert.deepEqual(raw(bg), generated.panels['0x0002'].targets.bg22.packets.map(p => p.body_hex));
+  assert.notDeepEqual(raw(bg), generated.panels['0x0002'].packets.map(p => p.body_hex));
+  assert.ok(V3.checkDrivePacketsFit(bg.add, 'bg22').ok);
+  // Default-class device: the default packets.
+  const df = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'default' });
+  assert.deepEqual(raw(df), generated.panels['0x0002'].targets.default.packets.map(p => p.body_hex));
+  // Unknown class: the restrictive (bg22) packets.
+  assert.deepEqual(raw(V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: null })), raw(bg));
+  // A BG22 config already holding default-class drive data needs migrating (the device refuses it).
+  const wrong = V3.applyMigration(pk, df);
+  assert.equal(V3.planMigration({ packets: wrong, gen: 'v3', db, targetClass: 'default' }).needed, false);
+  const fix = V3.planMigration({ packets: wrong, gen: 'v3', db, targetClass: 'bg22' });
+  assert.equal(fix.needed, true);
+  assert.match(fix.reason, /do not run on this target/);
+  assert.deepEqual(raw(fix), raw(bg));
+  // Alternatives: off by default, used only with allowAlternative, labelled.
+  pk[2].fields.panel_ic_type = '14';
+  assert.equal(V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' }).blocked, true);
+  const alt = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22', allowAlternative: true });
+  assert.equal(alt.blocked, false);
+  assert.equal(alt.entry.alternative, true);
+  assert.equal(alt.entry.verified, 'untested');
+  assert.match(alt.entry.warning, /not equivalent to 2\.x behaviour/);
+  assert.deepEqual(raw(alt), generated.panels['0x000E'].alternatives[0].packets.map(p => p.body_hex));
+  // The opt-in never changes what a default-class device gets.
+  assert.deepEqual(raw(V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'default', allowAlternative: true })),
+    generated.panels['0x000E'].packets.map(p => p.body_hex));
 });
 
 test('identifyPreset: simple-config index first, unambiguous match second, candidates otherwise', () => {

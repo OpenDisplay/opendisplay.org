@@ -158,6 +158,134 @@
     };
   }
 
+  // ---- target classes (drive interpreter limits) ------------------------------
+  /**
+   * The od_epd interpreter differs per target, so drive data is derived per class
+   * (Firmware_Unified panels/README.md "Target classes", drive_presets.json `target_classes`):
+   *   default  ESP32, nRF52840, nRF54: sequences up to 512 B / 96 steps, WINDOW/FILL escapes.
+   *   bg22     EFR32BG22: 128 B / 64 steps, no WINDOW/FILL.
+   * The sleep sequence (0xB1 tail) is capped at 16 B everywhere (OD_EPD_SLEEP_SEQ_MAX).
+   * They are the client's own copy on purpose: the pre-write check must not trust the file it checks.
+   */
+  const TARGET_CLASS_LIMITS = Object.freeze({
+    default: Object.freeze({ seq_max: 512, max_steps: 96, window: true, sleep_max: 16 }),
+    bg22: Object.freeze({ seq_max: 128, max_steps: 64, window: false, sleep_max: 16 })
+  });
+  /** The class used when the device's class cannot be determined: the smallest interpreter. */
+  const RESTRICTIVE_CLASS = 'bg22';
+  const TARGET_CLASS_LABEL = { default: 'ESP32 / nRF', bg22: 'EFR32BG22' };
+  /**
+   * READ_IDENT (0x0046) fw_target byte -> class. Values per Firmware_Unified
+   * docs/PROTOCOL_CHANGES_3.0.md row 5 (PROVISIONAL, awaiting the maintainer): 0x01 FIRMWARE
+   * (ESP32 and nRF52840), 0x02 NRF54, 0x03 SILABS (BG22), 0x04 NRF52811 (reserved, never 3.x).
+   * Anything else is unknown (null).
+   */
+  function targetClassFromIdent(fwTarget) {
+    switch (num(fwTarget)) {
+      case 0x01: case 0x02: return 'default';
+      case 0x03: return 'bg22';
+      default: return null;
+    }
+  }
+  /** targetFromIcType() / targetFromInstallType() family -> class, or null when unknown. */
+  function targetClassFromTarget(target) {
+    switch (String(target || '')) {
+      case 'bg22': return 'bg22';
+      case 'esp32': case 'nrf52840': case 'nrf54': return 'default';
+      default: return null;
+    }
+  }
+  /**
+   * The drive class of a device. READ_IDENT's fw_target wins when it is a known value; the
+   * chip family (0x01 ic_type or the board preset) is the fallback. Because the fw_target values
+   * are provisional, a disagreement between the two picks the restrictive class, and so does
+   * "cannot tell" -- BG22 data runs on every target, default data does not run on BG22.
+   * @param {{identTarget?:number|null, target?:string|null}} o
+   * @returns {{cls:string, how:string, restrictive:boolean}}
+   */
+  function deviceTargetClass({ identTarget = null, target = null } = {}) {
+    const a = targetClassFromIdent(identTarget);
+    const b = targetClassFromTarget(target);
+    if (a && b && a !== b) return { cls: RESTRICTIVE_CLASS, how: 'conflict', restrictive: true };
+    if (a) return { cls: a, how: 'read-ident', restrictive: false };
+    if (b) return { cls: b, how: 'chip', restrictive: false };
+    return { cls: RESTRICTIVE_CLASS, how: 'unknown', restrictive: true };
+  }
+  function normalizeClass(cls) {
+    return Object.prototype.hasOwnProperty.call(TARGET_CLASS_LIMITS, cls) ? cls : RESTRICTIVE_CLASS;
+  }
+
+  /**
+   * Walk one drive sequence (od_epd.h grammar). Returns { ok, bytes, steps, window, error }.
+   * `steps` counts END like od_epd's cap does (panels/tools/pdlib.py count_steps).
+   * An unknown escape (including the reserved 0x80+ range, which the firmware refuses
+   * wholesale today) is an error: the caller must not write what it cannot vouch for.
+   */
+  function walkSequence(seq) {
+    const s = seq instanceof Uint8Array ? seq : Uint8Array.from(seq || []);
+    const res = { ok: false, bytes: s.length, steps: 0, window: false, error: '' };
+    const ARGS = { 1: 0, 3: 0, 4: 0, 5: 2, 6: 2, 7: 2, 8: 1, 9: 2, 0x0A: 3, 0x0B: 4, 0x0D: 3 };
+    let i = 0;
+    while (i < s.length) {
+      const n = s[i];
+      if (n) {
+        if (i + 1 + n > s.length) { res.error = 'step overruns the sequence'; return res; }
+        res.steps++; i += 1 + n; continue;
+      }
+      if (i + 1 >= s.length) { res.error = 'truncated escape'; return res; }
+      const e = s[i + 1];
+      if (e === 0) { res.steps++; res.ok = true; return res; }
+      let len;
+      if (e === 0x02 || e === 0x0C) {
+        if (i + 2 >= s.length) { res.error = 'truncated escape'; return res; }
+        len = 3 + 2 * s[i + 2];
+      } else if (Object.prototype.hasOwnProperty.call(ARGS, e)) {
+        len = 2 + ARGS[e];
+      } else { res.error = 'unknown escape 0x' + e.toString(16); return res; }
+      if (i + len > s.length) { res.error = 'truncated escape'; return res; }
+      if (e === 0x0C || e === 0x0D) res.window = true;
+      res.steps++; i += len;
+    }
+    res.error = 'sequence has no END';
+    return res;
+  }
+  /**
+   * Second line of defence before a write: does every drive sequence in `packets` run on
+   * `cls`? Checks each 0xAE mode sequence (bytes, steps, WINDOW/FILL) and each 0xB1 sleep
+   * sequence. Accepts editor-model ({pid, raw}) or generated ({id, body_hex}) packets.
+   * @returns {{ok:boolean, cls:string, problems:string[]}}
+   */
+  function checkDrivePacketsFit(packets, cls, limitsOverride) {
+    const c = normalizeClass(cls);
+    const L = Object.assign({}, TARGET_CLASS_LIMITS[c], limitsOverride || {});
+    const problems = [];
+    for (const p of packets || []) {
+      if (!p) continue;
+      const pid = Number(normalizePid(p.pid != null ? p.pid : p.id));
+      const raw = p.raw != null ? p.raw : p.body_hex;
+      if (raw == null || (pid !== 0xAE && pid !== 0xB1)) continue;
+      const b = hexToBytes(raw);
+      let seq, what, cap;
+      if (pid === 0xAE) {
+        if (b.length < 37) { problems.push('0xAE body shorter than its 37-byte head'); continue; }
+        const len = b[35] | (b[36] << 8);
+        if (37 + len !== b.length) { problems.push('0xAE mode ' + b[1] + ': seq_len ' + len + ' does not match the body'); continue; }
+        seq = b.subarray(37); what = 'mode ' + b[1]; cap = L.seq_max;
+      } else {
+        if (b.length < 13) { problems.push('0xB1 body shorter than its 13-byte head'); continue; }
+        if (13 + b[12] !== b.length) { problems.push('0xB1: sleep_seq_len ' + b[12] + ' does not match the body'); continue; }
+        if (!b[12]) continue;
+        seq = b.subarray(13); what = 'sleep sequence'; cap = L.sleep_max;
+      }
+      const w = walkSequence(seq);
+      if (!w.ok) { problems.push(what + ': ' + w.error); continue; }
+      if (w.bytes > cap) problems.push(what + ' needs a ' + w.bytes + ' B sequence, limit ' + cap + ' B');
+      if (pid === 0xAE && w.steps > L.max_steps) problems.push(what + ' needs ' + w.steps + ' steps, limit ' + L.max_steps);
+      if (w.window && !L.window) problems.push(what + ' uses WINDOW/FILL, which this target does not implement');
+    }
+    return { ok: problems.length === 0, cls: c, problems };
+  }
+
   // ---- panel drive database --------------------------------------------------
   const VERIFIED = Object.freeze(['glass', 'equivalent', 'untested']);
   /**
@@ -197,29 +325,39 @@
    * "opendisplay.drive_presets" v1, panels/README.md). `panels` is the whole map so an
    * `alias_of` entry can borrow its target's packets.
    */
-  function entryFromGenerated(key, e, panels) {
-    if (!e) return null;
-    const t = num(e.panel_ic_type != null ? e.panel_ic_type : (e.legacy && e.legacy.panel_ic_type != null ? e.legacy.panel_ic_type : key));
-    if (t == null) return null;
-    let src = e;
-    if (e.alias_of && panels && panels[e.alias_of]) src = panels[e.alias_of];
+  /**
+   * The drive fields of one view of a panel (top level, targets.<class> or an alternative)
+   * -> the fields an entry carries. `cls` is the class the packets are for, or null for the
+   * top level of a schema-minor-0 file.
+   */
+  function driveView(src, cls) {
     const status = String(src.status || (src.packets && src.packets.length ? 'equivalent' : 'blocked'));
     const packets = normalizePacketList((src.packets || []).map(p => ({ pid: p.id != null ? p.id : p.pid, raw: p.body_hex != null ? p.body_hex : p.raw })));
-    const notes = Array.isArray(e.notes) ? e.notes : (e.notes ? [String(e.notes)] : []);
-    // The generator states palette doubts in plain text; surface them as a flag the UI can show.
-    const paletteDoubt = notes.some(n => /palette/i.test(n) && /not measured|doubt|borrowed|unverified/i.test(n));
-    const usable = USABLE_STATUS.includes(status) && packets.length > 0;
+    let usable = (USABLE_STATUS.includes(status) || status === 'alternative') && packets.length > 0;
     let blockedReason = '';
-    if (!usable) {
+    // The client's own caps, not the file's `limits`: the check must not trust the data it checks.
+    const limits = cls ? Object.assign({}, TARGET_CLASS_LIMITS[normalizeClass(cls)]) : null;
+    if (usable && cls) {
+      // Second line of defence: the generator says these fit; check it anyway.
+      const fit = checkDrivePacketsFit(packets, cls);
+      if (!fit.ok) { usable = false; blockedReason = 'Not available on this target: ' + fit.problems.join('; ') + '.'; }
+    }
+    if (!usable && !blockedReason) {
       const on = (src.blocked_on || []).join(', ');
-      blockedReason = status === 'blocked'
-        ? 'Not yet available for firmware 3.x: the drive sequence needs a firmware change (' + (on || 'unspecified') + ').'
-        : status === 'differs' ? 'Not yet available for firmware 3.x: the converted drive data does not match the 2.x driver.'
-        : 'Not yet available for firmware 3.x: no drive data (' + status + ').';
+      const full = (src.modes_blocked || []).find(m => m && m.name === 'full') || (src.modes_blocked || [])[0];
+      if (status === 'blocked' && cls && limits && full && (full.seq_bytes > limits.seq_max || full.steps > limits.max_steps)) {
+        const need = [], lim = [];
+        if (full.seq_bytes > limits.seq_max) { need.push(full.seq_bytes + ' B sequence'); lim.push(limits.seq_max + ' B'); }
+        if (full.steps > limits.max_steps) { need.push(full.steps + ' steps'); lim.push(limits.max_steps + ' steps'); }
+        blockedReason = 'Not available on this target (needs ' + need.join(' / ') + ', limit ' + lim.join(' / ') + ' on ' + (TARGET_CLASS_LABEL[cls] || cls) + ').';
+      } else {
+        blockedReason = status === 'blocked'
+          ? 'Not yet available for firmware 3.x: the drive sequence needs a firmware change (' + (on || 'unspecified') + ').'
+          : status === 'differs' ? 'Not yet available for firmware 3.x: the converted drive data does not match the 2.x driver.'
+          : 'Not yet available for firmware 3.x: no drive data (' + status + ').';
+      }
     }
     return {
-      panelIcType: t,
-      name: e.name || '',
       status,
       verified: normalizeVerified(src.verified != null ? src.verified : status),
       usable,
@@ -228,13 +366,44 @@
       requiresEscapes: src.requires_escapes || [],
       modes: src.modes || [],
       modesBlocked: src.modes_blocked || [],
+      targetClass: cls || null,
+      limits,
+      packets: usable ? packets : []
+    };
+  }
+  function entryFromGenerated(key, e, panels) {
+    if (!e) return null;
+    const t = num(e.panel_ic_type != null ? e.panel_ic_type : (e.legacy && e.legacy.panel_ic_type != null ? e.legacy.panel_ic_type : key));
+    if (t == null) return null;
+    let src = e;
+    if (e.alias_of && panels && panels[e.alias_of]) src = panels[e.alias_of];
+    const notes = Array.isArray(e.notes) ? e.notes : (e.notes ? [String(e.notes)] : []);
+    // The generator states palette doubts in plain text; surface them as a flag the UI can show.
+    const paletteDoubt = notes.some(n => /palette/i.test(n) && /not measured|doubt|borrowed|unverified/i.test(n));
+    const meta = {
+      panelIcType: t,
+      name: e.name || '',
       legacy: e.legacy || null,
       notes,
       paletteVerified: paletteDoubt ? false : null,
       aliasOf: e.alias_of || null,
-      source: 'drive_presets.json',
-      packets: usable ? packets : []
+      source: 'drive_presets.json'
     };
+    // schema_minor >= 1: one view per target class, plus opt-in alternatives (never automatic).
+    const classes = {};
+    for (const [cls, view] of Object.entries(src.targets || {})) {
+      if (!Object.prototype.hasOwnProperty.call(TARGET_CLASS_LIMITS, cls) || !view) continue;
+      classes[cls] = Object.assign({}, meta, driveView(view, cls));
+    }
+    const alternatives = (src.alternatives || []).filter(a => a && a.target_class).map(a => Object.assign({}, meta, driveView(a, a.target_class), {
+      alternative: true,
+      variant: a.variant || 'alternative',
+      equivalent: a.equivalent === true,
+      verified: 'untested',
+      warning: 'Untested, not equivalent to 2.x behaviour: ' + (a.variant === 'single_init' ? 'single-init variant (one init block, as bb_epaper re-sends after a refresh)' : String(a.variant || 'alternative')) + '. Never seen on a real panel.'
+    }));
+    // The top level is the default class (README "Field rules"). Kept for display / 2.x-era callers.
+    return Object.assign({}, meta, driveView(src, Object.keys(classes).length ? 'default' : null), { classes, alternatives });
   }
   /**
    * One lookup table, two sources:
@@ -283,31 +452,69 @@
     return db;
   }
   /**
-   * Can this display preset be chosen for a device of generation `gen`?
-   * 3.x + bb_epaper panel without drive data -> not selectable (the device would stay dark).
+   * THE lookup for writing: the drive entry of panel `t` for target class `cls`.
+   *  - `cls` null / unknown -> the restrictive class (bg22).
+   *  - Per-class data (targets.<cls>) when the file has it. An entry without per-class data
+   *    (inline presets, schema minor 0) is used only if its packets pass checkDrivePacketsFit.
+   *  - A panel blocked on `cls` returns a non-usable entry whose blockedReason says what it
+   *    needs; `alternative` names an opt-in variant when one exists.
+   *  - `allowAlternative: true` (an explicit user opt-in, never a default) returns that
+   *    variant instead, flagged `alternative: true` with its `warning`.
+   * @returns {object|null} entry with targetClass, usable, packets, blockedReason
    */
-  function driveAvailability(display, db, gen) {
+  function driveEntryFor(db, panelIcType, cls, { allowAlternative = false } = {}) {
+    const t = num(panelIcType);
+    const top = (db && t != null && db.get(t)) || null;
+    if (!top) return null;
+    const c = normalizeClass(cls);
+    let ce = top.classes && top.classes[c];
+    if (!ce) {
+      // No per-class view: only the class-independent packets, and only if they fit this class.
+      ce = Object.assign({}, top, { targetClass: c, limits: Object.assign({}, TARGET_CLASS_LIMITS[c]) });
+      if (ce.usable) {
+        const fit = checkDrivePacketsFit(ce.packets, c);
+        if (!fit.ok) Object.assign(ce, { usable: false, packets: [], blockedReason: 'Not available on this target: ' + fit.problems.join('; ') + '.' });
+      }
+    }
+    if (ce.usable) return ce;
+    const alt = (top.alternatives || []).find(a => a.targetClass === c && a.usable) || null;
+    if (alt && allowAlternative) return alt;
+    if (alt) return Object.assign({}, ce, { alternativeAvailable: true, alternative: false, alternativeEntry: alt });
+    return ce;
+  }
+  /**
+   * Can this display preset be chosen for a device of generation `gen` and drive class `cls`?
+   * 3.x + bb_epaper panel without drive data for that class -> not selectable (the device would
+   * stay dark). `opts.allowAlternative` is the user's explicit opt-in to an untested variant.
+   */
+  function driveAvailability(display, db, gen, cls, opts = {}) {
     const t = display ? num(display.panelIcType) : null;
     const needsDrive = panelNeedsDriveData(t);
-    const entry = (db && t != null && db.get(t)) || null;
-    const res = { selectable: true, needsDrive, entry, badge: null, reason: '' };
+    const entry = driveEntryFor(db, t, cls, opts);
+    const res = { selectable: true, needsDrive, entry, badge: null, reason: '', targetClass: normalizeClass(cls) };
     if (!isConfigDriven(gen) || !needsDrive) return res;
     if (!entry || !entry.usable) {
       res.selectable = false;
       res.reason = entry && entry.blockedReason ? entry.blockedReason
         : 'Not yet available for firmware 3.x: no drive data for panel_ic_type ' + t + '.';
+      if (entry && entry.alternativeAvailable) {
+        res.alternativeAvailable = true;
+        res.reason += ' An untested single-init alternative exists (opt-in; not equivalent to 2.x behaviour).';
+      }
       res.reason += ' Keep this display on firmware 2.x for now.';
       return res;
     }
+    if (entry.alternative) { res.badge = 'alternative'; res.warning = entry.warning; }
     // 'equivalent' is host-proven (replay matches the 2.x driver byte for byte) but has never
     // been seen on a real panel: the UI calls it "untested on glass", same as 'untested'.
-    if (entry.verified !== 'glass') res.badge = 'untested';
+    else if (entry.verified !== 'glass') res.badge = 'untested';
     if (entry.paletteVerified === false) res.paletteWarning = '16-colour palette not measured on this panel (borrowed from the 2.9in)';
     return res;
   }
   function badgeText(avail) {
     if (!avail) return '';
-    if (!avail.selectable) return 'not yet on 3.x';
+    if (!avail.selectable) return avail.targetClass === 'bg22' && avail.entry ? 'not on this target' : 'not yet on 3.x';
+    if (avail.badge === 'alternative') return 'UNTESTED alternative, not 2.x-equivalent';
     if (avail.badge === 'untested') return 'untested on glass';
     return '';
   }
@@ -326,7 +533,7 @@
    * - v2 / unknown: adds nothing, keeps burned packets byte-for-byte.
    * 0xB2 and every other packet are left untouched.
    */
-  function syncDrivePackets(packets, entry, gen, makeUid) {
+  function syncDrivePackets(packets, entry, gen, makeUid, cls) {
     const uid = makeUid || (() => Math.random().toString(36).slice(2, 10));
     const v3 = isConfigDriven(gen);
     const kept = (packets || []).filter(p => {
@@ -334,7 +541,9 @@
       if (v3 && isBurnedPid(p.pid)) return false;
       return true;
     });
-    if (v3 && entry && entry.usable !== false && entry.packets) {
+    // Packets that do not run on the device's class (no class given = the restrictive one)
+    // are not added: the device would refuse them and stay blank anyway.
+    if (v3 && entry && entry.usable !== false && entry.packets && checkDrivePacketsFit(entry.packets, cls).ok) {
       for (const dp of entry.packets) kept.push({ uid: uid(), pid: dp.pid, raw: dp.raw, fields: {}, _simpleDrive: true });
     }
     return kept;
@@ -467,10 +676,14 @@
    * @param {Map} o.db buildDriveDb()
    * @param {boolean} [o.deviceSaysNeedsMigration] firmware flag (READ_IDENT / MSD), when available
    * @param {number} [o.panelIcType] override: the panel the user picked when the config did not say
-   * @returns {{needed:boolean, blocked:boolean, reason:string, panelIcType:number|null, entry, add:Array, remove:Array}}
+   * @param {string} [o.targetClass] deviceTargetClass().cls; missing / unknown = the restrictive class
+   * @param {boolean} [o.allowAlternative] explicit user opt-in to an untested alternative (default off)
+   * @returns {{needed:boolean, blocked:boolean, reason:string, panelIcType:number|null, targetClass:string,
+   *            alternativeAvailable:boolean, entry, add:Array, remove:Array}}
    */
-  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null } = {}) {
-    const plan = { needed: false, blocked: false, reason: '', panelIcType: null, entry: null, add: [], remove: [] };
+  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null, targetClass = null, allowAlternative = false } = {}) {
+    const cls = normalizeClass(targetClass);
+    const plan = { needed: false, blocked: false, reason: '', panelIcType: null, targetClass: cls, alternativeAvailable: false, entry: null, add: [], remove: [] };
     if (!isConfigDriven(gen)) { plan.reason = 'not a 3.x device'; return plan; }
     const disp = findPacket(packets, PID.DISPLAY);
     const t = panelIcType != null ? num(panelIcType) : (disp ? num(disp.fields.panel_ic_type) : null);
@@ -483,28 +696,41 @@
       if (burned.length) { plan.needed = true; plan.remove = burned; plan.reason = 'remove burned lab packets'; }
       return plan;
     }
-    if (!missing && !deviceSaysNeedsMigration && panelIcType == null) {
+    // Drive packets already present but not runnable on this class (e.g. default-class data on a
+    // BG22): they must be replaced, the device refuses them.
+    const present = drivePacketsOf(packets);
+    const presentFit = present.length ? checkDrivePacketsFit(present, cls) : { ok: true };
+    if (!missing && presentFit.ok && !deviceSaysNeedsMigration && panelIcType == null) {
       if (burned.length) { plan.needed = true; plan.remove = burned; plan.reason = 'remove burned lab packets'; }
       else plan.reason = 'already has drive data';
       return plan;
     }
     plan.needed = true;
-    const entry = db ? db.get(t) : null;
+    const entry = driveEntryFor(db, t, cls, { allowAlternative });
     if (!entry || !entry.usable) {
       plan.blocked = true;
       plan.entry = entry || null;
+      plan.alternativeAvailable = !!(entry && entry.alternativeAvailable);
       plan.reason = (entry && entry.blockedReason ? entry.blockedReason
         : 'No 3.x drive data exists for panel_ic_type ' + t + ' yet.') + ' The display stays blank on 3.x firmware until it does.';
+      if (plan.alternativeAvailable) plan.reason += ' An untested single-init alternative exists; it is offered only as an explicit opt-in (not equivalent to 2.x behaviour).';
       return plan;
     }
     plan.entry = entry;
-    plan.reason = missing ? 'config has no drive packets (carried over from 2.x)' : 'device asked for migration';
+    plan.reason = missing ? 'config has no drive packets (carried over from 2.x)'
+      : !presentFit.ok ? 'stored drive packets do not run on this target (' + presentFit.problems.join('; ') + ')'
+      : 'device asked for migration';
     plan.remove = (packets || []).filter(p => isBurnedPid(p.pid) || (p.raw != null && isDrivePid(p.pid)));
     plan.add = entry.packets.map(p => Object.assign({}, p, { summary: decodeDrivePacket(p.pid, p.raw) }));
     return plan;
   }
-  /** Apply a plan: drop plan.remove, append plan.add. Every other packet is kept as is. */
+  /**
+   * Apply a plan: drop plan.remove, append plan.add. Every other packet is kept as is.
+   * Throws (and changes nothing) when a sequence in plan.add does not fit plan.targetClass.
+   */
   function applyMigration(packets, plan, makeUid) {
+    const fit = checkDrivePacketsFit(plan.add || [], plan.targetClass);
+    if (!fit.ok) throw new Error('Refusing to write drive data that does not run on this target: ' + fit.problems.join('; ') + '.');
     const uid = makeUid || (() => Math.random().toString(36).slice(2, 10));
     const drop = new Set(plan.remove || []);
     const out = (packets || []).filter(p => !drop.has(p));
@@ -686,7 +912,9 @@
     num, hexToBytes, bytesToHex, normalizePid, isDrivePid, isBurnedPid,
     firmwareGeneration, isConfigDriven, compareVersions,
     targetFromIcType, targetFromInstallType, configSizeLimit, checkConfigSize,
-    panelNeedsDriveData, buildDriveDb, driveAvailability, badgeText,
+    TARGET_CLASS_LIMITS, RESTRICTIVE_CLASS, targetClassFromIdent, targetClassFromTarget, deviceTargetClass,
+    walkSequence, checkDrivePacketsFit,
+    panelNeedsDriveData, buildDriveDb, driveEntryFor, driveAvailability, badgeText,
     drivePacketsOf, hasPanelPacket, syncDrivePackets,
     decodeDrivePacket, codeMapFromPackets, wireMapFromCodeMap,
     identifyPreset, planMigration, applyMigration, describePlan,
