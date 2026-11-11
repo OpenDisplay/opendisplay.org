@@ -2378,7 +2378,8 @@
          "powerDefaults": {
             "battery_sense_pin": "35",
             "battery_sense_enable_pin": "0xff",
-            "voltage_scaling_factor": "0xae",
+            "battery_sense_flags": "0x2",
+            "voltage_scaling_factor": "0x7cf",
             "deep_sleep_current_ua": "0",
             "capacity_estimator": "1"
          },

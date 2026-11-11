@@ -368,9 +368,11 @@ ble_proto:
         description: Battery sense flags (bitfield)
         bits:
           0:
-            name: reserved_0
+            name: enable_inverted
+            description: Battery-sense enable pin is active-low
           1:
-            name: reserved_1
+            name: calibrated_mv
+            description: ESP32 only, needs firmware with OpenDisplay/Firmware#184. voltage_scaling_factor is the divider ratio x1000 applied to factory-calibrated pin millivolts (2000 = 2:1). Older firmware ignores this bit and misreads the factor.
           2:
             name: reserved_2
           3:
@@ -404,7 +406,7 @@ ble_proto:
             description: 1s li-ion, Seeed reTerminal E-series (E1001-E1003) discharge curve
       - name: voltage_scaling_factor
         size: 2
-        description: Voltage scaling / divider factor (implementation-specific)
+        description: "Battery voltage scaling. Legacy (battery_sense_flags bit1 clear): V = raw_adc_count * factor / 100000. With bit1 set (ESP32): divider ratio x1000, V = pin_mV * factor / 1000000."
       - name: deep_sleep_current_ua
         size: 4
         description: Deep sleep current of the board in microamperes (excl. MCU consumption), 0 if unknown
