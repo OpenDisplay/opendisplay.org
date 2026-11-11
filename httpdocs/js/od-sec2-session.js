@@ -71,6 +71,7 @@
       this.keyLegacy = false;
       this.gatedWithoutSession = 0;
       this.feSeen = 0;
+      this._inflight = new Set();
     }
 
     // ---- selection ---------------------------------------------------------------------
@@ -363,6 +364,66 @@
         if (pt.length >= 2 && pt[1] === lo) return pt;
         // a sealed reply to something else (a late answer): keep waiting
       }
+    }
+
+    // ---- the filter for an existing command layer (ble-common.js) ----------------------------
+    /**
+     * Turn a plaintext command frame into what goes on the wire: sealed inside a session for a
+     * gated opcode, as is otherwise. Size limits are enforced here, before anything is sent.
+     */
+    async sealOutgoing(frame) {
+      const f = S.u8(frame);
+      if (f.length < 2) return f;
+      const cmd = (f[0] << 8) | f[1];
+      if (S.isPlaintextOpcode(cmd) || !this.hasSession) {
+        if (f.length > this.maxFrame) fail('frame_too_long', 'frame_too_long', 'frame of ' + f.length + ' B');
+        if (!S.isPlaintextOpcode(cmd) && this.status && (this.status.claimed || this.status.locked)) {
+          if (this.gatedWithoutSession >= MAX_GATED_WITHOUT_SESSION) fail('not_authorised', 'not_authorised', 'no session');
+          this.gatedWithoutSession++;
+        }
+        this._inflight.add(f[1]);
+        return f;
+      }
+      if (f.length - 2 + S.H2D_OVERHEAD > this.maxFrame) fail('frame_too_long', 'frame_too_long', 'sealed frame of ' + (f.length - 2 + S.H2D_OVERHEAD) + ' B');
+      this._inflight.add(f[1]);
+      return this.rl.seal(f);
+    }
+    /**
+     * One notification in. Returns {deliver: plaintext frame} for the command layer,
+     * {drop: true}, or {error: Sec2SessionError, fatal} (abort what is in flight at once).
+     */
+    async openIncoming(frame) {
+      const b = S.u8(frame);
+      const los = this._inflight;
+      if (!this.hasSession) {
+        if (b.length === 3 && b[0] === 0x00 && b[2] === 0xfe) {
+          this.feSeen++;
+          return { error: new Sec2SessionError('needs_session', 'not_authorised', 'the display needs a session (FE)'), fatal: false, frame: b };
+        }
+        if (b.length === 3 && b[0] === 0xff && b[2] === 0xfe) return { error: new Sec2SessionError('frame_too_long', 'frame_too_long', 'oversize refusal'), fatal: true };
+        if (b.length >= 1 && b[0] === 0xe5) return { drop: true };  // a sealed frame with no session: never trust it
+        return { deliver: b };
+      }
+      const c = S.classifyInbound(b, { cmdLos: los });
+      if (c === 'oversize') return { error: new Sec2SessionError('frame_too_long', 'frame_too_long', 'oversize refusal (plaintext form)'), fatal: true };
+      if (c === 'session_gone') {
+        this.onDisconnect();
+        return { error: new Sec2SessionError('session_gone', 'not_authorised', 'the display ended the session'), fatal: true };
+      }
+      if (c === 'plaintext' || c === 'sec_error') return { deliver: b };
+      if (c !== 'sealed') return { drop: true };
+      const o = await this.rl.open(b);
+      if (!o.ok) {
+        if (o.close) { this.onDisconnect(); return { error: new Sec2SessionError('integrity', null, 'three bad records'), fatal: true, close: true }; }
+        return { drop: true };
+      }
+      const ref = S.parseRefusal(o.plaintext);
+      if (ref) {
+        if (ref.code === S.REFUSAL.OVERSIZE) return { error: new Sec2SessionError('frame_too_long', 'frame_too_long', 'oversize refusal (sealed)'), fatal: true };
+        if (ref.code === S.REFUSAL.CLAIM_MODE) return { error: new Sec2SessionError('claim_mode_refused', 'not_in_claim_mode', 'refused in claim mode'), fatal: true };
+        return { error: new Sec2SessionError('refused_' + ref.name.toLowerCase(), null, 'record refused (' + ref.name + ')'), fatal: true };
+      }
+      return { deliver: o.plaintext };
     }
 
     /** Full config read inside the session (or plaintext on an unclaimed device). */

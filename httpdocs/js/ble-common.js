@@ -944,7 +944,7 @@ class OpenDisplayBLE {
       // a master key from before the disconnect, re-handshake before onConnect so
       // callers don't send with a stale session (or skip auth because authenticated
       // was still true).
-      if (this.encryptionSession.masterKey && !this.encryptionSession.authenticated) {
+      if (!this.sec2Link && this.encryptionSession.masterKey && !this.encryptionSession.authenticated) {
         try {
           this.log('Re-establishing encryption session...', 'info');
           await this.authenticate();
@@ -1091,7 +1091,30 @@ class OpenDisplayBLE {
     this.pipeProbe = { probed: false, supported: false };
     this.pipePartialSupported = null;
     this.invalidateEncryptionSession(true);
+    // SEC2 (ble-sec2.js): the session dies with the link; keys and the pin stay.
+    if (this.sec2Link) this.sec2Link.onDisconnect();
   }
+
+  /**
+   * Attach a SEC2 link (ble-sec2.js) for this device. From now on commands are sealed by it
+   * inside a session and the v1 encryption layer is never used for this connection.
+   */
+  attachSec2(link) {
+    this.sec2Link = link || null;
+    if (link) this.invalidateEncryptionSession(false);
+  }
+  /** A refusal that must end what is in flight at once (oversize, session gone, ...). */
+  _onSec2Error(err, { fatal } = {}) {
+    this.log('SEC2: ' + err.message, fatal ? 'error' : 'warning');
+    if (fatal) this.abortInFlightOperations(err);
+    if (this.onSec2Error) this.onSec2Error(err, { fatal });
+  }
+  /** Data bytes per direct-write frame for the current link (SEC2, v1 or open). */
+  _directWriteChunkSize() {
+    if (this.sec2Link) return this.sec2Link.directChunk(DIRECT_WRITE_CHUNK_UNENCRYPTED);
+    return this.encryptionSession.authenticated ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD : DIRECT_WRITE_CHUNK_UNENCRYPTED;
+  }
+  _linkSealed() { return this.sec2Link ? this.sec2Link.sealed : this.encryptionSession.authenticated; }
 
   /**
    * Abort every in-flight built-in operation, settling its pending callback with
@@ -1159,7 +1182,10 @@ class OpenDisplayBLE {
     
     // Check if command should be encrypted
     let commandToSend = cmd;
-    if (this.encryptionSession.authenticated && cmd.length >= 2) {
+    if (this.sec2Link) {
+      // SEC2: sealed inside a session, size-checked before anything is written.
+      commandToSend = await this.sec2Link.outgoing(cmd);
+    } else if (this.encryptionSession.authenticated && cmd.length >= 2) {
       const commandId = (cmd[0] << 8) | cmd[1];
       // Don't encrypt authentication and firmware version commands
       if (commandId !== 0x0050 && commandId !== 0x0043 && commandId !== 0x0046) {
@@ -2272,6 +2298,12 @@ class OpenDisplayBLE {
     if (!value || value.byteLength === 0) return;
     
     let bytes = new Uint8Array(value.buffer);
+
+    if (this.sec2Link) {
+      const plain = await this.sec2Link.incoming(bytes);
+      if (!plain) return;
+      bytes = Uint8Array.from(plain);
+    }
     
     // Check if response is encrypted
     // Minimum encrypted response size: 2 (header) + 16 (nonce) + 1 (length byte) + 0 (min payload) + 12 (tag) = 31 bytes
@@ -2282,7 +2314,7 @@ class OpenDisplayBLE {
     const MIN_ENCRYPTED_RESPONSE_SIZE = 31;
     const isPotentiallyEncrypted = bytes.length >= MIN_ENCRYPTED_RESPONSE_SIZE;
     
-    if (this.encryptionSession.authenticated && bytes.length >= 2 && isPotentiallyEncrypted) {
+    if (!this.sec2Link && this.encryptionSession.authenticated && bytes.length >= 2 && isPotentiallyEncrypted) {
       const commandId = (bytes[0] << 8) | bytes[1];
       // Don't decrypt authentication and firmware version responses
       if (commandId !== 0x0050 && commandId !== 0x0043 && commandId !== 0x0046) {
@@ -3951,15 +3983,13 @@ class OpenDisplayBLE {
     // These are computed per call, not module constants: sendCanvasToDisplay
     // derives them locally and an ENCRYPTED session needs the smaller frame.
     // Referencing its locals from here was a ReferenceError at runtime.
-    const chunkSize = this.encryptionSession.authenticated
-      ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
-      : DIRECT_WRITE_CHUNK_UNENCRYPTED;
+    const chunkSize = this._directWriteChunkSize();
     const chunks = this._prepareDirectWriteChunks(Array.from(payload), chunkSize);
     const hdr = [driveModeIndex & 0xFF, 0x00, 0x00, 0x00, 0x00];  // refresh 0, no flags
     const startCommandHex = '0085' + this.bytesToHex(new Uint8Array(hdr)).replace(/\s+/g, '');
     this.log(`Raw multi-pass upload: mode ${driveModeIndex}, ${payload.length} B, `
       + `${chunks.length} x ${chunkSize} B chunks, uncompressed`
-      + (this.encryptionSession.authenticated ? ' (encrypted session)' : ''), 'info');
+      + (this._linkSealed() ? ' (encrypted session)' : ''), 'info');
     return this._activateFullDirectWrite({
       compressed: false,
       chunks,
@@ -4774,16 +4804,14 @@ class OpenDisplayBLE {
     // ENCRYPTION_OVERHEAD / MAX_ENCRYPTED_PACKET_SIZE are module-scope (top of file).
     const DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED = DIRECT_WRITE_CHUNK_UNENCRYPTED;
     const DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED = MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD;
-    const DIRECT_WRITE_CHUNK_SIZE = (this.encryptionSession.authenticated)
-      ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED
-      : DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED;
+    const DIRECT_WRITE_CHUNK_SIZE = this.sec2Link ? this._directWriteChunkSize()
+      : (this.encryptionSession.authenticated ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED : DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED);
     const DIRECT_WRITE_PIPELINE_SIZE = 1;
     const STREAMING_ZLIB_WINDOW_BITS = 9;
-    let maxStartPayload = this.encryptionSession.authenticated
-      ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
-      : 200;
+    let maxStartPayload = this.sec2Link ? Math.min(200, this._directWriteChunkSize())
+      : (this.encryptionSession.authenticated ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD : 200);
     
-    if (this.encryptionSession.authenticated) {
+    if (!this.sec2Link && this.encryptionSession.authenticated) {
       this.log(`Encryption enabled: Using reduced chunk size ${DIRECT_WRITE_CHUNK_SIZE} bytes (encrypted size: ${DIRECT_WRITE_CHUNK_SIZE + ENCRYPTION_OVERHEAD} bytes)`, 'info');
     }
 
@@ -5519,7 +5547,7 @@ class OpenDisplayBLE {
       compressed: useCompressed,
       totalSize,
       payload,
-      clientMaxFrame: this.encryptionSession.authenticated ? 185 : 232,
+      clientMaxFrame: this.sec2Link ? this.sec2Link.pipeClientMaxFrame(232) : (this.encryptionSession.authenticated ? 185 : 232),
       // Negotiated (post-min-rule) parameters, filled in _processPipeStartAck.
       window: 0,
       ackEvery: 0,
@@ -5910,7 +5938,8 @@ class OpenDisplayBLE {
 
     // Chunk data cap: frame_eff - CCM envelope (31) - seq (1) when authenticated,
     // else frame_eff - cmd (2) - seq (1). Matches device._pipe_data_size.
-    const dataSize = this.encryptionSession.authenticated ? (frameEff - 32) : (frameEff - 3);
+    const dataSize = this.sec2Link ? this.sec2Link.pipeDataSize(frameEff)
+      : (this.encryptionSession.authenticated ? (frameEff - 32) : (frameEff - 3));
     if (dataSize < 1) {
       this._abortPipeWrite(new Error(`Negotiated pipe frame ${frameEff} too small for a data byte`));
       return;
