@@ -3789,7 +3789,7 @@ async function startSimpleAutoInstall() {
     } else if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
       // A shared config written to a 3.x device must carry drive data for its panel too.
       const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb,
-        targetClass: tbTargetClass() });
+        targetClass: tbTargetClass(), ...(typeof tbMigrationFacts === 'function' ? tbMigrationFacts() : {}) });
       if (plan.needed && plan.blocked) { const e = new Error(plan.reason); e.tbFriendly = true; throw e; }
       if (plan.needed && !(await tbConfirmUntested(plan.entry, plan.entry && plan.entry.name))) {
         const e = new Error('Setup cancelled: nothing was written.'); e.tbFriendly = true; throw e;

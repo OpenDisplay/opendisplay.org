@@ -46,7 +46,7 @@
   const PID = Object.freeze({
     SYSTEM: '1', MANUFACTURER: '2', POWER: '4', DISPLAY: '32',
     DISPLAY_MODE: '174', DISPLAY_LUT: '175', DISPLAY_CALIBRATION: '176', DISPLAY_PANEL: '177',
-    ACTION_TABLE: '178'
+    ACTION_TABLE: '178', DISPLAY_CONTROLLER: '179'
   });
   /** 0xAE-0xB1: the packets that describe ONE panel. 0xB2 (actions) is not panel data. */
   const DRIVE_PIDS = Object.freeze(['174', '175', '176', '177']);
@@ -197,28 +197,48 @@
    * Since schema_minor 2 sequences stream from storage: there is no per-target sequence BYTE cap
    * any more (packets are bounded by the config size). What remains, on every target, is 128
    * steps per sequence (OD_EPD_MAX_SEQ_STEPS, a runaway bound) and 16 B for the 0xB1 sleep
-   * sequence (OD_EPD_SLEEP_SEQ_MAX, still a RAM copy).
+   * sequence (OD_EPD_SLEEP_SEQ_MAX, still a RAM copy; 20 B since PROTOCOL_CHANGES_3.0 row 18).
    * They are the client's own copy on purpose: the pre-write check must not trust the file it checks.
    */
   const TARGET_CLASS_LIMITS = Object.freeze({
-    default: Object.freeze({ max_steps: 128, window: true, sleep_max: 16 }),
-    bg22: Object.freeze({ max_steps: 128, window: false, sleep_max: 16 })
+    default: Object.freeze({ max_steps: 128, window: true, sleep_max: 20 }),
+    bg22: Object.freeze({ max_steps: 128, window: false, sleep_max: 20 })
   });
   /** The class used when the device's class cannot be determined: the smallest interpreter. */
   const RESTRICTIVE_CLASS = 'bg22';
   const TARGET_CLASS_LABEL = { default: 'ESP32 / nRF', bg22: 'EFR32BG22' };
   /**
-   * READ_IDENT (0x0046) fw_target byte -> class. Values per Firmware_Unified
-   * docs/PROTOCOL_CHANGES_3.0.md row 5 (PROVISIONAL, awaiting the maintainer): 0x01 FIRMWARE
-   * (ESP32 and nRF52840), 0x02 NRF54, 0x03 SILABS (BG22), 0x04 NRF52811 (reserved, never 3.x).
-   * Anything else is unknown (null).
+   * READ_IDENT (0x0046) fw_target byte -> class. One value per MCU family (PROTOCOL_CHANGES_3.0
+   * row 5, final): 0x01 ESP32, 0x02 nRF54, 0x03 EFR32BG22, 0x04 nRF52811 (reserved, never 3.x),
+   * 0x05 nRF52840. Anything else is unknown (null).
    */
+  const FW_TARGET = Object.freeze({ ESP32: 0x01, NRF54: 0x02, SILABS: 0x03, NRF52811: 0x04, NRF52840: 0x05 });
+  const FW_TARGET_NAME = Object.freeze({ 1: 'ESP32', 2: 'nRF54', 3: 'EFR32BG22', 4: 'nRF52811', 5: 'nRF52840' });
   function targetClassFromIdent(fwTarget) {
     switch (num(fwTarget)) {
-      case 0x01: case 0x02: return 'default';
+      case 0x01: case 0x02: case 0x05: return 'default';
       case 0x03: return 'bg22';
       default: return null;
     }
+  }
+  /** fw_target -> the chip family name used by targetFromIcType() ('esp32', 'nrf54', 'bg22', 'nrf52840'), or null. */
+  function targetFromIdent(fwTarget) {
+    return { 1: 'esp32', 2: 'nrf54', 3: 'bg22', 5: 'nrf52840' }[num(fwTarget)] || null;
+  }
+  /**
+   * The limits a device reports in its READ_IDENT tail win over the class table; the table is
+   * the fallback for a device without a tail (PROTOCOL_CHANGES_3.0 row 4). WINDOW/FILL come from
+   * the escapes byte when present.
+   * @param {object|null} ident  parseReadIdent() result
+   * @returns {{cls:string, limits:{max_steps:number, window:boolean, sleep_max:number}, maxConfig:number|null, how:string}}
+   */
+  function limitsFromIdent(ident, fallbackCls) {
+    const cls = normalizeClass((ident && targetClassFromIdent(ident.target)) || fallbackCls);
+    const limits = Object.assign({}, TARGET_CLASS_LIMITS[cls]);
+    let how = 'table';
+    if (ident && ident.maxSeqSteps) { limits.max_steps = ident.maxSeqSteps; how = 'device'; }
+    if (ident && ident.escapes != null) { limits.window = !!(ident.escapes & (IDENT_ESC_WINDOW | IDENT_ESC_FILL)); how = 'device'; }
+    return { cls, limits, maxConfig: ident && ident.maxConfig ? ident.maxConfig : null, how };
   }
   /** targetFromIcType() / targetFromInstallType() family -> class, or null when unknown. */
   function targetClassFromTarget(target) {
@@ -440,6 +460,7 @@
    */
   function buildDriveDb({ generated = null, displays = [] } = {}) {
     const db = new Map();
+    db.natives = new Map();
     for (const d of displays || []) {
       if (!d || !Array.isArray(d.drivePackets) || !d.drivePackets.length) continue;
       const t = num(d.panelIcType);
@@ -473,8 +494,22 @@
         const entry = entryFromGenerated(k, e, panels);
         if (entry) db.set(entry.panelIcType, entry);
       }
+      // schema_minor 3: IT8951 / parallel panels get one 0xB3 display_controller packet
+      // (ESP32 only, PROTOCOL_CHANGES_3.0 row 6) instead of 0xAE-0xB1.
+      for (const [k, e] of Object.entries(generated.native_controllers || {})) {
+        const t = num(e && e.panel_ic_type != null ? e.panel_ic_type : k);
+        const packets = normalizePacketList(((e && e.packets) || []).map(p => ({ pid: p.id != null ? p.id : p.pid, raw: p.body_hex != null ? p.body_hex : p.raw }))).filter(p => p.pid === PID.DISPLAY_CONTROLLER);
+        if (t == null || !packets.length) continue;
+        db.natives.set(t, { panelIcType: t, name: e.name || '', board: e.board || '',
+          controllerClass: e.controller_class || '', displayPins: e.display_pins || {}, packets });
+      }
     }
     return db;
+  }
+  /** The 0xB3 entry of a native-controller panel id (3000-3005), or null. */
+  function nativeControllerFor(db, panelIcType) {
+    const t = num(panelIcType);
+    return (db && db.natives && t != null && db.natives.get(t)) || null;
   }
   /**
    * THE lookup for writing: the drive entry of panel `t` for target class `cls`.
@@ -588,6 +623,10 @@
       out.text = `Panel settings (BUSY, colour codes ${out.codeMap.join(',')}, ${b[11]} modes)`;
     } else if (id === 0xB2) {
       out.kind = 'action_table'; out.text = `Action table (${b.length} bytes)`;
+    } else if (id === 0xB3 && b.length >= 3) {
+      const cls = ['command', 'IT8951', 'parallel'][b[2]] || ('class ' + b[2]);
+      out.kind = 'display_controller'; out.instance = b[0]; out.controllerClass = cls;
+      out.text = `Display controller (${cls})`;
     } else {
       out.kind = 'unknown'; out.text = `Packet ${out.id} (${b.length} bytes)`;
     }
@@ -693,7 +732,8 @@
    * @returns {{needed:boolean, blocked:boolean, reason:string, panelIcType:number|null, targetClass:string,
    *            entry, add:Array, remove:Array}}
    */
-  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null, targetClass = null } = {}) {
+  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null, targetClass = null,
+    chip = null, builtinDriver = null } = {}) {
     const cls = normalizeClass(targetClass);
     const plan = { needed: false, blocked: false, reason: '', panelIcType: null, targetClass: cls, entry: null, add: [], remove: [] };
     if (!isConfigDriven(gen)) { plan.reason = 'not a 3.x device'; return plan; }
@@ -703,6 +743,8 @@
     if (!disp && panelIcType == null) { plan.reason = 'no display configured'; return plan; }
     const burned = (packets || []).filter(p => isBurnedPid(p.pid));
     const missing = !hasPanelPacket(packets) || !hasModePacket(packets);
+    const native = nativeControllerFor(db, t);
+    if (native) return planNativeController(plan, packets, native, burned, { chip, builtinDriver, deviceSaysNeedsMigration });
     if (!panelNeedsDriveData(t)) {
       plan.reason = 'this panel is not driven by drive packets';
       if (burned.length) { plan.needed = true; plan.remove = burned; plan.reason = 'remove burned lab packets'; }
@@ -732,6 +774,32 @@
       : 'device asked for migration';
     plan.remove = (packets || []).filter(p => isBurnedPid(p.pid) || (p.raw != null && isDrivePid(p.pid)));
     plan.add = entry.packets.map(p => Object.assign({}, p, { summary: decodeDrivePacket(p.pid, p.raw) }));
+    return plan;
+  }
+  /**
+   * IT8951 / parallel panels (native_controllers, ESP32 only): the config needs one 0xB3 and no
+   * 0xAE-0xB1. `chip` is targetFromIdent()/targetFromIcType(); `builtinDriver` is READ_IDENT's
+   * BUILTIN_DRIVER bit when known (true = the firmware already drives it from the stored 0xB3).
+   */
+  function planNativeController(plan, packets, native, burned, { chip, builtinDriver, deviceSaysNeedsMigration }) {
+    plan.native = true;
+    plan.entry = native;
+    if (chip && chip !== 'esp32') {
+      plan.needed = true; plan.blocked = true;
+      plan.reason = native.controllerClass + ' panels are driven only by ESP32 firmware; this device is ' + chip + '.';
+      return plan;
+    }
+    const has = (packets || []).some(p => p && p.raw != null && normalizePid(p.pid) === PID.DISPLAY_CONTROLLER);
+    const stale = (packets || []).filter(p => isBurnedPid(p.pid) || (p.raw != null && isDrivePid(p.pid)));
+    if (has && builtinDriver !== false && !deviceSaysNeedsMigration) {
+      if (stale.length) { plan.needed = true; plan.remove = stale; plan.reason = 'remove packets a native-controller panel does not use'; }
+      else plan.reason = 'already has its display controller packet';
+      return plan;
+    }
+    plan.needed = true;
+    plan.reason = 'add the ' + native.controllerClass + ' display controller packet (0xB3)';
+    plan.remove = stale.concat((packets || []).filter(p => p && p.raw != null && normalizePid(p.pid) === PID.DISPLAY_CONTROLLER));
+    plan.add = native.packets.map(p => Object.assign({}, p, { summary: decodeDrivePacket(p.pid, p.raw) }));
     return plan;
   }
   /**
@@ -842,16 +910,28 @@
   // ---- READ_IDENT (0x0046) -------------------------------------------------------
   const IDENT_FLAG_CONFIG_DRIVEN = 0x01;
   const IDENT_FLAG_NEEDS_MIGRATION = 0x02;
+  const IDENT_FLAG_BUILTIN_DRIVER = 0x04;
+  const IDENT_FLAG_SEC_V2 = 0x08;
+  const IDENT_FLAG_CLAIMED = 0x10;
+  const IDENT_FLAG_CLAIM_MODE = 0x20;
+  const IDENT_FLAG_LEGACY_SECRETS_OPEN = 0x40;
+  const IDENT_ESC_WINDOW = 0x01;
+  const IDENT_ESC_FILL = 0x02;
   /**
    * [0x00][0x46][proto_minor][target][count] + count x {ic:u16, w:u16, h:u16, scheme} (7 B)
-   * + optional flags byte (Firmware_Unified docs/CONFIG_DRIVEN_DISPLAY.md, provisional):
-   * bit0 CONFIG_DRIVEN, bit1 NEEDS_MIGRATION. No flags byte = not config-driven / unknown.
+   * + the 3.0 tail [flags:1][max_config:2 LE][max_seq_steps:2 LE][escapes:1]
+   * (PROTOCOL_CHANGES_3.0 row 4; SECURITY_V2 § 5.2). flags bit0 CONFIG_DRIVEN, bit1
+   * NEEDS_MIGRATION, bit2 BUILTIN_DRIVER, bit3 SEC_V2, bit4 CLAIMED, bit5 CLAIM_MODE, bit6
+   * LEGACY_SECRETS_OPEN. A shorter tail is read as far as it goes; old readers ignore it.
    */
   function parseReadIdent(bytes) {
     const b = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes || []);
     if (b.length < 5 || b[0] !== 0x00 || b[1] !== 0x46) return null;
     const count = b[4];
-    const res = { protoMinor: b[2], target: b[3], displays: [], flags: null, configDriven: null, needsMigration: false };
+    const res = { protoMinor: b[2], target: b[3], targetName: FW_TARGET_NAME[b[3]] || null, displays: [],
+      flags: null, configDriven: null, needsMigration: false, builtinDriver: false,
+      sec2: false, claimed: false, claimMode: false, legacySecretsOpen: false,
+      maxConfig: null, maxSeqSteps: null, escapes: null };
     let o = 5;
     for (let i = 0; i < count; i++) {
       if (o + 7 > b.length) return res;
@@ -859,12 +939,64 @@
       o += 7;
     }
     if (o < b.length) {
-      res.flags = b[o];
-      res.configDriven = !!(b[o] & IDENT_FLAG_CONFIG_DRIVEN);
-      res.needsMigration = !!(b[o] & IDENT_FLAG_NEEDS_MIGRATION);
+      const f = b[o];
+      res.flags = f;
+      res.configDriven = !!(f & IDENT_FLAG_CONFIG_DRIVEN);
+      res.needsMigration = !!(f & IDENT_FLAG_NEEDS_MIGRATION);
+      res.builtinDriver = !!(f & IDENT_FLAG_BUILTIN_DRIVER);
+      res.sec2 = !!(f & IDENT_FLAG_SEC_V2);
+      res.claimed = !!(f & IDENT_FLAG_CLAIMED);
+      res.claimMode = !!(f & IDENT_FLAG_CLAIM_MODE);
+      res.legacySecretsOpen = !!(f & IDENT_FLAG_LEGACY_SECRETS_OPEN);
     }
+    if (o + 3 <= b.length) res.maxConfig = b[o + 1] | (b[o + 2] << 8);
+    if (o + 5 <= b.length) res.maxSeqSteps = b[o + 3] | (b[o + 4] << 8);
+    if (o + 6 <= b.length) res.escapes = b[o + 5];
     return res;
   }
+
+  // ---- NACK bytes the 3.0 firmware adds (PROTOCOL_CHANGES_3.0 rows 3, 13, 14) ----------
+  const NACK = Object.freeze({ NEEDS_MIGRATION: 0x08, PANEL_BUSY: 0x09, DRIVE_PANEL_BUSY: 0x08, CONFIG_WRITE_BUSY: 0x01 });
+  /**
+   * Explain a 4-byte NACK [FF][cmd][code][x] from the 3.0 firmware. Returns null when the frame
+   * is not a NACK. `retry` = transient (wait and resend, do not migrate).
+   * @returns {{cmd:number, code:number, kind:string, retry:boolean, mode?:number}|null}
+   */
+  function explainNack(frame) {
+    const b = frame instanceof Uint8Array ? frame : Uint8Array.from(frame || []);
+    if (b.length < 3 || b[0] !== 0xFF) return null;
+    const cmd = b[1], code = b[2];
+    const out = { cmd, code, kind: 'failed', retry: false };
+    if (cmd === 0x70 || cmd === 0x76 || cmd === 0x80) {
+      if (code === NACK.NEEDS_MIGRATION) out.kind = 'needs_migration';
+      else if (code === NACK.PANEL_BUSY) { out.kind = 'panel_busy'; out.retry = true; }
+    } else if (cmd === 0x85) {
+      out.mode = b.length > 3 ? b[3] : null;
+      if (code === NACK.DRIVE_PANEL_BUSY) { out.kind = 'panel_busy'; out.retry = true; }
+    } else if (cmd === 0x41 || cmd === 0x42) {
+      if (code === NACK.CONFIG_WRITE_BUSY) { out.kind = 'config_busy'; out.retry = true; }
+      else if (code === 0x10) out.kind = 'secrets_need_key';
+      else if (code === 0x11) out.kind = 'key_mismatch';
+    }
+    return out;
+  }
+
+  /**
+   * CMD_ACTION_INFO (0x004C) reply [00][4C] + ActionInfoResponse: entries, active, inactive,
+   * rejected, last_trigger, fire_count, last_temp_c (int8) and, since 3.0, `tables` (the number
+   * of 0xB2 packets; only the first runs, > 1 means a host appended instead of replacing).
+   * 9 bytes on 2.4, 10 bytes on 3.0 (PROTOCOL_CHANGES_3.0 row 7). Extra bytes are ignored.
+   */
+  function parseActionInfo(bytes) {
+    const b = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes || []);
+    if (b.length < 9 || b[0] !== 0x00 || b[1] !== 0x4C) return null;
+    return { entries: b[2], active: b[3], inactive: b[4], rejected: b[5], lastTrigger: b[6],
+      fireCount: b[7], lastTempC: (b[8] << 24) >> 24,
+      tables: b.length >= 10 ? b[9] : null, extraTables: b.length >= 10 && b[9] > 1 };
+  }
+
+  /** After a config write the device reboots; wait at least this long for it to reappear (BG22 pauses advertising ~24 s). */
+  const RECONNECT_AFTER_CONFIG_MS = 30000;
 
   // ---- backup files ---------------------------------------------------------
   const BACKUP_FORMAT = 'opendisplay-config-backup';
@@ -923,13 +1055,14 @@
     firmwareGeneration, isConfigDriven, pickerGeneration, defaultInstallGeneration, downgradeWarning, compareVersions,
     targetFromIcType, targetFromInstallType, configSizeLimit, checkConfigSize,
     TARGET_CLASS_LIMITS, RESTRICTIVE_CLASS, targetClassFromIdent, targetClassFromTarget, deviceTargetClass,
+    FW_TARGET, FW_TARGET_NAME, targetFromIdent, limitsFromIdent,
     walkSequence, checkDrivePacketsFit,
-    panelNeedsDriveData, buildDriveDb, driveEntryFor, driveAvailability, badgeText,
+    panelNeedsDriveData, buildDriveDb, driveEntryFor, nativeControllerFor, driveAvailability, badgeText,
     drivePacketsOf, hasPanelPacket, syncDrivePackets,
     decodeDrivePacket, codeMapFromPackets, wireMapFromCodeMap,
     identifyPreset, planMigration, applyMigration, describePlan,
     crc16ccitt, outerCrc, walkConfig, compareConfigs, verifyDriveReadback,
-    parseReadIdent,
+    parseReadIdent, NACK, explainNack, parseActionInfo, RECONNECT_AFTER_CONFIG_MS,
     makeBackup, parseBackup, backupFileName
   };
 });

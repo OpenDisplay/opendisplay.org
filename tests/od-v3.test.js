@@ -196,7 +196,7 @@ test('deviceTargetClass: READ_IDENT fw_target first, chip family second, restric
   assert.equal(V3.deviceTargetClass({ target: V3.targetFromIcType(6) }).cls, 'bg22');
 });
 
-test('checkDrivePacketsFit: the pre-write gate per class (128 steps, WINDOW/FILL, sleep 16 B; no byte cap)', () => {
+test('checkDrivePacketsFit: the pre-write gate per class (128 steps, WINDOW/FILL, sleep 20 B; no byte cap)', () => {
   // Every shipped per-class view fits its own class; 0x0002's default data does not fit BG22 (WINDOW).
   for (const [k, e] of Object.entries(generated.panels)) {
     for (const [cls, v] of Object.entries(e.targets || {})) {
@@ -220,10 +220,11 @@ test('checkDrivePacketsFit: the pre-write gate per class (128 steps, WINDOW/FILL
     assert.equal(r.ok, false, cls);
     assert.match(r.problems[0], /129 steps, limit 128/);
   }
-  // The sleep sequence is still a 16 B RAM copy.
+  // The sleep sequence is a 20 B RAM copy (PROTOCOL_CHANGES_3.0 row 18; was 16 B).
   const sleep = n => '00'.repeat(12) + V3.bytesToHex([n]);
   assert.equal(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(16) + '0110'.repeat(7) + '0000' }], 'bg22').ok, true);
-  assert.match(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(18) + '0110'.repeat(8) + '0000' }], 'default').problems[0], /18 B sequence, limit 16 B/);
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(20) + '0110'.repeat(9) + '0000' }], 'bg22').ok, true);
+  assert.match(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(22) + '0110'.repeat(10) + '0000' }], 'default').problems[0], /22 B sequence, limit 20 B/);
   // Malformed / unknown escapes are refused, not guessed at; so is a sequence with no END.
   assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(4) + '00800000' }], 'default').ok, false);
   assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(2) + '0112' }], 'default').ok, false);

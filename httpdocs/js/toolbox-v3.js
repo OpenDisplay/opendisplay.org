@@ -63,6 +63,21 @@ function tbTargetClassInfo() {
   return V3.deviceTargetClass({ identTarget: connected && tbDeviceIdent ? tbDeviceIdent.target : null, target: tbConfigTarget() });
 }
 function tbTargetClass() { return tbTargetClassInfo().cls; }
+/**
+ * Inputs planMigration() needs beyond the class: the chip family (READ_IDENT fw_target when
+ * connected, else the config's chip) and the BUILTIN_DRIVER bit (0xB3 panels, ESP32 only).
+ */
+function tbMigrationFacts() {
+  const connected = !!(bleLib && bleLib.isConnected);
+  const id = connected ? tbDeviceIdent : null;
+  return { chip: (id && V3.targetFromIdent(id.target)) || tbConfigTarget() || null,
+    builtinDriver: id && id.flags != null ? id.builtinDriver : null };
+}
+/** Drive limits: what the connected device reports in READ_IDENT, else the class table. */
+function tbDriveLimits() {
+  const connected = !!(bleLib && bleLib.isConnected);
+  return V3.limitsFromIdent(connected ? tbDeviceIdent : null, tbTargetClass()).limits;
+}
 
 // ---- drive database -----------------------------------------------------------
 async function tbLoadDriveDb() {
@@ -142,7 +157,7 @@ function tbCheckConfigSize(length) {
 function tbCheckDriveFit() {
   if (!V3.isConfigDriven(tbTargetGeneration())) return { ok: true, message: '' };
   const cls = tbTargetClass();
-  const r = V3.checkDrivePacketsFit(V3.drivePacketsOf(instances && instances.packets), cls);
+  const r = V3.checkDrivePacketsFit(V3.drivePacketsOf(instances && instances.packets), cls, tbDriveLimits());
   return { ok: r.ok, message: r.ok ? '' : 'Not written: the panel drive data does not run on this device ('
     + (cls === 'bg22' ? 'EFR32BG22' : cls) + '): ' + r.problems.join('; ') + '.' };
 }
@@ -303,7 +318,7 @@ async function tbMigrateIfNeeded(opts = {}) {
   // never wait on a silent opcode). Without it the config check and the chip family decide.
   await tbRefreshIdent();
   const targetClass = tbTargetClass();
-  let plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, deviceSaysNeedsMigration: tbDeviceSaysNeedsMigration(), targetClass });
+  let plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, deviceSaysNeedsMigration: tbDeviceSaysNeedsMigration(), targetClass, ...tbMigrationFacts() });
   if (!plan.needed) return 'none';
   const ident = V3.identifyPreset(instances.packets, simpleConfigPresets);
   const name = toolboxDeviceName() || 'This display';
@@ -318,7 +333,7 @@ async function tbMigrateIfNeeded(opts = {}) {
     });
     if (!ans.ok) return 'declined';
     const d = simpleConfigPresets.displays.find(x => x.id === ans.pick);
-    plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, panelIcType: d && d.panelIcType, targetClass });
+    plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, panelIcType: d && d.panelIcType, targetClass, ...tbMigrationFacts() });
   }
   if (plan.blocked) {
     await tbAskMigration({ title: 'This display can’t be driven by firmware 3.x yet', text: plan.reason, infoOnly: true });
@@ -407,7 +422,7 @@ async function tbRestoreConfig(backup) {
   parseRawBytes(parsed.bytes);
   const gen = tbDeviceGeneration();
   if (V3.isConfigDriven(gen)) {
-    const plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, targetClass: tbTargetClass() });
+    const plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, targetClass: tbTargetClass(), ...tbMigrationFacts() });
     if (plan.needed) return tbMigrateIfNeeded({ restoring: true });
   }
   const ans = await tbAskMigration({

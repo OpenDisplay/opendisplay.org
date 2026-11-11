@@ -1475,7 +1475,8 @@ ble_proto:
             description: Allow unauthenticated config writes when encryption is enabled
           1:
             name: show_key_on_screen
-            description: Show encryption key on screen (future feature)
+            description: 'Firmware 3.0: on a claimed device the normal boot screen shows the key (and its QR
+              carries it). Anyone who can see the display, or a photo of it, has the key. Off by default'
           2:
             name: reset_pin_enabled
             description: Reset pin enabled (must be set for reset pin to work)
@@ -1488,6 +1489,10 @@ ble_proto:
           5:
             name: reset_pin_pulldown
             description: Enable pulldown on reset pin
+          6:
+            name: no_reset_pattern
+            description: 'Firmware 3.0: switch off the five-power-cycle factory reset on this device. With no
+              reset pin either, a claimed device whose key is lost cannot be recovered'
       - name: reset_pin
         size: 1
         description: Reset pin number. When enabled and triggered, securely erases config and reboots

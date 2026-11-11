@@ -50,6 +50,16 @@ def slim(doc: dict) -> dict:
                 raise SystemExit(f"{key}: packet without int id / body_hex")
         panels[key] = e
     out["panels"] = panels
+    # schema_minor 3: one 0xB3 display_controller packet per IT8951 / parallel panel id
+    # (ESP32 only). The website writes it for those ids instead of 0xAE-0xB1.
+    natives = {}
+    for key, entry in sorted((doc.get("native_controllers") or {}).items()):
+        for p in entry.get("packets", []):
+            if p.get("id") != 0xB3 or not isinstance(p.get("body_hex"), str):
+                raise SystemExit(f"native_controllers {key}: packet is not a 0xB3 with body_hex")
+        natives[key] = {k: entry[k] for k in ("panel_ic_type", "name", "board", "controller_class", "packets", "display_pins") if k in entry}
+    if natives:
+        out["native_controllers"] = natives
     return out
 
 
