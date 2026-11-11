@@ -1478,7 +1478,7 @@
         "mosi_pin": "0x21",
         "sck_pin": "0x22",
         "cs_pin": "0x23",
-        "miso_pin": "0xff",
+        "miso_pin": "0x20",
         "wp_pin": "0xff",
         "hold_pin": "0xff",
         "power_pin": "0xff",
