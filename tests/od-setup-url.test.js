@@ -39,11 +39,21 @@ test('vectors U1-U4: parse and rebuild byte for byte', () => {
 });
 
 test('the withdrawn /s/ grammar (rev 4 V13) is not a setup URL', () => {
-  const V = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'sec2_vectors.json'), 'utf8'));
-  for (const c of V.V13_setup_url) {
-    const r = U.parseSetupUrl(c.url);
-    assert.equal(r.status, 'not_setup_url', c.url);
+  for (const url of ['https://opendisplay.org/s/?k=s&i=1A2B3C&t=3&v=3.0.0&b=16&d=10&p=2',
+    'https://opendisplay.org/s/?k=r&i=1A2B3C&t=3&v=3.0.0&b=16&d=10&p=2', 'https://opendisplay.org/s/?k=s&i=00FFEE&t=1&v=3.1.4',
+    'https://opendisplay.org/s/?k=s&i=ABCDEF&t=5&v=3.0.0&d=7', 'https://opendisplay.org/s/?k=r&i=FFFFFF&t=255&v=255.255.255&b=65535&d=65535&p=65535']) {
+    const r = U.parseSetupUrl(url);
+    assert.equal(r.status, 'not_setup_url', url);
     assert.equal(r.reason, 'wrong_path');
+  }
+});
+
+test('the shared vectors (py-opendisplay, rev 5) V13 are U1-U4 and parse as setup URLs', () => {
+  const V = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'sec2_vectors.json'), 'utf8'));
+  assert.equal(V.V13_setup_url.length, 4);
+  for (const c of V.V13_setup_url) {
+    assert.equal(U.parseSetupUrl(c.url).status, 'setup', c.url);
+    assert.equal(c.url.length, c.bytes, c.url);
   }
 });
 

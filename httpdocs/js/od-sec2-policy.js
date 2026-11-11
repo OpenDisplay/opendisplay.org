@@ -294,14 +294,19 @@
     }
     return buildBlob(packets, { version: b[2], header: b.subarray(0, 2) });
   }
-  /** What an unclaimed device stores: a non-zero marker is stored as 0; the CRC is rewritten only if it was valid. */
+  /**
+   * What an unclaimed device stores: a non-zero marker is stored as 0, and so is flags bit 1
+   * SHOW_KEY_ON_SCREEN (rev 5 § 10.3); the CRC is rewritten only if it was valid.
+   */
   function deviceStoreUnclaimed(written) {
     const b = Uint8Array.from(S.u8(written));
     const w = walk(b);
     const wasValid = crcOk(b);
     let changed = false;
     for (const p of w.packets) {
-      if (p.type === PKT_SECURITY && b[p.offset + SEC27.MARKER] !== 0) { b[p.offset + SEC27.MARKER] = 0; changed = true; }
+      if (p.type !== PKT_SECURITY) continue;
+      if (b[p.offset + SEC27.MARKER] !== 0) { b[p.offset + SEC27.MARKER] = 0; changed = true; }
+      if (b[p.offset + SEC27.FLAGS] & SEC_FLAG.SHOW_KEY_ON_SCREEN) { b[p.offset + SEC27.FLAGS] &= ~SEC_FLAG.SHOW_KEY_ON_SCREEN; changed = true; }
     }
     if (changed && wasValid) { const c = outerCrc(b); b[b.length - 2] = c & 0xff; b[b.length - 1] = c >>> 8; }
     return b;

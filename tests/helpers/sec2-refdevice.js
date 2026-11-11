@@ -299,7 +299,7 @@ class RefDevice {
       case 0x0041: {
         const v = P.deviceWriteVerdict(payload, { claimed: this.claimed, kDev: this.kDev, legacySecrets: this.legacySecrets, storedConfig: this.config });
         if (!v.accept) return Uint8Array.of(0xff, 0x41, v.err, 0x00);
-        this.config = Uint8Array.from(payload);
+        this.config = this.claimed ? Uint8Array.from(payload) : P.deviceStoreUnclaimed(payload);
         this.writes = (this.writes || 0) + 1;
         return Uint8Array.of(0x00, 0x41);
       }
