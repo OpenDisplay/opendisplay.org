@@ -68,6 +68,14 @@ const PIPE_MAX_PTO = 3;               // silent tail/PTO probes before abort
 const PIPE_RETX_ACK_SPACING = 2;      // ACKs a retransmit gets to land before repeating it
 const PIPE_MAX_RETX_FRACTION = 0.5;   // per-transfer retx budget as a fraction of chunk count
 const TRANSMISSION_MODE_PIPE_WRITE = 0x10; // transmission_modes bit 4
+/**
+ * The one compression rule (shared with py-opendisplay, maintainer decision 2026-11-11):
+ * compressed image data is supported if EITHER transmission_modes bit 0x01 (streaming
+ * decompression) or 0x02 (zip) is set.
+ */
+function transmissionModesSupportCompression(modes) {
+  return modes !== null && modes !== undefined && (Number(modes) & 0x03) !== 0;
+}
 // PIPE_WRITE_START NACK err codes (OD_ERR_PIPE_START_*). Partial-specific codes
 // mirror py-opendisplay PIPE_START_NACK_*; 0x02 doubles as "unknown flag" for
 // older pipe-capable firmware that does not understand PIPE_FLAG_PARTIAL.
@@ -4770,8 +4778,6 @@ class OpenDisplayBLE {
       ? DIRECT_WRITE_CHUNK_SIZE_ENCRYPTED
       : DIRECT_WRITE_CHUNK_SIZE_UNENCRYPTED;
     const DIRECT_WRITE_PIPELINE_SIZE = 1;
-    const TRANSMISSION_MODE_STREAMING_DECOMPRESSION = 0x01;
-    const TRANSMISSION_MODE_ZIP = 0x02;
     const STREAMING_ZLIB_WINDOW_BITS = 9;
     let maxStartPayload = this.encryptionSession.authenticated
       ? MAX_ENCRYPTED_PACKET_SIZE - ENCRYPTION_OVERHEAD
@@ -4815,16 +4821,7 @@ class OpenDisplayBLE {
       const uncompressedSize = byteData.length;
       const byteDataUint8 = new Uint8Array(byteData);
       
-      let supportsZip = transmissionModes !== null && transmissionModes !== undefined &&
-                          (transmissionModes & TRANSMISSION_MODE_ZIP) !== 0;
-      const supportsStreamingDecompression = transmissionModes !== null && transmissionModes !== undefined &&
-        (transmissionModes & TRANSMISSION_MODE_STREAMING_DECOMPRESSION) !== 0;
-        
-      // Forcing the flag
-if (supportsStreamingDecompression) {
-  supportsZip = true; 
-}
-      const supportsCompression = supportsZip && supportsStreamingDecompression;
+      const supportsCompression = transmissionModesSupportCompression(transmissionModes);
       
       let compressedBytes = null;
       if (supportsCompression && typeof pako !== 'undefined') {
@@ -4836,10 +4833,8 @@ if (supportsStreamingDecompression) {
         } catch (e) {
           this.log('Compression failed, using uncompressed direct write: ' + e.message, 'warning');
         }
-      } else if (supportsZip && !supportsStreamingDecompression) {
-        this.log('Device has zip but not streaming_decompression — using uncompressed direct write', 'info');
-      } else if (!supportsZip) {
-        this.log('Device does not support compression (transmission_modes zip not set), using uncompressed direct write', 'info');
+      } else if (!supportsCompression) {
+        this.log('Device does not support compression (transmission_modes bits 0x01/0x02 clear), using uncompressed direct write', 'info');
       }
 
       const useCompressed = supportsCompression && compressedBytes;
@@ -4934,7 +4929,6 @@ if (supportsStreamingDecompression) {
         // substitution check unless the device was actually told a mode.
         requestedDriveMode,
         supportsCompression,
-        supportsStreamingDecompression,
         STREAMING_ZLIB_WINDOW_BITS,
         maxStartPayload,
         // Pipe-write (0x0080) inputs. These leave every legacy field above

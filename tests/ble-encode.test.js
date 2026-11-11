@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {}, console, navigator: {}, document: {}, setTimeout, clearTimeout };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'httpdocs', 'js', 'ble-common.js'), 'utf8') + ';this.OD = OpenDisplayBLE;', ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'httpdocs', 'js', 'ble-common.js'), 'utf8') + ';this.OD = OpenDisplayBLE; this.compress = transmissionModesSupportCompression;', ctx);
 const enc = Object.create(ctx.OD.prototype);
 enc.log = () => {};
 
@@ -37,4 +37,10 @@ test('3.x: the RGB fallback path (no dither indices) maps through code_map too',
 test('other schemes are untouched by codeMap4', () => {
   const gray = Array.from(enc.buildWireCodes(px, 4, 5, 0x28, idx, [3, 2, 1, 0], [0, 1, 3, 2]));
   assert.deepEqual(gray, [3, 2, 1, 0]);
+});
+
+test('compression rule: supported if EITHER transmission_modes bit 0x01 or 0x02 is set', () => {
+  for (const [modes, want] of [[0x01, true], [0x02, true], [0x03, true], [0x13, true], [0x00, false], [0x10, false], [0x08, false], [null, false], [undefined, false]]) {
+    assert.equal(ctx.compress(modes), want, String(modes));
+  }
 });
