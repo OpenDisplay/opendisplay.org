@@ -535,7 +535,25 @@ class OpenDisplayBLE {
     return this.usesBluefyBleEngine();
   }
 
+  /**
+   * With `claimModeScan` set (Chrome/Edge), the first attempt lists only displays whose
+   * advertisement says "waiting to be claimed" (MSD status bit 2 CLAIM_MODE set, bit 3
+   * SESSION_REQUIRED clear; SECURITY_V2 rev 5 § 5.3). Browsers that reject a masked
+   * manufacturerData filter fall through to the normal attempts. The bits are advisory: the
+   * page confirms with READ_IDENT / SEC_STATUS after connecting.
+   */
   buildRequestDeviceOptionAttempts(prefix) {
+    const base = this._baseRequestDeviceOptionAttempts(prefix);
+    if (!this.claimModeScan || this.usesBluefyBleEngine()) return base;
+    const prefixes = String(prefix || '').split(',').map(p => p.trim()).filter(p => p);
+    const dataPrefix = new Uint8Array(14); dataPrefix[13] = 0x04;
+    const mask = new Uint8Array(14); mask[13] = 0x0C;
+    const cm = { manufacturerData: [{ companyIdentifier: OPENDISPLAY_MSD_COMPANY_ID, dataPrefix, mask }] };
+    const filters = !prefixes.length || (prefixes.length === 1 && prefixes[0] === 'OD') ? [cm] : prefixes.map(p => ({ ...cm, namePrefix: p }));
+    return [{ optionalServices: [this.serviceUUID], filters }, ...base];
+  }
+
+  _baseRequestDeviceOptionAttempts(prefix) {
     const prefixes = prefix.split(',').map(p => p.trim()).filter(p => p);
     const effectivePrefixes = prefixes.length ? prefixes : ['OD'];
     const nameFilters = effectivePrefixes.map(p => ({ namePrefix: p }));
@@ -2576,8 +2594,13 @@ class OpenDisplayBLE {
 
     // Failure (0xFF 0x41 / 0xFF 0x42)
     if (responseType === 0xFF) {
-      this.log('Config write failed on device', 'error');
-      if (reject) reject(new Error('Config write failed'));
+      // 3.0 NACK bytes: 0x01 busy drawing (retry), 0x10 secrets need a claim, 0x11 other key.
+      const code = bytes.length >= 3 ? bytes[2] : null;
+      const why = { 0x01: ' (display busy drawing; retry)', 0x10: ' (claim the device first)', 0x11: ' (the config carries a different key)' }[code] || '';
+      this.log('Config write failed on device' + why, 'error');
+      const err = new Error('Config write failed' + why);
+      err.nackFrame = Uint8Array.from(bytes);
+      if (reject) reject(err);
       return true;
     }
 
