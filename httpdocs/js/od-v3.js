@@ -92,6 +92,25 @@
   function isConfigDriven(gen) { return gen === 'v3'; }
 
   /**
+   * Which generation the preset picker builds for (maintainer decision 2026-11-11): the
+   * connected device's when it is known; with nothing connected, the firmware the user
+   * explicitly picked on the install screen, else 3.x. A connected device whose version could
+   * not be read stays 'unknown' (written like 2.x, the conservative choice).
+   * @param {{connected:boolean, deviceGen?:string, chosenInstallGen?:string|null}} o
+   */
+  function pickerGeneration({ connected = false, deviceGen = 'unknown', chosenInstallGen = null } = {}) {
+    if (connected) return deviceGen || 'unknown';
+    return chosenInstallGen || 'v3';
+  }
+  /**
+   * The install screen's default firmware line when the user has not picked one: 2.x only for a
+   * connected 2.x device (it follows the device), 3.x otherwise, where the board has a 3.x image.
+   */
+  function defaultInstallGeneration({ connected = false, deviceGen = 'unknown' } = {}) {
+    return connected && deviceGen === 'v2' ? 'v2' : 'v3';
+  }
+
+  /**
    * Compare two version strings numerically, part by part. A leading "v" is ignored on either
    * side, so a "v3.0.0" release tag and a "3.0.0" one sort the same (Firmware_Unified
    * RELEASE_ARTEFACTS.md § 1 rule 5). Without this, "v3.0.0" parsed as 0 and sorted below 2.x.
@@ -890,7 +909,7 @@
   return {
     PID, DRIVE_PIDS, BURNED_SIZES, VERIFIED, BACKUP_FORMAT,
     num, hexToBytes, bytesToHex, normalizePid, isDrivePid, isBurnedPid,
-    firmwareGeneration, isConfigDriven, compareVersions,
+    firmwareGeneration, isConfigDriven, pickerGeneration, defaultInstallGeneration, compareVersions,
     targetFromIcType, targetFromInstallType, configSizeLimit, checkConfigSize,
     TARGET_CLASS_LIMITS, RESTRICTIVE_CLASS, targetClassFromIdent, targetClassFromTarget, deviceTargetClass,
     walkSequence, checkDrivePacketsFit,

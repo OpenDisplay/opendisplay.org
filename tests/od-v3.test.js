@@ -49,6 +49,18 @@ test('firmwareGeneration: the single version gate', () => {
   assert.equal(V3.isConfigDriven('unknown'), false);
 });
 
+test('pickerGeneration / defaultInstallGeneration: follow the device, 3.x when nothing is connected', () => {
+  assert.equal(V3.pickerGeneration({ connected: false }), 'v3');
+  assert.equal(V3.pickerGeneration({}), 'v3');
+  assert.equal(V3.pickerGeneration({ connected: false, chosenInstallGen: 'v2' }), 'v2');
+  assert.equal(V3.pickerGeneration({ connected: true, deviceGen: 'v2' }), 'v2');
+  assert.equal(V3.pickerGeneration({ connected: true, deviceGen: 'v3', chosenInstallGen: 'v2' }), 'v3');
+  assert.equal(V3.pickerGeneration({ connected: true, deviceGen: 'unknown' }), 'unknown');
+  assert.equal(V3.defaultInstallGeneration({ connected: false }), 'v3');
+  assert.equal(V3.defaultInstallGeneration({ connected: true, deviceGen: 'v3' }), 'v3');
+  assert.equal(V3.defaultInstallGeneration({ connected: true, deviceGen: 'v2' }), 'v2');
+});
+
 test('config size limit per target and generation', () => {
   assert.equal(V3.configSizeLimit('bg22', 'v3'), 3120);
   assert.equal(V3.configSizeLimit('bg22', 'v2'), 2048);

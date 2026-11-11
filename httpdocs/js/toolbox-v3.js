@@ -18,6 +18,7 @@ const V3 = OpenDisplayV3;
 let tbDriveDb = null;              // Map panel_ic_type -> drive entry (od-v3.js buildDriveDb)
 let tbDriveDbSource = 'none';      // 'drive-presets.json' | 'presets' | 'none'
 let tbInstallGeneration = null;    // generation of the firmware the install screen will flash
+let tbInstallGenerationChosen = false; // true when the user picked that version explicitly
 let tbLastBackup = null;           // { bytes, meta, savedAt } read before an update
 let tbMigrationInFlight = false;
 let tbDeviceIdent = null;          // parsed READ_IDENT of the connected 3.x device (od-v3.js parseReadIdent)
@@ -27,11 +28,14 @@ let tbDeviceIdent = null;          // parsed READ_IDENT of the connected 3.x dev
 function tbDeviceGeneration() {
   return bleLib && bleLib.isConnected ? V3.firmwareGeneration(tbFirmwareVersion) : 'unknown';
 }
-/** Generation the config being built is FOR: the connected device, else the firmware about to be installed. */
+/**
+ * Generation the config being built is FOR (od-v3.js pickerGeneration): the connected device;
+ * with nothing connected, an explicitly picked install version, else 3.x.
+ */
 function tbTargetGeneration() {
-  const g = tbDeviceGeneration();
-  if (g !== 'unknown') return g;
-  return tbInstallGeneration || 'unknown';
+  const connected = !!(bleLib && bleLib.isConnected);
+  return V3.pickerGeneration({ connected, deviceGen: tbDeviceGeneration(),
+    chosenInstallGen: tbInstallGenerationChosen ? tbInstallGeneration : null });
 }
 /**
  * Firmware-side "needs migration" flag (READ_IDENT / MSD), when the firmware provides it.

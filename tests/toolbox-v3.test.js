@@ -220,6 +220,9 @@ test('3.x device that already has drive data: nothing to do unless READ_IDENT sa
 test('size gate follows the connected device', async () => {
   const w = makeWorld({ packets: carried() });
   assert.equal(w.api.tbTargetGeneration(), 'v3');
+  w.ctx.bleLib.isConnected = false;
+  assert.equal(w.api.tbTargetGeneration(), 'v3');  // nothing connected: 3.x
+  w.ctx.bleLib.isConnected = true;
   assert.equal(w.api.tbCheckConfigSize(3121).ok, false);
   assert.equal(w.api.tbCheckConfigSize(3120).ok, true);
   const w2 = makeWorld({ packets: carried(), firmware: '2.3.0' });

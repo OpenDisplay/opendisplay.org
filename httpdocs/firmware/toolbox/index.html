@@ -5041,8 +5041,8 @@ async function tbV3Firmware(cfg) {
   return b ? { version: idx.version, entry: b } : null;
 }
 // Every version that can be installed on this board: { bundled, versions: [{ tag, prerelease, bundled, generation }], latest }.
-// "latest" stays the newest 2.x until the maintainer makes 3.x the default (the 3.x entry is
-// offered in the picker, labelled, never chosen implicitly).
+// "latest" is the newest 2.x. The default pick (tbFirmwareSource) is the 3.x entry when the board
+// has one, unless a connected 2.x device is being updated (maintainer decision 2026-11-11).
 async function tbFirmwareOptions(board) {
   const cfg = board && board.installConfig;
   if (!cfg || !TOOLBOX_USB_INSTALL_TYPES.includes(cfg.type)) return null;
@@ -5107,7 +5107,11 @@ function tbEspManifestUrl(options, version, fileUrl) {
 }
 // Where the chosen version comes from: { version, url, bundled }.
 function tbFirmwareSource(options, tag) {
-  const want = tag || options.latest;
+  // No explicit pick: 3.x where this board has it, unless a connected 2.x device says otherwise.
+  const v3 = options.versions.find(x => x.generation === 'v3');
+  const connected = !!(bleLib && bleLib.isConnected);
+  const def = OpenDisplayV3.defaultInstallGeneration({ connected, deviceGen: tbDeviceGeneration() });
+  const want = tag || (def === 'v3' && v3 ? v3.tag : options.latest);
   const v = options.versions.find(x => x.tag === want);
   if (v && v.generation === 'v3') return tbV3Source(options, v);
   if (!v || v.bundled) {
@@ -5144,6 +5148,7 @@ async function tbApplyFirmwareChoice(board) {
   // The 2.x / 3.x gate for configs built before a device is connected (setup) and for the
   // update flow's "save the settings first" step.
   tbInstallGeneration = src.generation || 'v2';
+  tbInstallGenerationChosen = tbFwChoice != null;
   tbAnnotateDisplayOptions();
   tbRenderUpdateBackupStep();
   if (cfg.type === 'esp32') document.getElementById('firmwareInstallButton').setAttribute('manifest', src.url);
