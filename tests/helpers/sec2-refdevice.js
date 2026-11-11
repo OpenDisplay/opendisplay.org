@@ -42,7 +42,7 @@ class DeviceReassembler {
 
 class RefDevice {
   constructor({ uid, dflags = 1, claimMode = null, kDev = null, origin = 'CLAIMED', timeoutS = 3600, rng = {}, maxFrame = 244,
-    abuseLimit = 3, config = null, legacySecrets = false, fw = [3, 0, 0], panel = true } = {}) {
+    abuseLimit = 3, config = null, legacySecrets = false, fw = [3, 0, 0], panel = true, rateLimit = false, now = Date.now } = {}) {
     this.uid = S.u8(uid || new Uint8Array(8));
     this.baseDflags = dflags;
     this.claimMode = claimMode; // null | 'gesture' | 'fresh'
@@ -61,6 +61,10 @@ class RefDevice {
     this.pending = null; this.renders = 0; this.configLocked = claimMode === 'gesture';
     this.log = [];
     this.handlers = {}; // tests may override per opcode: (payload) -> plaintext reply frame or null
+    // § 8.7 handshake rate limiter (rev 4): every BEGIN / HELLO answered (BUSY included), every
+    // AUTH_FAILED on FINISH / CONFIRM; 10 per rolling 60 s; a full ring answers RATE_LIMITED
+    // before BUSY and that refusal is not counted. Off unless rateLimit is set.
+    this.rateLimit = rateLimit; this.now = now; this.rateRing = []; this.busyStarts = 0; this.rateLimitedAnswers = 0;
   }
   static async withSession(kH2d, kD2h) {
     const d = new RefDevice({ kDev: new Uint8Array(16).fill(7) });
@@ -123,6 +127,17 @@ class RefDevice {
     return Uint8Array.of(0x00, 0x46, 0x04, 0x03, 0x00, fl, 0x30, 0x0c, 0x80, 0x00, 0x00);
   }
   _err(cmdLo, sub, err) { return [Uint8Array.of(0xff, cmdLo, sub, err)]; }
+  /** A handshake start (BEGIN / HELLO): null to go on, or the refusal frames. */
+  _rateStart(cmdLo, sub) {
+    if (!this.rateLimit) return null;
+    const t = this.now();
+    this.rateRing = this.rateRing.filter(x => t - x < 60000);
+    if (this.rateRing.length >= 10) { this.rateLimitedAnswers++; return this._err(cmdLo, sub, E.RATE_LIMITED); }
+    this.rateRing.push(t);
+    if (this.busyStarts > 0) { this.busyStarts--; return this._err(cmdLo, sub, E.BUSY); }
+    return null;
+  }
+  _rateFail() { if (this.rateLimit) this.rateRing.push(this.now()); }
   _frag(cmdLo, sub, body) { return S.fragment(cmdLo, sub, body, this.fragMax || 20); }
 
   /** One host frame in; the device's reply frames out (possibly none). */
@@ -140,7 +155,8 @@ class RefDevice {
     if (!gated) return this._plaintext(cmd, f);
     if (this.claimed && !this.session) {
       this.feRun++;
-      if (this.feRun >= this.abuseLimit) { this.closed = true; return []; }
+      // The refusal that reaches the limit is still answered; then the device closes the link.
+      if (this.feRun >= this.abuseLimit) this.closed = true;
       return [Uint8Array.of(0x00, f[1], 0xfe)];
     }
     if (!this.session) {
@@ -212,6 +228,7 @@ class RefDevice {
     if (!this.claimMode) return this._err(0x55, sub, this.claimed ? E.ALREADY_CLAIMED : E.NOT_IN_CLAIM_MODE);
     switch (sub) {
       case S.CLAIM_SUB.BEGIN: {
+        { const rl = this._rateStart(0x55, sub); if (rl) return rl; }
         if (this.renders >= 3) { this.claimMode = null; return this._err(0x55, sub, E.ATTEMPTS_EXHAUSTED); }
         if (body[0] !== 0x02 || body[1] < 20 || body[1] > 244) return this._err(0x55, sub, E.MALFORMED);
         const qc = body.subarray(2, 66);
@@ -242,7 +259,7 @@ class RefDevice {
         const p = this.pending;
         if (!p || p.step !== 'nonce') { this.pending = null; return this._err(0x55, sub, E.BAD_STATE); }
         const kConf = await S.kdf(p.kNew, 'OD2/k-conf', this.uid);
-        if (!S.ctEqual(body, await S.kdf(kConf, 'OD2/claim-c', p.tc))) { this.pending = null; return this._err(0x55, sub, E.AUTH_FAILED); }
+        if (!S.ctEqual(body, await S.kdf(kConf, 'OD2/claim-c', p.tc))) { this.pending = null; this._rateFail(); return this._err(0x55, sub, E.AUTH_FAILED); }
         this.kDev = p.kNew; this.origin = 'CLAIMED';
         const tagD = await S.kdf(kConf, 'OD2/claim-d', p.tc);
         const keys = await S.sessionKeys(p.prk, p.tc);
@@ -259,6 +276,7 @@ class RefDevice {
   async _auth(sub, body) {
     if (!this.claimed) return this._err(0x56, sub, E.NOT_CLAIMED);
     if (sub === S.AUTH_SUB.HELLO) {
+      { const rl = this._rateStart(0x56, sub); if (rl) return rl; }
       if (this.busy) { return this._err(0x56, sub, E.BUSY); }
       if (body[0] !== 0x02 || body[1] < 20 || body[1] > 244) return this._err(0x56, sub, E.MALFORMED);
       const qc = body.subarray(2, 66), nc = body.subarray(66, 82);
@@ -279,7 +297,7 @@ class RefDevice {
       const p = this.pending;
       if (!p || p.step !== 'hello') return this._err(0x56, sub, E.BAD_STATE);
       this.pending = null;
-      if (!S.ctEqual(body, p.expC)) return this._err(0x56, sub, E.AUTH_FAILED);
+      if (!S.ctEqual(body, p.expC)) { this._rateFail(); return this._err(0x56, sub, E.AUTH_FAILED); }
       this.session = { kH2d: p.keys.kH2d, kD2h: p.keys.kD2h, sid: p.keys.sid, rxLast: 0, seen: new Set(), txCtr: 0 };
       this.feRun = 0; this.strikes = 0;
       return this._frag(0x56, sub, S.concat(p.tagD, S.u16le(this.timeoutS)));

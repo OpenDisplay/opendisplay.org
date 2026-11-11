@@ -108,3 +108,37 @@ test('disconnect drops the session; a claimed device without a session gets at m
   await assert.rejects(r.ble.sendCommand(Uint8Array.of(0x00, 0x40)), e => e.code === 'not_authorised');
   assert.equal(r.dev.closed, false, 'the device abuse limit was never reached');
 });
+
+test('three refusals close the link: a write error BEFORE the disconnect event still reports "not authorised"', async () => {
+  const r = setup({ kDev: new Uint8Array(16).fill(0x42) });
+  // No SEC_STATUS read yet, so the client-side cap does not apply: the device's limit decides.
+  const write = r.ble.characteristic.writeValueWithoutResponse;
+  r.ble.characteristic.writeValueWithoutResponse = async data => {
+    if (r.dev.closed) { const e = new Error('GATT operation failed for unknown reason.'); e.name = 'NetworkError'; throw e; }
+    return write(data);
+  };
+  r.ble.gattMaxRetries = 0;
+  const reported = [];
+  r.ble.onSec2Error = (e, o) => reported.push([e.code, o.fatal]);
+  for (let i = 0; i < 3; i++) await r.ble.sendCommand(Uint8Array.of(0x00, 0x40));
+  assert.equal(r.dev.closed, true);
+  assert.equal(r.ble.isConnected, true, 'the disconnect event has not arrived yet');
+  await assert.rejects(r.ble.sendCommand(Uint8Array.of(0x00, 0x40)), e => e.code === 'not_authorised' && e.textKey === 'not_authorised');
+  assert.deepEqual(reported[reported.length - 1], ['not_authorised', true]);
+  // ...and the disconnect event that follows says the same.
+  r.ble.handleDisconnect = r.ble.handleDisconnect.bind(r.ble);
+  r.ble.autoReconnectEnabled = false;
+  const n = reported.length;
+  r.ble.handleDisconnect();
+  assert.deepEqual(reported.slice(n), [['not_authorised', true]]);
+});
+
+test('with fewer refusals a link error is "not authorised" only once the disconnect is visible', async () => {
+  const r = setup({ kDev: new Uint8Array(16).fill(0x42) });
+  await r.ble.sendCommand(Uint8Array.of(0x00, 0x40));
+  const sess = r.link.session;
+  assert.equal(sess.feSeen, 1);
+  assert.equal(sess.refusedAway(), false);
+  r.ble.isConnected = false;
+  assert.equal(sess.refusedAway(), true);
+});

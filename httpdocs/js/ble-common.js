@@ -1022,6 +1022,10 @@ class OpenDisplayBLE {
    */
   handleDisconnect() {
     this.log('Device disconnected', 'warning');
+    // SEC2: a disconnect right after refusals is the device closing the link on us.
+    if (this.sec2Link && this.sec2Link.session.feSeen > 0 && !this.sec2Link.session.hasSession) {
+      this._onSec2Error(this.sec2Link.session.notAuthorisedError(null), { fatal: true });
+    }
     this.resetState();
     this.setStatus('Disconnected', false);
 
@@ -1224,6 +1228,13 @@ class OpenDisplayBLE {
         await this.writeCommandValue(commandToSend);
         return;
       } catch (error) {
+        // SEC2: after the device refused commands that need a key it closes the link, and the
+        // write error can come before the disconnect event. Report that, not a GATT error.
+        if (this.sec2Link && this.sec2Link.session.refusedAway()) {
+          const e = this.sec2Link.session.notAuthorisedError(error);
+          this._onSec2Error(e, { fatal: true });
+          throw e;
+        }
         const msg = (error && error.message) ? error.message : '';
         const busy = error.name === 'NetworkError'
           && (msg.includes('GATT operation') || /gatt/i.test(msg));

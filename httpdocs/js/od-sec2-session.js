@@ -39,8 +39,41 @@
   const DEFAULT_FRAG_MAX = S.FRAG_MAX_MIN;
   const REPLY_TIMEOUT_MS = 5000;
   const HANDSHAKE_TIMEOUT_MS = 8000;
-  const BUSY_RETRIES = 3;
-  const BUSY_BACKOFF_MS = [1500, 3000, 6000];
+  // BUSY back-off, the same policy as py-opendisplay (v3/py-v9 sec2/client.py): the device counts
+  // every BEGIN / HELLO it answers (BUSY included), every AUTH_FAILED on FINISH and every failed
+  // CONFIRM tag in a ring of RATE_RING per RATE_WINDOW_MS (§ 8.7); RATE_LIMITED is not counted.
+  // Quick retries burned that ring on hardware and turned a brief BUSY into RATE_LIMITED, so
+  // retries are spaced 2/4/8/16 s and stop while BUSY_RETRY_RESERVE starts must stay free.
+  const BUSY_BACKOFF_MS = [2000, 4000, 8000, 16000];
+  const BUSY_RETRIES = BUSY_BACKOFF_MS.length;
+  const RATE_RING = 10;
+  const RATE_WINDOW_MS = 60000;
+  const BUSY_RETRY_RESERVE = 3;   // = MAX_HELLOS_PER_CONNECTION: one full authenticate
+
+  /**
+   * This page's view of a device's handshake rate limiter, per uid. Shared by every session
+   * object of the page (a reconnect makes a new one; the device's ring persists until reboot).
+   */
+  class HandshakeBudget {
+    constructor(clock = Date.now) { this.clock = clock; this._events = new Map(); }
+    _ring(uid) {
+      const k = typeof uid === 'string' ? uid : S.bytesToHex(uid);
+      if (!this._events.has(k)) this._events.set(k, []);
+      const ring = this._events.get(k);
+      const now = this.clock();
+      while (ring.length && now - ring[0] >= RATE_WINDOW_MS) ring.shift();
+      while (ring.length > RATE_RING) ring.shift();
+      return ring;
+    }
+    /** One counted event: a BEGIN / HELLO sent, or an AUTH_FAILED. */
+    note(uid) { const r = this._ring(uid); r.push(this.clock()); if (r.length > RATE_RING) r.shift(); }
+    /** The device answered RATE_LIMITED: that start was not counted. */
+    forgetLast(uid) { const r = this._ring(uid); if (r.length) r.pop(); }
+    used(uid) { return this._ring(uid).length; }
+    reset(uid) { if (uid == null) this._events.clear(); else this._events.delete(typeof uid === 'string' ? uid : S.bytesToHex(uid)); }
+  }
+  const HANDSHAKE_BUDGET = new HandshakeBudget();
+  const FE_REFUSALS_CLOSE_LINK = 3;   // BG22 closes the link after 3 FE in a row (ESP32 after 10)
   const MAX_GATED_WITHOUT_SESSION = 2; // the device closes the link after 3 FE in a row (BG22)
 
   class Sec2SessionError extends Error {
@@ -71,12 +104,12 @@
      * @param {function} [o.log]
      */
     constructor({ transport, keyStore, name, maxFrame = DEFAULT_MAX_FRAME, mtu = null, fragMax = DEFAULT_FRAG_MAX,
-      sleep = ms => new Promise(r => setTimeout(r, ms)), log = () => {}, now = Date.now } = {}) {
+      sleep = ms => new Promise(r => setTimeout(r, ms)), log = () => {}, now = Date.now, budget = HANDSHAKE_BUDGET } = {}) {
       if (!transport) throw new TypeError('transport required');
       this.t = transport; this.store = keyStore; this.name = name;
       this.maxFrame = Math.min(maxFrame, frameLimit(mtu));
       this.fragMax = Math.max(S.FRAG_MAX_MIN, Math.min(fragMax, this.maxFrame, 244));
-      this.sleep = sleep; this.log = log; this.now = now;
+      this.sleep = sleep; this.log = log; this.now = now; this.budget = budget;
       this.mode = null;          // 'sec2' | 'v1' after select()
       this.status = null;        // last parsed SEC_STATUS (advisory, unauthenticated)
       this.rl = null;            // ClientRecordLayer while a session is up
@@ -165,9 +198,13 @@
     async _authOnce(uid, keyHex) {
       const ac = new S.AuthClient({ uid, kDev: S.hexToBytes(keyHex), fragMax: this.fragMax });
       const helloBody = await ac.hello();
-      const reply = await this._handshakeWithBusy(0x56, S.AUTH_SUB.HELLO, helloBody);
+      const reply = await this._handshakeWithBusy(0x56, S.AUTH_SUB.HELLO, helloBody, uid);
       const finish = await ac.onHelloReply(reply);
-      const fin = await this._handshake(0x56, S.AUTH_SUB.FINISH, finish);
+      let fin;
+      try { fin = await this._handshake(0x56, S.AUTH_SUB.FINISH, finish); } catch (e) {
+        if (e instanceof S.Sec2Error && e.err === S.SEC_ERR.AUTH_FAILED) this.budget.note(uid);  // a counted event (§ 8.7)
+        throw e;
+      }
       try { return await ac.onFinishReply(fin); } catch (e) { throw new Sec2SessionError('tag_mismatch', 'not_authorised', e.message); }
     }
     _uidFor() {
@@ -204,7 +241,7 @@
       const cc = new S.ClaimClient({ uid: st.uid, fragMax: this.fragMax });
       let beginReply;
       try {
-        beginReply = await this._handshakeWithBusy(0x55, S.CLAIM_SUB.BEGIN, await cc.begin());
+        beginReply = await this._handshakeWithBusy(0x55, S.CLAIM_SUB.BEGIN, await cc.begin(), st.uid);
       } catch (e) { throw this._claimError(e); }
       let info;
       try {
@@ -236,6 +273,7 @@
       try {
         done = await cc.onConfirmReply(await this._handshake(0x55, S.CLAIM_SUB.CONFIRM, await cc.confirm()));
       } catch (e) {
+        if (e instanceof S.Sec2Error && e.err === S.SEC_ERR.AUTH_FAILED) this.budget.note(st.uid);  // failed CONFIRM tag (§ 8.7)
         // CONFIRM was sent: the device may hold the key now. Keep it as a candidate.
         throw new Sec2SessionError('claim_unconfirmed', null, 'the claim was not confirmed; the new key is kept and tried next time', { cause: e });
       }
@@ -497,12 +535,22 @@
     }
 
     // ---- handshake plumbing ------------------------------------------------------------------
-    async _handshakeWithBusy(cmdLo, sub, body) {
+    /** BEGIN / HELLO: retry on BUSY with the spaced, budget-aware back-off (see HandshakeBudget). */
+    async _handshakeWithBusy(cmdLo, sub, body, uid) {
+      const b = this.budget;
       for (let i = 0; ; i++) {
+        b.note(uid);
         try { return await this._handshake(cmdLo, sub, body); } catch (e) {
-          if (!(e instanceof S.Sec2Error && e.err === S.SEC_ERR.BUSY) || i >= BUSY_RETRIES) throw e;
-          this.log('display busy, retrying', 'info');
-          await this.sleep(BUSY_BACKOFF_MS[Math.min(i, BUSY_BACKOFF_MS.length - 1)]);
+          const se = e instanceof S.Sec2Error ? e.err : null;
+          if (se === S.SEC_ERR.RATE_LIMITED) b.forgetLast(uid);
+          if (se !== S.SEC_ERR.BUSY || i >= BUSY_RETRIES) throw e;
+          if (b.used(uid) + 1 > RATE_RING - BUSY_RETRY_RESERVE) {
+            this.log('display busy; not retrying, ' + b.used(uid) + ' of ' + RATE_RING + ' handshake starts used in the last 60 s', 'info');
+            throw e;
+          }
+          const delay = BUSY_BACKOFF_MS[i];
+          this.log('display busy (display pass); retrying in ' + delay / 1000 + ' s', 'info');
+          await this.sleep(delay);
         }
       }
     }
@@ -524,8 +572,24 @@
       await this._send(frame);
       return this._receive(isFrom(frame[1]), timeoutMs);
     }
+    /**
+     * Did the device refuse us away? After FE_REFUSALS_CLOSE_LINK refusals the firmware closes the
+     * link (BG22: 3 in a row), and the write error can arrive BEFORE the disconnect event (seen
+     * with py-opendisplay on hardware, about 44 ms early). So any link error after 3 refusals
+     * means "not authorised" even while the link still looks up; with fewer refusals the
+     * disconnect must already be visible.
+     */
+    refusedAway() { return this.feSeen >= FE_REFUSALS_CLOSE_LINK || (this.feSeen > 0 && this.t.connected === false); }
+    notAuthorisedError(cause) {
+      return new Sec2SessionError('not_authorised', 'not_authorised', 'the display closed the link after refusing commands that need a key', { cause });
+    }
     async _send(frame) {
-      try { await this.t.send(frame); } catch (e) { this.onDisconnect(); throw new Sec2SessionError('disconnected', this.feSeen ? 'not_authorised' : null, 'link lost', { cause: e }); }
+      try { await this.t.send(frame); } catch (e) {
+        const away = this.refusedAway();
+        this.onDisconnect();
+        if (away) throw this.notAuthorisedError(e);
+        throw new Sec2SessionError('disconnected', null, 'link lost', { cause: e });
+      }
     }
     async _receive(match, timeoutMs) { return this.t.receive(match, timeoutMs); }
   }
@@ -536,5 +600,5 @@
     return !c.ok && c.textKey === 'secrets_need_key';
   }
 
-  return { Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit, DEFAULT_MAX_FRAME, MAX_GATED_WITHOUT_SESSION, BUSY_RETRIES };
+  return { FE_REFUSALS_CLOSE_LINK, HandshakeBudget, HANDSHAKE_BUDGET, BUSY_BACKOFF_MS, RATE_RING, RATE_WINDOW_MS, BUSY_RETRY_RESERVE, Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit, DEFAULT_MAX_FRAME, MAX_GATED_WITHOUT_SESSION, BUSY_RETRIES };
 });

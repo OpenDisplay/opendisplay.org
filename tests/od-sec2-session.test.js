@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const S = require('../httpdocs/js/od-sec2.js');
 const P = require('../httpdocs/js/od-sec2-policy.js');
 const KS = require('../httpdocs/js/od-keystore.js');
-const { Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit } = require('../httpdocs/js/od-sec2-session.js');
+const { Sec2Session, Sec2SessionError, secretsNeedKey, frameLimit, HandshakeBudget, BUSY_BACKOFF_MS, RATE_RING, BUSY_RETRY_RESERVE } = require('../httpdocs/js/od-sec2-session.js');
 const { RefDevice, RefTransport } = require('./helpers/sec2-refdevice.js');
 
 const NAME = 'OD1A2B3C';
@@ -18,13 +18,14 @@ function rig(devOpts = {}, { storage = KS.memoryStorage(), persisted = async () 
   const dev = new RefDevice(Object.assign({ uid: UID }, devOpts));
   const tr = new RefTransport(dev);
   const store = new KS.KeyStore({ storage, persisted });
-  const s = new Sec2Session({ transport: tr, keyStore: store, name: NAME, sleep: noSleep });
-  return { dev, tr, store, s, storage };
+  const budget = new HandshakeBudget();
+  const s = new Sec2Session({ transport: tr, keyStore: store, name: NAME, sleep: noSleep, budget });
+  return { dev, tr, store, s, storage, budget };
 }
 function reconnect(r) {
   r.dev.disconnect();
   r.tr = new RefTransport(r.dev);
-  r.s = new Sec2Session({ transport: r.tr, keyStore: r.store, name: NAME, sleep: noSleep });
+  r.s = new Sec2Session({ transport: r.tr, keyStore: r.store, name: NAME, sleep: noSleep, budget: r.budget });
   return r;
 }
 const typed = code => async ({ display }) => code === 'right' ? display : code;
@@ -414,4 +415,81 @@ test('READ_MSD and READ_IDENT work without a session on a claimed device', async
 test('Sec2SessionError carries a text key', () => {
   const e = new Sec2SessionError('x', 'claim_first', 'm');
   assert.equal(e.textKey, 'claim_first'); assert.ok(e instanceof Error);
+});
+
+// ---- BUSY back-off inside the device's handshake rate limit (same policy as py-v9) --------------
+test('BUSY back-off: 2/4/8/16 s, the same numbers as py-opendisplay', () => {
+  assert.deepEqual(BUSY_BACKOFF_MS, [2000, 4000, 8000, 16000]);
+  assert.equal(RATE_RING, 10); assert.equal(BUSY_RETRY_RESERVE, 3);
+});
+
+function busyRig(busyCount, opts = {}) {
+  const kDev = new Uint8Array(16).fill(0x42);
+  const r = rig({ kDev, rateLimit: true });
+  r.store.addCandidate(NAME, kDev);
+  r.dev.busyStarts = busyCount;   // the next N BEGIN/HELLO answer BUSY (counted by the device)
+  r.slept = [];
+  r.s.sleep = async ms => { r.slept.push(ms); };
+  return r;
+}
+
+test('a brief BUSY is retried with spaced delays and the handshake then succeeds', async () => {
+  const r = busyRig(2);
+  await r.s.select();
+  await r.s.authenticate();
+  assert.deepEqual(r.slept, [2000, 4000]);
+  assert.equal(r.budget.used(UID), 3, 'three starts mirrored');
+  assert.equal(r.dev.rateRing.length, 3, 'the device counted the same three');
+});
+
+test('BUSY stops being retried while 3 starts must stay free; it never turns into RATE_LIMITED', async () => {
+  const r = busyRig(100);
+  await r.s.select();
+  await assert.rejects(r.s.authenticate(), e => e.code === 'busy' && e.textKey === 'busy_retry');
+  assert.deepEqual(r.slept, [2000, 4000, 8000, 16000], 'five starts, then the BUSY surfaces');
+  assert.equal(r.dev.rateRing.length, 5);
+  assert.ok(RATE_RING - r.dev.rateRing.length >= BUSY_RETRY_RESERVE);
+  // The display pass ends: a full authenticate still fits the ring.
+  r.dev.busyStarts = 0;
+  await r.s.authenticate();
+  assert.equal(r.s.hasSession, true);
+  assert.ok(!r.dev.rateLimitedAnswers, 'the device never answered RATE_LIMITED');
+});
+
+test('the budget is shared per uid across sessions: a reconnect does not reset it', async () => {
+  const r = busyRig(100);
+  await r.s.select();
+  await assert.rejects(r.s.authenticate());
+  reconnect(r);
+  r.s.sleep = async ms => { r.slept.push(ms); };
+  r.slept.length = 0;
+  await r.s.select();
+  await assert.rejects(r.s.authenticate(), e => e.code === 'busy');
+  assert.deepEqual(r.slept, [2000], 'only one more retry fits (5 + 2 = 7 of 10)');
+  assert.equal(r.dev.rateRing.length, 7);
+});
+
+test('RATE_LIMITED is not counted (the mirror drops that start); AUTH_FAILED on FINISH is counted', async () => {
+  const b = new HandshakeBudget(() => 0);
+  b.note(UID); b.note(UID); b.forgetLast(UID);
+  assert.equal(b.used(UID), 1);
+  let t = 0;
+  const c = new HandshakeBudget(() => t);
+  for (let i = 0; i < 12; i++) c.note(UID);
+  assert.equal(c.used(UID), RATE_RING, 'a ring of 10');
+  t = 60000;
+  assert.equal(c.used(UID), 0, 'the 60 s window rolls off');
+
+  const kDev = new Uint8Array(16).fill(0x42);
+  const r = rig({ kDev, rateLimit: true });
+  r.store.addCandidate(NAME, new Uint8Array(16).fill(1));
+  await r.s.select();
+  await assert.rejects(r.s.authenticate(), e => e.code === 'not_authorised');
+  assert.equal(r.budget.used(UID), 2, 'HELLO + the AUTH_FAILED');
+  assert.equal(r.dev.rateRing.length, 2);
+  // A full device ring answers RATE_LIMITED (not counted on either side).
+  r.dev.rateRing = new Array(10).fill(r.dev.now());
+  r.store.addCandidate(NAME, kDev);
+  await assert.rejects(r.s.authenticate(), e => e.code === 'rate_limited');
+  assert.equal(r.budget.used(UID), 2);
 });
