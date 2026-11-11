@@ -162,14 +162,17 @@
   /**
    * The od_epd interpreter differs per target, so drive data is derived per class
    * (Firmware_Unified panels/README.md "Target classes", drive_presets.json `target_classes`):
-   *   default  ESP32, nRF52840, nRF54: sequences up to 512 B / 96 steps, WINDOW/FILL escapes.
-   *   bg22     EFR32BG22: 128 B / 64 steps, no WINDOW/FILL.
-   * The sleep sequence (0xB1 tail) is capped at 16 B everywhere (OD_EPD_SLEEP_SEQ_MAX).
+   *   default  ESP32, nRF52840, nRF54: WINDOW/FILL escapes.
+   *   bg22     EFR32BG22: WINDOW/FILL compiled out, so its partial modes are whole-panel only.
+   * Since schema_minor 2 sequences stream from storage: there is no per-target sequence BYTE cap
+   * any more (packets are bounded by the config size). What remains, on every target, is 128
+   * steps per sequence (OD_EPD_MAX_SEQ_STEPS, a runaway bound) and 16 B for the 0xB1 sleep
+   * sequence (OD_EPD_SLEEP_SEQ_MAX, still a RAM copy).
    * They are the client's own copy on purpose: the pre-write check must not trust the file it checks.
    */
   const TARGET_CLASS_LIMITS = Object.freeze({
-    default: Object.freeze({ seq_max: 512, max_steps: 96, window: true, sleep_max: 16 }),
-    bg22: Object.freeze({ seq_max: 128, max_steps: 64, window: false, sleep_max: 16 })
+    default: Object.freeze({ max_steps: 128, window: true, sleep_max: 16 }),
+    bg22: Object.freeze({ max_steps: 128, window: false, sleep_max: 16 })
   });
   /** The class used when the device's class cannot be determined: the smallest interpreter. */
   const RESTRICTIVE_CLASS = 'bg22';
@@ -270,7 +273,7 @@
         if (b.length < 37) { problems.push('0xAE body shorter than its 37-byte head'); continue; }
         const len = b[35] | (b[36] << 8);
         if (37 + len !== b.length) { problems.push('0xAE mode ' + b[1] + ': seq_len ' + len + ' does not match the body'); continue; }
-        seq = b.subarray(37); what = 'mode ' + b[1]; cap = L.seq_max;
+        seq = b.subarray(37); what = 'mode ' + b[1]; cap = null;  // streamed: no byte cap
       } else {
         if (b.length < 13) { problems.push('0xB1 body shorter than its 13-byte head'); continue; }
         if (13 + b[12] !== b.length) { problems.push('0xB1: sleep_seq_len ' + b[12] + ' does not match the body'); continue; }
@@ -279,7 +282,7 @@
       }
       const w = walkSequence(seq);
       if (!w.ok) { problems.push(what + ': ' + w.error); continue; }
-      if (w.bytes > cap) problems.push(what + ' needs a ' + w.bytes + ' B sequence, limit ' + cap + ' B');
+      if (cap != null && w.bytes > cap) problems.push(what + ' needs a ' + w.bytes + ' B sequence, limit ' + cap + ' B');
       if (pid === 0xAE && w.steps > L.max_steps) problems.push(what + ' needs ' + w.steps + ' steps, limit ' + L.max_steps);
       if (w.window && !L.window) problems.push(what + ' uses WINDOW/FILL, which this target does not implement');
     }
@@ -326,14 +329,14 @@
    * `alias_of` entry can borrow its target's packets.
    */
   /**
-   * The drive fields of one view of a panel (top level, targets.<class> or an alternative)
+   * The drive fields of one view of a panel (top level or targets.<class>)
    * -> the fields an entry carries. `cls` is the class the packets are for, or null for the
    * top level of a schema-minor-0 file.
    */
   function driveView(src, cls) {
     const status = String(src.status || (src.packets && src.packets.length ? 'equivalent' : 'blocked'));
     const packets = normalizePacketList((src.packets || []).map(p => ({ pid: p.id != null ? p.id : p.pid, raw: p.body_hex != null ? p.body_hex : p.raw })));
-    let usable = (USABLE_STATUS.includes(status) || status === 'alternative') && packets.length > 0;
+    let usable = USABLE_STATUS.includes(status) && packets.length > 0;
     let blockedReason = '';
     // The client's own caps, not the file's `limits`: the check must not trust the data it checks.
     const limits = cls ? Object.assign({}, TARGET_CLASS_LIMITS[normalizeClass(cls)]) : null;
@@ -344,12 +347,11 @@
     }
     if (!usable && !blockedReason) {
       const on = (src.blocked_on || []).join(', ');
-      const full = (src.modes_blocked || []).find(m => m && m.name === 'full') || (src.modes_blocked || [])[0];
-      if (status === 'blocked' && cls && limits && full && (full.seq_bytes > limits.seq_max || full.steps > limits.max_steps)) {
-        const need = [], lim = [];
-        if (full.seq_bytes > limits.seq_max) { need.push(full.seq_bytes + ' B sequence'); lim.push(limits.seq_max + ' B'); }
-        if (full.steps > limits.max_steps) { need.push(full.steps + ' steps'); lim.push(limits.max_steps + ' steps'); }
-        blockedReason = 'Not available on this target (needs ' + need.join(' / ') + ', limit ' + lim.join(' / ') + ' on ' + (TARGET_CLASS_LABEL[cls] || cls) + ').';
+      if (status === 'blocked' && cls) {
+        // Data-driven: the generator says this class cannot run the panel (none do in schema
+        // minor 2, but the path must keep working if one reappears).
+        blockedReason = 'Not available on this target (' + (TARGET_CLASS_LABEL[cls] || cls) + '): '
+          + (on ? 'the drive data needs ' + on : 'no drive data for this target') + '.';
       } else {
         blockedReason = status === 'blocked'
           ? 'Not yet available for firmware 3.x: the drive sequence needs a firmware change (' + (on || 'unspecified') + ').'
@@ -389,21 +391,14 @@
       aliasOf: e.alias_of || null,
       source: 'drive_presets.json'
     };
-    // schema_minor >= 1: one view per target class, plus opt-in alternatives (never automatic).
+    // schema_minor >= 1: one view per target class. `alternatives[]` (minor 1 only, untested
+    // single-init variants) is ignored: none are emitted since minor 2 and none are offered.
     const classes = {};
     for (const [cls, view] of Object.entries(src.targets || {})) {
       if (!Object.prototype.hasOwnProperty.call(TARGET_CLASS_LIMITS, cls) || !view) continue;
       classes[cls] = Object.assign({}, meta, driveView(view, cls));
     }
-    const alternatives = (src.alternatives || []).filter(a => a && a.target_class).map(a => Object.assign({}, meta, driveView(a, a.target_class), {
-      alternative: true,
-      variant: a.variant || 'alternative',
-      equivalent: a.equivalent === true,
-      verified: 'untested',
-      warning: 'Untested, not equivalent to 2.x behaviour: ' + (a.variant === 'single_init' ? 'single-init variant (one init block, as bb_epaper re-sends after a refresh)' : String(a.variant || 'alternative')) + '. Never seen on a real panel.'
-    }));
-    // The top level is the default class (README "Field rules"). Kept for display / 2.x-era callers.
-    return Object.assign({}, meta, driveView(src, Object.keys(classes).length ? 'default' : null), { classes, alternatives });
+    return Object.assign({}, meta, driveView(src, Object.keys(classes).length ? 'default' : null), { classes });
   }
   /**
    * One lookup table, two sources:
@@ -457,12 +452,10 @@
    *  - Per-class data (targets.<cls>) when the file has it. An entry without per-class data
    *    (inline presets, schema minor 0) is used only if its packets pass checkDrivePacketsFit.
    *  - A panel blocked on `cls` returns a non-usable entry whose blockedReason says what it
-   *    needs; `alternative` names an opt-in variant when one exists.
-   *  - `allowAlternative: true` (an explicit user opt-in, never a default) returns that
-   *    variant instead, flagged `alternative: true` with its `warning`.
+   *    needs.
    * @returns {object|null} entry with targetClass, usable, packets, blockedReason
    */
-  function driveEntryFor(db, panelIcType, cls, { allowAlternative = false } = {}) {
+  function driveEntryFor(db, panelIcType, cls) {
     const t = num(panelIcType);
     const top = (db && t != null && db.get(t)) || null;
     if (!top) return null;
@@ -476,45 +469,35 @@
         if (!fit.ok) Object.assign(ce, { usable: false, packets: [], blockedReason: 'Not available on this target: ' + fit.problems.join('; ') + '.' });
       }
     }
-    if (ce.usable) return ce;
-    const alt = (top.alternatives || []).find(a => a.targetClass === c && a.usable) || null;
-    if (alt && allowAlternative) return alt;
-    if (alt) return Object.assign({}, ce, { alternativeAvailable: true, alternative: false, alternativeEntry: alt });
     return ce;
   }
   /**
    * Can this display preset be chosen for a device of generation `gen` and drive class `cls`?
    * 3.x + bb_epaper panel without drive data for that class -> not selectable (the device would
-   * stay dark). `opts.allowAlternative` is the user's explicit opt-in to an untested variant.
+   * stay dark).
    */
-  function driveAvailability(display, db, gen, cls, opts = {}) {
+  function driveAvailability(display, db, gen, cls) {
     const t = display ? num(display.panelIcType) : null;
     const needsDrive = panelNeedsDriveData(t);
-    const entry = driveEntryFor(db, t, cls, opts);
+    const entry = driveEntryFor(db, t, cls);
     const res = { selectable: true, needsDrive, entry, badge: null, reason: '', targetClass: normalizeClass(cls) };
     if (!isConfigDriven(gen) || !needsDrive) return res;
     if (!entry || !entry.usable) {
       res.selectable = false;
       res.reason = entry && entry.blockedReason ? entry.blockedReason
         : 'Not yet available for firmware 3.x: no drive data for panel_ic_type ' + t + '.';
-      if (entry && entry.alternativeAvailable) {
-        res.alternativeAvailable = true;
-        res.reason += ' An untested single-init alternative exists (opt-in; not equivalent to 2.x behaviour).';
-      }
       res.reason += ' Keep this display on firmware 2.x for now.';
       return res;
     }
-    if (entry.alternative) { res.badge = 'alternative'; res.warning = entry.warning; }
     // 'equivalent' is host-proven (replay matches the 2.x driver byte for byte) but has never
     // been seen on a real panel: the UI calls it "untested on glass", same as 'untested'.
-    else if (entry.verified !== 'glass') res.badge = 'untested';
+    if (entry.verified !== 'glass') res.badge = 'untested';
     if (entry.paletteVerified === false) res.paletteWarning = '16-colour palette not measured on this panel (borrowed from the 2.9in)';
     return res;
   }
   function badgeText(avail) {
     if (!avail) return '';
     if (!avail.selectable) return avail.targetClass === 'bg22' && avail.entry ? 'not on this target' : 'not yet on 3.x';
-    if (avail.badge === 'alternative') return 'UNTESTED alternative, not 2.x-equivalent';
     if (avail.badge === 'untested') return 'untested on glass';
     return '';
   }
@@ -677,13 +660,12 @@
    * @param {boolean} [o.deviceSaysNeedsMigration] firmware flag (READ_IDENT / MSD), when available
    * @param {number} [o.panelIcType] override: the panel the user picked when the config did not say
    * @param {string} [o.targetClass] deviceTargetClass().cls; missing / unknown = the restrictive class
-   * @param {boolean} [o.allowAlternative] explicit user opt-in to an untested alternative (default off)
    * @returns {{needed:boolean, blocked:boolean, reason:string, panelIcType:number|null, targetClass:string,
-   *            alternativeAvailable:boolean, entry, add:Array, remove:Array}}
+   *            entry, add:Array, remove:Array}}
    */
-  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null, targetClass = null, allowAlternative = false } = {}) {
+  function planMigration({ packets, gen, db, deviceSaysNeedsMigration = false, panelIcType = null, targetClass = null } = {}) {
     const cls = normalizeClass(targetClass);
-    const plan = { needed: false, blocked: false, reason: '', panelIcType: null, targetClass: cls, alternativeAvailable: false, entry: null, add: [], remove: [] };
+    const plan = { needed: false, blocked: false, reason: '', panelIcType: null, targetClass: cls, entry: null, add: [], remove: [] };
     if (!isConfigDriven(gen)) { plan.reason = 'not a 3.x device'; return plan; }
     const disp = findPacket(packets, PID.DISPLAY);
     const t = panelIcType != null ? num(panelIcType) : (disp ? num(disp.fields.panel_ic_type) : null);
@@ -706,14 +688,12 @@
       return plan;
     }
     plan.needed = true;
-    const entry = driveEntryFor(db, t, cls, { allowAlternative });
+    const entry = driveEntryFor(db, t, cls);
     if (!entry || !entry.usable) {
       plan.blocked = true;
       plan.entry = entry || null;
-      plan.alternativeAvailable = !!(entry && entry.alternativeAvailable);
       plan.reason = (entry && entry.blockedReason ? entry.blockedReason
         : 'No 3.x drive data exists for panel_ic_type ' + t + ' yet.') + ' The display stays blank on 3.x firmware until it does.';
-      if (plan.alternativeAvailable) plan.reason += ' An untested single-init alternative exists; it is offered only as an explicit opt-in (not equivalent to 2.x behaviour).';
       return plan;
     }
     plan.entry = entry;

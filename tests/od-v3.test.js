@@ -95,6 +95,17 @@ const blockedDoc = {
   panels: { '0x0063': { panel_ic_type: 99, name: 'FIXTURE_BLOCKED', status: 'blocked', verified: 'untested',
     blocked_on: ['SEQ_MAX'], modes_blocked: [{ name: 'full', blocked_on: ['SEQ_MAX'], seq_bytes: 600, steps: 120 }], packets: [] } }
 };
+// Per-class fixture: driveable on the default class, blocked on BG22 by the generator (no shipped
+// panel is blocked on any class since schema_minor 2; the data-driven path must keep working).
+// It also carries a minor-1 `alternatives[]` entry, which must be ignored.
+const p2 = generated.panels['0x0002'];
+const classDoc = {
+  schema: 'opendisplay.drive_presets', schema_version: 1, schema_minor: 2,
+  panels: { '0x0002': Object.assign({}, p2, {
+    targets: { default: p2.targets.default, bg22: { status: 'blocked', verified: 'untested', blocked_on: ['WINDOW'], packets: [] } },
+    alternatives: [{ target_class: 'bg22', variant: 'single_init', status: 'alternative', verified: 'untested', packets: p2.targets.bg22.packets }]
+  }) }
+};
 
 test('drive db: blocked entries are not usable and say why; the 4.2in palette is flagged', () => {
   const fx = V3.buildDriveDb({ generated: blockedDoc });
@@ -107,19 +118,17 @@ test('drive db: blocked entries are not usable and say why; the 4.2in palette is
     assert.equal(e.usable, false, String(cls));
     assert.equal(e.packets.length, 0, String(cls));
   }
-  // Shipped data: ep154-152x152 (0x000E) is equivalent on the default class, blocked on BG22.
-  const bg = V3.driveEntryFor(db, 14, 'bg22');
+  // Data-driven per-class block: nothing usable on BG22, reason says so, the alternative is ignored.
+  const cx = V3.buildDriveDb({ generated: classDoc });
+  const bg = V3.driveEntryFor(cx, 2, 'bg22');
   assert.equal(bg.usable, false);
   assert.equal(bg.packets.length, 0);
   assert.equal(bg.targetClass, 'bg22');
-  assert.match(bg.blockedReason, /^Not available on this target \(needs \d+ B sequence, limit 128 B/);
-  assert.equal(bg.alternativeAvailable, true);
-  assert.equal(V3.driveEntryFor(db, 14, 'default').usable, true);
-  // A BG22-blocked panel with no alternative, and one that is blocked on steps as well.
-  const b35 = V3.driveEntryFor(db, 0x35, 'bg22');
-  assert.equal(b35.usable, false);
-  assert.ok(!b35.alternativeAvailable);
-  assert.match(b35.blockedReason, /needs \d+ B sequence \/ \d+ steps, limit 128 B \/ 64 steps/);
+  assert.match(bg.blockedReason, /^Not available on this target \(EFR32BG22\): the drive data needs WINDOW\.$/);
+  assert.equal(V3.driveEntryFor(cx, 2, null).usable, false);
+  assert.equal(V3.driveEntryFor(cx, 2, 'default').usable, true);
+  // Shipped data (schema_minor 2): every panel is driveable on both classes.
+  for (const [t] of db) for (const cls of ['default', 'bg22']) assert.ok(V3.driveEntryFor(db, t, cls).usable, t + ' ' + cls);
   assert.equal(db.get(58).paletteVerified, false);
   const alias = db.get(1004);
   assert.equal(alias.aliasOf, '0x003A');
@@ -128,24 +137,19 @@ test('drive db: blocked entries are not usable and say why; the 4.2in palette is
 
 test('driveAvailability: 3.x blocks undriveable panels per target class, badges unverified ones, 2.x is untouched', () => {
   const byId = id => presets.displays.find(d => d.id === id);
-  const a = V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'bg22');
+  const cx = V3.buildDriveDb({ generated: classDoc });
+  const ep42 = byId('ep42-400x300');
+  const a = V3.driveAvailability(ep42, cx, 'v3', 'bg22');
   assert.equal(a.selectable, false);
-  assert.match(a.reason, /limit 128 B/);
-  assert.match(a.reason, /untested single-init alternative exists \(opt-in/);
+  assert.match(a.reason, /Not available on this target \(EFR32BG22\)/);
   assert.match(a.reason, /firmware 2\.x/);
-  assert.equal(a.alternativeAvailable, true);
+  assert.equal(V3.badgeText(a), 'not on this target');
   // Unknown class = the restrictive one.
-  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v3', null).selectable, false);
-  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'default').selectable, true);
-  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v2', 'bg22').selectable, true);
-  // The opt-in makes it selectable, clearly labelled.
-  const alt = V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'bg22', { allowAlternative: true });
-  assert.equal(alt.selectable, true);
-  assert.equal(alt.badge, 'alternative');
-  assert.match(V3.badgeText(alt), /UNTESTED alternative, not 2\.x-equivalent/);
-  assert.match(alt.warning, /not equivalent to 2\.x behaviour/);
-  // No alternative: the opt-in changes nothing.
-  assert.equal(V3.driveAvailability(byId('ep37yr-240x416'), db, 'v3', 'bg22', { allowAlternative: true }).selectable, false);
+  assert.equal(V3.driveAvailability(ep42, cx, 'v3', null).selectable, false);
+  assert.equal(V3.driveAvailability(ep42, cx, 'v3', 'default').selectable, true);
+  assert.equal(V3.driveAvailability(ep42, cx, 'v2', 'bg22').selectable, true);
+  // Shipped: the formerly BG22-blocked ep154 is selectable on BG22 now.
+  assert.equal(V3.driveAvailability(byId('ep154-152x152'), db, 'v3', 'bg22').selectable, true);
   for (const cls of ['default', 'bg22']) {
     assert.equal(V3.driveAvailability(byId('ep29yr-168x384'), db, 'v3', cls).badge, null, cls);
     assert.equal(V3.driveAvailability(byId('ep42-400x300'), db, 'v3', cls).badge, 'untested', cls);
@@ -173,30 +177,34 @@ test('deviceTargetClass: READ_IDENT fw_target first, chip family second, restric
   assert.equal(V3.deviceTargetClass({ target: V3.targetFromIcType(6) }).cls, 'bg22');
 });
 
-test('checkDrivePacketsFit: the pre-write gate per class', () => {
-  // Every shipped per-class view fits its own class; 0x0002's default data does not fit BG22.
+test('checkDrivePacketsFit: the pre-write gate per class (128 steps, WINDOW/FILL, sleep 16 B; no byte cap)', () => {
+  // Every shipped per-class view fits its own class; 0x0002's default data does not fit BG22 (WINDOW).
   for (const [k, e] of Object.entries(generated.panels)) {
     for (const [cls, v] of Object.entries(e.targets || {})) {
       if (v.packets.length) assert.ok(V3.checkDrivePacketsFit(v.packets, cls).ok, k + ' ' + cls);
     }
-    for (const a of e.alternatives || []) assert.ok(V3.checkDrivePacketsFit(a.packets, a.target_class).ok, k + ' alt');
   }
   const d2 = V3.checkDrivePacketsFit(generated.panels['0x0002'].packets, 'bg22');
   assert.equal(d2.ok, false);
   assert.ok(d2.problems.some(p => /WINDOW\/FILL/.test(p)));
   assert.equal(V3.checkDrivePacketsFit(generated.panels['0x0002'].packets, 'default').ok, true);
-  // Synthetic modes: 130 B of steps (> 128 B), and 70 one-byte steps (> 64 steps).
   const head = n => '00' + '00' + '66756c6c0000000000000000' + '01' + '01' + '00' + '00' + '00' + 'ff'.repeat(8) + '00'.repeat(8) + V3.bytesToHex([n & 0xff, n >> 8]);
-  const long = '7f20' + 'aa'.repeat(126) + '0000';           // one 128-byte step + END = 130 B
-  assert.equal(long.length / 2, 130);
-  const many = '0112'.repeat(70) + '0000';                     // 71 steps incl. END, 142 B
-  const r1 = V3.checkDrivePacketsFit([{ pid: '174', raw: head(130) + long }], 'bg22');
-  assert.equal(r1.ok, false);
-  assert.match(r1.problems[0], /130 B sequence, limit 128 B/);
-  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(130) + long }], 'default').ok, true);
-  const short = '0112'.repeat(40) + '0000';                    // 41 steps, 82 B
-  assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(82) + short }], 'bg22').ok, true);
-  assert.ok(V3.checkDrivePacketsFit([{ pid: '174', raw: head(142) + many }], 'bg22').problems.some(p => /71 steps, limit 64/.test(p)));
+  // Sequences stream from storage: a long sequence is fine on both classes (here 4 x 255 B steps).
+  const long = ('ff20' + 'aa'.repeat(254)).repeat(4) + '0000';
+  assert.equal(long.length / 2, 1026);
+  for (const cls of ['default', 'bg22']) assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(1026) + long }], cls).ok, true, cls);
+  // 128 steps incl. END is the bound on every class.
+  const steps = n => '0112'.repeat(n - 1) + '0000';
+  for (const cls of ['default', 'bg22']) {
+    assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(256) + steps(128) }], cls).ok, true, cls);
+    const r = V3.checkDrivePacketsFit([{ pid: '174', raw: head(258) + steps(129) }], cls);
+    assert.equal(r.ok, false, cls);
+    assert.match(r.problems[0], /129 steps, limit 128/);
+  }
+  // The sleep sequence is still a 16 B RAM copy.
+  const sleep = n => '00'.repeat(12) + V3.bytesToHex([n]);
+  assert.equal(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(16) + '0110'.repeat(7) + '0000' }], 'bg22').ok, true);
+  assert.match(V3.checkDrivePacketsFit([{ pid: '177', raw: sleep(18) + '0110'.repeat(8) + '0000' }], 'default').problems[0], /18 B sequence, limit 16 B/);
   // Malformed / unknown escapes are refused, not guessed at; so is a sequence with no END.
   assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(4) + '00800000' }], 'default').ok, false);
   assert.equal(V3.checkDrivePacketsFit([{ pid: '174', raw: head(2) + '0112' }], 'default').ok, false);
@@ -216,7 +224,7 @@ test('syncDrivePackets: switching panels removes the previous panel\'s packets',
   assert.deepEqual(drive.map(p => p.raw).sort(), db.get(2).packets.map(p => p.raw).sort());
   // A panel with no data on v3 leaves no stale drive packets behind.
   assert.equal(V3.syncDrivePackets(after29, null, 'v3').filter(p => V3.isDrivePid(p.pid)).length, 0);
-  assert.equal(V3.syncDrivePackets(after29, V3.driveEntryFor(db, 14, 'bg22'), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid)).length, 0);
+  assert.equal(V3.syncDrivePackets(after29, V3.driveEntryFor(V3.buildDriveDb({ generated: classDoc }), 2, 'bg22'), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid)).length, 0);
   // Default-class packets handed over for a BG22 (or an unknown class) are not added.
   assert.equal(V3.syncDrivePackets(after29, db.get(2), 'v3', null, 'bg22').filter(p => V3.isDrivePid(p.pid)).length, 0);
   assert.equal(V3.syncDrivePackets(after29, db.get(2), 'v3').filter(p => V3.isDrivePid(p.pid)).length, 0);
@@ -266,25 +274,25 @@ test('planMigration: blocked panel is reported, never written', () => {
   assert.equal(fx.blocked, true);
   assert.equal(fx.add.length, 0);
   assert.match(fx.reason, /blank/);
-  // BG22 device + BG22-blocked panel (ep154, 0x000E): nothing to write, the reason says why.
-  pk[2].fields.panel_ic_type = '14';
-  const plan = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' });
+  // BG22 device + a panel the data blocks on BG22: nothing to write, the reason says why.
+  const cx = V3.buildDriveDb({ generated: classDoc });
+  pk[2].fields.panel_ic_type = '2';
+  const plan = V3.planMigration({ packets: pk, gen: 'v3', db: cx, targetClass: 'bg22' });
   assert.equal(plan.needed, true);
   assert.equal(plan.blocked, true);
   assert.equal(plan.add.length, 0);
   assert.equal(plan.targetClass, 'bg22');
-  assert.match(plan.reason, /not available on this target \(needs \d+ B sequence, limit 128 B/i);
-  assert.equal(plan.alternativeAvailable, true);
+  assert.match(plan.reason, /^Not available on this target \(EFR32BG22\)/);
   assert.throws(() => V3.applyMigration(pk, Object.assign({}, plan, { add: db.get(2).packets })), /does not run on this target/);
   // Unknown class: restrictive, same answer.
-  assert.equal(V3.planMigration({ packets: pk, gen: 'v3', db }).blocked, true);
+  assert.equal(V3.planMigration({ packets: pk, gen: 'v3', db: cx }).blocked, true);
   // Default-class device: the same panel migrates.
-  const d = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'default' });
+  const d = V3.planMigration({ packets: pk, gen: 'v3', db: cx, targetClass: 'default' });
   assert.equal(d.blocked, false);
-  assert.deepEqual(d.add.map(p => p.raw), generated.panels['0x000E'].packets.map(p => p.body_hex));
+  assert.deepEqual(d.add.map(p => p.raw), p2.targets.default.packets.map(p => p.body_hex));
 });
 
-test('planMigration: per-class packets; the single-init alternative only on explicit opt-in', () => {
+test('planMigration: per-class packets; BG22 gets targets.bg22', () => {
   const pk = carried2x();
   pk[2].fields.panel_ic_type = '2';
   const raw = (pl) => pl.add.map(p => p.raw);
@@ -306,18 +314,11 @@ test('planMigration: per-class packets; the single-init alternative only on expl
   assert.equal(fix.needed, true);
   assert.match(fix.reason, /do not run on this target/);
   assert.deepEqual(raw(fix), raw(bg));
-  // Alternatives: off by default, used only with allowAlternative, labelled.
+  // The formerly BG22-blocked ep154 (0x000E) now migrates on BG22 with its bg22-class packets.
   pk[2].fields.panel_ic_type = '14';
-  assert.equal(V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' }).blocked, true);
-  const alt = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22', allowAlternative: true });
-  assert.equal(alt.blocked, false);
-  assert.equal(alt.entry.alternative, true);
-  assert.equal(alt.entry.verified, 'untested');
-  assert.match(alt.entry.warning, /not equivalent to 2\.x behaviour/);
-  assert.deepEqual(raw(alt), generated.panels['0x000E'].alternatives[0].packets.map(p => p.body_hex));
-  // The opt-in never changes what a default-class device gets.
-  assert.deepEqual(raw(V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'default', allowAlternative: true })),
-    generated.panels['0x000E'].packets.map(p => p.body_hex));
+  const e14 = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'bg22' });
+  assert.equal(e14.blocked, false);
+  assert.deepEqual(raw(e14), generated.panels['0x000E'].targets.bg22.packets.map(p => p.body_hex));
 });
 
 test('identifyPreset: simple-config index first, unambiguous match second, candidates otherwise', () => {

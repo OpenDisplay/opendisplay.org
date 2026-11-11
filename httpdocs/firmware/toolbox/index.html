@@ -3785,7 +3785,7 @@ async function startSimpleAutoInstall() {
     } else if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
       // A shared config written to a 3.x device must carry drive data for its panel too.
       const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb,
-        targetClass: tbTargetClass(), allowAlternative: tbAllowAlternative });
+        targetClass: tbTargetClass() });
       if (plan.needed && plan.blocked) { const e = new Error(plan.reason); e.tbFriendly = true; throw e; }
       if (plan.needed) instances.packets = OpenDisplayV3.applyMigration(instances.packets, plan);
     }

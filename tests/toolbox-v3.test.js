@@ -30,7 +30,7 @@ function el() {
 
 // `answer`: 'ok' | 'cancel', or an array with one answer per dialog in order.
 // `identTarget`: READ_IDENT fw_target byte (6 = not a fw_target value, so the chip decides).
-function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', identFlags = null, identTarget = 6 }) {
+function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', identFlags = null, identTarget = 6, driveDoc = drive }) {
   const byId = new Map();
   const asked = [];
   const document = {
@@ -65,7 +65,7 @@ function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', id
   const logs = [], flashes = [];
   const ctx = {
     OpenDisplayV3: V3, document, console, setTimeout, setImmediate, clearTimeout, URL, Blob: class {},
-    fetch: async () => ({ ok: true, json: async () => drive }),
+    fetch: async () => ({ ok: true, json: async () => driveDoc }),
     bleLib, schema, tbFirmwareVersion: firmware, tbMode: 'setup', tbScreen: 'home',
     instances: { packets },
     simpleConfigPresets: presets, simpleConfigSelections: { driverBoard: null, display: null },
@@ -127,28 +127,29 @@ const driveOf = (bytes) => V3.walkConfig(bytes, id => SIZES[id] ?? null).packets
   .filter(p => p.id >= 0xae && p.id <= 0xb1).map(p => p.body).sort();
 const bodies = (list) => list.map(p => p.body_hex).sort();
 
+// No shipped panel is blocked on any class since schema_minor 2: a fixture blocks 0x0002 on BG22.
+const p2 = drive.panels['0x0002'];
+const bg22Blocked = Object.assign({}, drive, { panels: Object.assign({}, drive.panels, { '0x0002': Object.assign({}, p2, {
+  targets: { default: p2.targets.default, bg22: { status: 'blocked', verified: 'untested', blocked_on: ['WINDOW'], packets: [] } }
+}) }) });
+
 test('blocked panel: informs, writes nothing', async () => {
-  // BG22 (ic_type 6) + 0x0035, blocked on BG22 with no alternative: info only.
-  const w = makeWorld({ packets: carried('0x35') });
+  const w = makeWorld({ packets: carried('0x2'), driveDoc: bg22Blocked });
   assert.equal(await w.api.tbMigrateIfNeeded(), 'blocked');
   assert.equal(w.writes.length, 0);
   assert.equal(w.asked.length, 1);
   assert.match(w.asked[0].title, /can.t be driven/);
+  // The same data on an ESP32 migrates.
+  const esp = makeWorld({ packets: carried('0x2', '0x2'), driveDoc: bg22Blocked });
+  assert.equal(await esp.api.tbMigrateIfNeeded(), 'done');
+  assert.deepEqual(driveOf(esp.stored), bodies(p2.targets.default.packets));
 });
 
-test('BG22 + BG22-blocked panel with an alternative: declining the opt-in writes nothing', async () => {
-  const w = makeWorld({ packets: carried('14'), answer: ['cancel'] });
-  assert.equal(await w.api.tbMigrateIfNeeded(), 'blocked');
-  assert.equal(w.writes.length, 0);
-  assert.equal(w.asked[0].ok, 'Use the untested alternative');
-});
-
-test('BG22 + explicit opt-in: writes the single-init alternative, after a second confirmation', async () => {
-  const w = makeWorld({ packets: carried('14'), answer: ['ok', 'ok'] });
+test('BG22 + a formerly BG22-blocked panel (ep154): migrates with the bg22-class packets', async () => {
+  const w = makeWorld({ packets: carried('14') });
   assert.equal(await w.api.tbMigrateIfNeeded(), 'done');
-  assert.equal(w.asked.length, 2);
   assert.equal(w.writes.length, 1);
-  assert.deepEqual(driveOf(w.stored), bodies(drive.panels['0x000E'].alternatives[0].packets));
+  assert.deepEqual(driveOf(w.stored), bodies(drive.panels['0x000E'].targets.bg22.packets));
 });
 
 test('BG22 + available panel: bg22-class packets; ESP32: default packets; READ_IDENT target wins over an unknown chip', async () => {

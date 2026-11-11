@@ -21,7 +21,6 @@ let tbInstallGeneration = null;    // generation of the firmware the install scr
 let tbLastBackup = null;           // { bytes, meta, savedAt } read before an update
 let tbMigrationInFlight = false;
 let tbDeviceIdent = null;          // parsed READ_IDENT of the connected 3.x device (od-v3.js parseReadIdent)
-let tbAllowAlternative = false;    // explicit opt-in to the untested single-init variants; never on by default
 
 // ---- the version gate, as the page sees it ----------------------------------
 /** Generation of the CONNECTED device, from its 0x0043 reply. */
@@ -81,32 +80,10 @@ async function tbLoadDriveDb() {
 }
 function tbDriveEntryFor(display) {
   if (!display || !tbDriveDb) return null;
-  return V3.driveEntryFor(tbDriveDb, display.panelIcType, tbTargetClass(), { allowAlternative: tbAllowAlternative });
+  return V3.driveEntryFor(tbDriveDb, display.panelIcType, tbTargetClass());
 }
 function tbDisplayAvailability(display, gen) {
-  return V3.driveAvailability(display, tbDriveDb, gen || tbTargetGeneration(), tbTargetClass(), { allowAlternative: tbAllowAlternative });
-}
-/**
- * The opt-in for the untested single-init alternatives, shown under the display list only when
- * the config is for 3.x and some panel is blocked on this target but has an alternative.
- */
-function tbRenderAlternativeOptIn(show) {
-  const sel = document.getElementById('displaySelect');
-  if (!sel) return;
-  let box = document.getElementById('tbAltOptIn');
-  if (!box) {
-    box = document.createElement('label');
-    box.id = 'tbAltOptIn';
-    box.className = 'tb-parts__field tb-parts__optin';
-    box.innerHTML = '<input type="checkbox" id="tbAltOptInBox"> '
-      + '<span>Also offer the <strong>untested</strong> single-init alternative for panels that do not fit this target '
-      + '(not equivalent to 2.x behaviour; never seen on a real panel)</span>';
-    const field = sel.closest('label') || sel;
-    field.insertAdjacentElement('afterend', box);
-    box.querySelector('input').onchange = (e) => { tbAllowAlternative = !!e.target.checked; tbAnnotateDisplayOptions(); };
-  }
-  box.hidden = !show && !tbAllowAlternative;
-  box.querySelector('input').checked = tbAllowAlternative;
+  return V3.driveAvailability(display, tbDriveDb, gen || tbTargetGeneration(), tbTargetClass());
 }
 /**
  * Mark display options for the generation the config is for: 3.x panels without drive data
@@ -116,20 +93,17 @@ function tbAnnotateDisplayOptions() {
   const sel = document.getElementById('displaySelect');
   if (!sel || !simpleConfigPresets) return;
   const gen = tbTargetGeneration();
-  let anyAlternative = false;
   for (const o of Array.from(sel.options)) {
     if (!o.value) continue;
     const d = simpleConfigPresets.displays.find(x => x.id === o.value);
     if (!d) continue;
     if (!o.dataset.baseLabel) o.dataset.baseLabel = o.textContent;
     const a = tbDisplayAvailability(d, gen);
-    if (V3.isConfigDriven(gen) && (a.alternativeAvailable || a.badge === 'alternative')) anyAlternative = true;
     const badge = V3.isConfigDriven(gen) ? V3.badgeText(a) : '';
     o.textContent = o.dataset.baseLabel + (badge ? ' (' + badge + ')' : '');
     o.disabled = !a.selectable;
-    o.title = a.selectable ? (a.warning || a.paletteWarning || '') : a.reason;
+    o.title = a.selectable ? (a.paletteWarning || '') : a.reason;
   }
-  tbRenderAlternativeOptIn(anyAlternative);
   const chosen = sel.selectedOptions[0];
   if (chosen && chosen.disabled) {
     tbFlash(chosen.title || 'That display is not available on firmware 3.x yet.');
@@ -326,28 +300,13 @@ async function tbMigrateIfNeeded(opts = {}) {
     const d = simpleConfigPresets.displays.find(x => x.id === ans.pick);
     plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, panelIcType: d && d.panelIcType, targetClass });
   }
-  if (plan.blocked && plan.alternativeAvailable) {
-    // Explicit opt-in only: the variant is untested and not equivalent to the 2.x driver.
-    const alt = await tbAskMigration({
-      title: 'This display can’t be driven by firmware 3.x on this device',
-      text: plan.reason,
-      lines: ['Optional: use the single-init alternative instead.',
-        'UNTESTED: it has never been seen on a real panel, and it is NOT equivalent to the 2.x behaviour (one init block instead of the full 2.x sequence).',
-        'If the panel stays blank or looks wrong, restore a saved configuration or keep this display on firmware 2.x.'],
-      okLabel: 'Use the untested alternative'
-    });
-    if (!alt.ok) return 'blocked';
-    plan = V3.planMigration({ packets: instances.packets, gen, db: tbDriveDb, deviceSaysNeedsMigration: true,
-      panelIcType: plan.panelIcType, targetClass, allowAlternative: true });
-  }
   if (plan.blocked) {
     await tbAskMigration({ title: 'This display can’t be driven by firmware 3.x yet', text: plan.reason, infoOnly: true });
     return 'blocked';
   }
   const e = plan.entry;
   const lines = V3.describePlan(plan);
-  if (e && e.alternative) lines.push('UNTESTED single-init alternative, not equivalent to 2.x behaviour (you chose it).');
-  else if (e && e.verified !== 'glass') lines.push('This panel’s 3.x drive data is converted from the 2.x driver and untested on glass.');
+  if (e && e.verified !== 'glass') lines.push('This panel’s 3.x drive data is converted from the 2.x driver and untested on glass.');
   if (e && e.paletteVerified === false) lines.push('Its 16-colour palette was not measured on this panel.');
   lines.push('Everything else in the configuration (name, power, buttons, Wi-Fi, encryption) stays as it is.');
   const ans = await tbAskMigration({
