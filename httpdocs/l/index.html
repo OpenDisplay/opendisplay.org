@@ -19,6 +19,12 @@
       color: var(--fg1);
     }
     .page-inner.doc-page main#main-content { padding: 20px 0 0; }
+    .setup { margin: 0 0 20px; }
+    .setup__note { margin: 0 0 12px; line-height: 1.45; }
+    .setup__fine { margin: 12px 0 0; font-size: 0.85rem; color: var(--fg3); line-height: 1.4; }
+    .setup__preset { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
+    .setup__preset dt { color: var(--fg3); }
+    .setup__preset dd { margin: 0; }
     .page-inner.doc-page .lp h1 {
       font-size: 2rem;
       line-height: 1.1;
@@ -308,6 +314,20 @@
     <h1>Your OpenDisplay</h1>
     <p class="lp__lead">Put a picture on it from your phone, or connect it to Home Assistant.</p>
 
+    <section class="setup" id="setup" aria-label="Set up this display" hidden>
+      <p class="setup__note" id="setup-kind" hidden></p>
+      <p class="setup__note" id="setup-newer" hidden></p>
+      <p class="setup__note" id="setup-old" hidden></p>
+      <dl class="setup__preset" id="setup-preset" hidden>
+        <dt>Board</dt><dd id="setup-board">&ndash;</dd>
+        <dt>Display</dt><dd id="setup-display">&ndash;</dd>
+        <dt>Power</dt><dd id="setup-power">&ndash;</dd>
+      </dl>
+      <p class="setup__note" id="setup-confirm" hidden></p>
+      <a class="act act--primary" id="setup-go" href="../firmware/toolbox/index.html">Set up this display</a>
+      <p class="setup__fine" id="setup-genuine"></p>
+    </section>
+
     <section class="device" id="device" aria-label="Your device">
       <div class="device__id">
         <p class="device__label" id="device-label" hidden></p>
@@ -448,6 +468,8 @@
   </footer>
 
   <script src="qrcode.js"></script>
+  <script src="../js/od-texts.js"></script>
+  <script src="../js/od-setup-url.js"></script>
   <script>
     function bufToHex(buffer) {
       return Array.from(new Uint8Array(buffer))
@@ -653,10 +675,60 @@
       }
     }
 
+    function setupText(key) { return window.OpenDisplayTexts ? OpenDisplayTexts.text(key) : ''; }
+    function showNote(id, key) { var el = document.getElementById(id); el.textContent = setupText(key); el.hidden = false; }
+    // Values are rendered as text only (rule 2); nothing here asks for a secret (rule 4); the page
+    // needs nothing but its own query and same-origin preset files (rule 7).
+    function showSetup(p) {
+      document.querySelector('.lp h1').textContent = p.kind === 'reset' ? 'Set up this display again' : 'Set up your OpenDisplay';
+      document.querySelector('.lp__lead').textContent = 'Connect to it over Bluetooth and the Toolbox walks you through the rest.';
+      document.getElementById('setup').hidden = false;
+      document.getElementById('actions').hidden = true;
+      if (p.name) {
+        document.getElementById('display-name').textContent = p.name;
+        document.getElementById('display-mfg').textContent = p.targetName ? 'Firmware ' + (p.fw ? p.fw.text : '') + ' on ' + p.targetName : '';
+        document.title = p.name + ' \u2013 OpenDisplay setup';
+      } else {
+        showScreenMessage('Setup code', 'An OpenDisplay in setup mode', 'Its name starts with OD.', false);
+      }
+      if (p.kind === 'reset') showNote('setup-kind', 'setup_reset');
+      if (p.status === 'generic' && p.newerFormat) showNote('setup-newer', 'setup_newer_format');
+      if (p.oldFirmware) showNote('setup-old', 'setup_old_firmware');
+      document.getElementById('setup-genuine').textContent = setupText('setup_genuine');
+      var go = document.getElementById('setup-go');
+      go.textContent = p.kind === 'reset' ? 'Set up this display again' : 'Set up this display';
+      var base = new URL('../firmware/toolbox/index.html', window.location.href).toString();
+      go.href = OpenDisplaySetupUrl.toolboxLinkFor(p, null, base);
+      if (p.oldFirmware) { go.href = base; go.textContent = 'Open the Toolbox'; }
+      if (p.status !== 'setup' || p.oldFirmware || !(p.preset.b || p.preset.d || p.preset.p)) return;
+      // Rule 5: show the preselection by name; the Toolbox asks again before anything is written.
+      Promise.all(['simple-config-id-registry.json', 'simple-config-presets.json'].map(function (f) {
+        return fetch('../firmware/toolbox/' + f, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; });
+      })).then(function (res) {
+        var reg = res[0], presets = res[1];
+        if (!reg || !presets) return;
+        var ids = OpenDisplaySetupUrl.presetsFor(p, reg);
+        var nameOf = function (list, id) { var x = (list || []).find(function (e) { return e.id === id; }); return x ? x.name : null; };
+        var b = nameOf(presets.driverBoards, ids.driverBoard), d = nameOf(presets.displays, ids.display), w = nameOf(presets.powerOptions, ids.power);
+        document.getElementById('setup-board').textContent = b || (p.preset.b ? 'unknown (' + p.preset.b + ')' : '\u2013');
+        document.getElementById('setup-display').textContent = d || (p.preset.d ? 'unknown (' + p.preset.d + ')' : '\u2013');
+        document.getElementById('setup-power').textContent = w || (p.preset.p ? 'unknown (' + p.preset.p + ')' : '\u2013');
+        document.getElementById('setup-preset').hidden = false;
+        showNote('setup-confirm', 'setup_confirm_preset');
+        go.href = OpenDisplaySetupUrl.toolboxLinkFor(p, { driverBoard: b ? ids.driverBoard : null, display: d ? ids.display : null, power: w ? ids.power : null }, base);
+      }).catch(function () { /* the preselection is optional */ });
+    }
+
     detectPlatform();
     setActionLinks('', '');
 
-    if (encodedData) {
+    // SECURITY_V2 rev 5 § 7.8.1: a query that starts with f=… is the setup/recovery QR of a 3.0
+    // display (SETUP or RESET screen); anything else is the boot-screen device link below.
+    var setupUrl = window.OpenDisplaySetupUrl ? OpenDisplaySetupUrl.parseSetupUrl(window.location.href) : null;
+    if (setupUrl && (setupUrl.status === 'setup' || setupUrl.status === 'generic')) {
+      encodedData = null;
+      showSetup(setupUrl);
+    } else if (encodedData) {
       try {
         var data = decodeBase64Url(encodedData);
 

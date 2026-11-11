@@ -154,4 +154,16 @@ test('preset indices map to registry ids; unknown indices give null', () => {
   assert.equal(U.presetsFor(r, { driverBoards: [{ id: 'x', index: 16 }] }).driverBoard, 'x');
 });
 
+test('the Toolbox link carries the name, the kind and the preset ids, never a key', () => {
+  const reg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'httpdocs', 'firmware', 'toolbox', 'simple-config-id-registry.json'), 'utf8'));
+  const r = U.parseSetupUrl('https://opendisplay.org/l/?f=1&k=2&i=1A2B3C&t=3&v=3.0.0&b=16&d=10&p=2&key=00112233445566778899aabbccddeeff');
+  const link = new URL(U.toolboxLinkFor(r, U.presetsFor(r, reg), 'https://opendisplay.org/firmware/toolbox/index.html'));
+  assert.equal(link.searchParams.get('device'), 'OD1A2B3C'); assert.equal(link.searchParams.get('setup'), 'OD1A2B3C');
+  assert.equal(link.searchParams.get('kind'), 'reset');
+  assert.equal(link.searchParams.get('driver'), 'm3-pro-silabs'); assert.equal(link.searchParams.get('display'), 'ep42-400x300');
+  assert.doesNotMatch(link.toString(), /key|0011223344/);
+  const g = new URL(U.toolboxLinkFor(U.parseSetupUrl('f=5&k=1&i=1A2B3C&b=16'), { driverBoard: 'x' }));
+  assert.equal(g.searchParams.get('newer'), '1'); assert.equal(g.searchParams.get('driver'), null);
+});
+
 test.after(() => console.log(`# setup URL vectors reproduced: U=${nU} (V13 rev-4 /s/ cases: refused as withdrawn)`));

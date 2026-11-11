@@ -171,5 +171,24 @@
     return out;
   }
 
-  return { HOSTS, MAX_LEN, KNOWN_FORMAT, KIND, TARGET_NAME, parseSetupUrl, buildSetupUrl, presetsFor, _splitInput: splitInput };
+  /**
+   * The Toolbox link the /l/ page offers: the name filter, the wizard marker and, for a known
+   * format, the preselected preset ids (which the user confirms there). Never a key.
+   * @param {object} parsed  parseSetupUrl() result ('setup' or 'generic')
+   * @param {{driverBoard, display, power}} ids  presetsFor() result
+   */
+  function toolboxLinkFor(parsed, ids, base) {
+    const u = new URL(base || 'https://opendisplay.org/firmware/toolbox/index.html');
+    if (parsed && parsed.name) { u.searchParams.set('device', parsed.name); u.searchParams.set('setup', parsed.name); }
+    if (parsed && parsed.kind === 'reset') u.searchParams.set('kind', 'reset');
+    if (parsed && parsed.status === 'generic' && parsed.newerFormat) u.searchParams.set('newer', '1');
+    if (parsed && parsed.status === 'setup' && ids) {
+      if (ids.driverBoard) u.searchParams.set('driver', ids.driverBoard);
+      if (ids.display) u.searchParams.set('display', ids.display);
+      if (ids.power) u.searchParams.set('power', ids.power);
+    }
+    return u.toString();
+  }
+
+  return { toolboxLinkFor, HOSTS, MAX_LEN, KNOWN_FORMAT, KIND, TARGET_NAME, parseSetupUrl, buildSetupUrl, presetsFor, _splitInput: splitInput };
 });
