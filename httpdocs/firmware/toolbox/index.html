@@ -752,6 +752,8 @@ function ensureToolboxBleLib(namePrefix) {
       // The 2.x / 3.x gate (OpenDisplayV3.firmwareGeneration) needs this before any config is built or read.
       tbFirmwareVersion = await tbReadFirmwareVersion();
       if (tbFirmwareVersion) addLog('Firmware ' + tbFirmwareVersion + ' (' + OpenDisplayV3.firmwareGeneration(tbFirmwareVersion) + ')', 'info');
+      // READ_IDENT's fw_target picks the drive class (BG22 vs ESP32/nRF) before any panel is offered.
+      if (typeof tbRefreshIdent === 'function') await tbRefreshIdent();
       if (typeof tbAnnotateDisplayOptions === 'function') tbAnnotateDisplayOptions();
       updateEditorDeviceBar();
       if (tbMode === 'edit' && !bleConnectResolve) {
@@ -919,6 +921,8 @@ async function writeConfig() {
   if (!packetBytes) return false;
   const fit = tbCheckConfigSize(packetBytes.length);
   if (!fit.ok) { addLog(fit.message, 'error'); tbFlash(fit.message); return false; }
+  const driveFit = tbCheckDriveFit();
+  if (!driveFit.ok) { addLog(driveFit.message, 'error'); tbFlash(driveFit.message); return false; }
   addLog("Writing config to device...", 'info');
   try {
     await bleLib.writeConfig(new Uint8Array(packetBytes));
@@ -3780,7 +3784,8 @@ async function startSimpleAutoInstall() {
       mergeSimpleConfigToFull();
     } else if (OpenDisplayV3.isConfigDriven(tbDeviceGeneration())) {
       // A shared config written to a 3.x device must carry drive data for its panel too.
-      const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb });
+      const plan = OpenDisplayV3.planMigration({ packets: instances.packets, gen: tbDeviceGeneration(), db: tbDriveDb,
+        targetClass: tbTargetClass(), allowAlternative: tbAllowAlternative });
       if (plan.needed && plan.blocked) { const e = new Error(plan.reason); e.tbFriendly = true; throw e; }
       if (plan.needed) instances.packets = OpenDisplayV3.applyMigration(instances.packets, plan);
     }

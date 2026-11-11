@@ -28,7 +28,9 @@ function el() {
   return e;
 }
 
-function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', identFlags = null }) {
+// `answer`: 'ok' | 'cancel', or an array with one answer per dialog in order.
+// `identTarget`: READ_IDENT fw_target byte (6 = not a fw_target value, so the chip decides).
+function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', identFlags = null, identTarget = 6 }) {
   const byId = new Map();
   const asked = [];
   const document = {
@@ -37,9 +39,11 @@ function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', id
     createElement() {
       const d = el();
       d._onShow = (dlg) => {
-        asked.push({ title: dlg.querySelector('#tbMigrateTitle').textContent, lines: [] });
+        const n = asked.length;
+        asked.push({ title: dlg.querySelector('#tbMigrateTitle').textContent, ok: dlg.querySelector('#tbMigrateOk').textContent, lines: [] });
+        const a = Array.isArray(answer) ? answer[n] : answer;
         setImmediate(() => {
-          if (answer === 'ok') dlg.querySelector('#tbMigrateForm').onsubmit({ preventDefault() {} });
+          if (a === 'ok') dlg.querySelector('#tbMigrateForm').onsubmit({ preventDefault() {} });
           else dlg.querySelector('#tbMigrateCancel').onclick();
         });
       };
@@ -53,7 +57,7 @@ function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', id
   const writes = [];
   const bleLib = {
     isConnected: true,
-    async readIdent() { return identFlags == null ? null : Uint8Array.from([0, 0x46, 4, 6, 0, identFlags]); },
+    async readIdent() { return identFlags == null && identTarget === 6 ? null : Uint8Array.from([0, 0x46, 4, identTarget, 0, ...(identFlags == null ? [] : [identFlags])]); },
     async writeConfig(b) { stored = Uint8Array.from(b); writes.push(stored); },
     readConfig(cb) { setImmediate(() => cb(stored, null)); },
     delay: () => Promise.resolve()
@@ -88,12 +92,12 @@ function makeWorld({ packets, answer = 'ok', pick = null, firmware = '3.0.0', id
     }
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'toolbox-v3.js'), 'utf8') + '\n;this.__api = { tbMigrateIfNeeded, tbLoadDriveDb, tbCheckConfigSize, tbTargetGeneration, get db() { return tbDriveDb; } };', ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'toolbox-v3.js'), 'utf8') + '\n;this.__api = { tbMigrateIfNeeded, tbLoadDriveDb, tbCheckConfigSize, tbTargetGeneration, tbTargetClassInfo, tbAssertConfigFits, get db() { return tbDriveDb; } };', ctx);
   return { ctx, api: ctx.__api, asked, writes, logs, flashes, get stored() { return stored; } };
 }
 
-const carried = (panel = '0x1e') => [
-  { uid: 'a', pid: '1', fields: { ic_type: '0x6' } },
+const carried = (panel = '0x1e', ic = '0x6') => [
+  { uid: 'a', pid: '1', fields: { ic_type: ic } },
   { uid: 'b', pid: '2', fields: {} },
   { uid: 'c', pid: '32', fields: { panel_ic_type: panel, pixel_width: '0xa8', pixel_height: '0x180' } },
   { uid: 'd', pid: '38', fields: { ssid: 'home' } },
@@ -119,11 +123,64 @@ test('declining writes nothing', async () => {
   assert.equal(w.writes.length, 0);
 });
 
+const driveOf = (bytes) => V3.walkConfig(bytes, id => SIZES[id] ?? null).packets
+  .filter(p => p.id >= 0xae && p.id <= 0xb1).map(p => p.body).sort();
+const bodies = (list) => list.map(p => p.body_hex).sort();
+
 test('blocked panel: informs, writes nothing', async () => {
-  const w = makeWorld({ packets: carried('14') });
+  // BG22 (ic_type 6) + 0x0035, blocked on BG22 with no alternative: info only.
+  const w = makeWorld({ packets: carried('0x35') });
   assert.equal(await w.api.tbMigrateIfNeeded(), 'blocked');
   assert.equal(w.writes.length, 0);
+  assert.equal(w.asked.length, 1);
   assert.match(w.asked[0].title, /can.t be driven/);
+});
+
+test('BG22 + BG22-blocked panel with an alternative: declining the opt-in writes nothing', async () => {
+  const w = makeWorld({ packets: carried('14'), answer: ['cancel'] });
+  assert.equal(await w.api.tbMigrateIfNeeded(), 'blocked');
+  assert.equal(w.writes.length, 0);
+  assert.equal(w.asked[0].ok, 'Use the untested alternative');
+});
+
+test('BG22 + explicit opt-in: writes the single-init alternative, after a second confirmation', async () => {
+  const w = makeWorld({ packets: carried('14'), answer: ['ok', 'ok'] });
+  assert.equal(await w.api.tbMigrateIfNeeded(), 'done');
+  assert.equal(w.asked.length, 2);
+  assert.equal(w.writes.length, 1);
+  assert.deepEqual(driveOf(w.stored), bodies(drive.panels['0x000E'].alternatives[0].packets));
+});
+
+test('BG22 + available panel: bg22-class packets; ESP32: default packets; READ_IDENT target wins over an unknown chip', async () => {
+  const bg = makeWorld({ packets: carried('0x2') });
+  assert.equal(bg.api.tbTargetClassInfo().cls, 'bg22');
+  assert.equal(await bg.api.tbMigrateIfNeeded(), 'done');
+  assert.deepEqual(driveOf(bg.stored), bodies(drive.panels['0x0002'].targets.bg22.packets));
+  const esp = makeWorld({ packets: carried('0x2', '0x2') });
+  assert.equal(await esp.api.tbMigrateIfNeeded(), 'done');
+  assert.equal(esp.api.tbTargetClassInfo().cls, 'default');
+  assert.deepEqual(driveOf(esp.stored), bodies(drive.panels['0x0002'].targets.default.packets));
+  // Chip unknown (ic_type 0): unknown -> restrictive; READ_IDENT 0x03 / 0x01 decide when present.
+  const unk = makeWorld({ packets: carried('0x2', '0x0') });
+  assert.equal(await unk.api.tbMigrateIfNeeded(), 'done');
+  assert.deepEqual(unk.api.tbTargetClassInfo(), { cls: 'bg22', how: 'unknown', restrictive: true });
+  assert.deepEqual(driveOf(unk.stored), bodies(drive.panels['0x0002'].targets.bg22.packets));
+  const id1 = makeWorld({ packets: carried('0x2', '0x0'), identTarget: 0x01 });
+  assert.equal(await id1.api.tbMigrateIfNeeded(), 'done');
+  assert.deepEqual(driveOf(id1.stored), bodies(drive.panels['0x0002'].targets.default.packets));
+});
+
+test('pre-write gate: default-class drive data is never written to a BG22', async () => {
+  const pk = carried('0x2').filter(p => p.pid !== '46')
+    .concat(drive.panels['0x0002'].packets.map((p, i) => ({ uid: 'x' + i, pid: String(p.id), raw: p.body_hex, fields: {} })));
+  const w = makeWorld({ packets: pk });
+  await w.api.tbLoadDriveDb();
+  assert.throws(() => w.api.tbAssertConfigFits(new Uint8Array(100)), /does not run on this device \(EFR32BG22\).*WINDOW\/FILL/);
+  const esp = makeWorld({ packets: pk.map(p => p.pid === '1' ? Object.assign({}, p, { fields: { ic_type: '0x2' } }) : p) });
+  assert.doesNotThrow(() => esp.api.tbAssertConfigFits(new Uint8Array(100)));
+  // And the migration on connect replaces the stored default-class data with the bg22 view.
+  assert.equal(await w.api.tbMigrateIfNeeded(), 'done');
+  assert.deepEqual(driveOf(w.stored), bodies(drive.panels['0x0002'].targets.bg22.packets));
 });
 
 test('2.x device: no dialog, no write', async () => {
