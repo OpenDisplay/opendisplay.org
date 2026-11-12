@@ -493,3 +493,21 @@ test('RATE_LIMITED is not counted (the mirror drops that start); AUTH_FAILED on 
   await assert.rejects(r.s.authenticate(), e => e.code === 'rate_limited');
   assert.equal(r.budget.used(UID), 2);
 });
+
+test('rotation ACKed, then the device came back with its OLD key (reset between its storage steps): both kept, the old one opens and is promoted', async () => {
+  // EN04 first hardware run: a reset landed after the key generation was written and before
+  // the 0x27 rewrite, so which key opens the device afterwards is unknown to the client.
+  const kDev = new Uint8Array(16).fill(0x42);
+  const oldHex = S.bytesToHex(kDev);
+  const r = rig({ kDev, origin: 'LEGACY' });
+  r.store.addCandidate(NAME, kDev);
+  await r.s.select(); await r.s.authenticate();
+  const res = await r.s.rotate();
+  assert.deepEqual(r.store.keysToTry(NAME), [res.key, oldHex]);   // nothing discarded yet
+  r.dev.kDev = Uint8Array.from(kDev);                              // the device reverted
+  reconnect(r);
+  await r.s.select();
+  assert.equal((await r.s.authenticate()).key, oldHex);            // new key refused, old one opens
+  assert.equal(r.store.get(NAME).confirmed, oldHex);
+  assert.deepEqual(r.store.get(NAME).candidates, []);
+});
