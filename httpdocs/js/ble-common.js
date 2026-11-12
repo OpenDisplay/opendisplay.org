@@ -52,6 +52,17 @@ const DIRECT_WRITE_PASS_ACK_TIMEOUT_MS = 90000;
 // and there are no chunk acks to absorb them. 45 s is ~1.3x the 4.2in figure.
 const PANEL_REFRESH_BUDGET_MS = 45000;
 
+// CMD_DRIVE_WRITE_START 0x0085 carrying data: the device feeds the inline data before it acks,
+// and a compressed tail can cross every pass boundary (EN04 / Nordic: 189 B inflated to 32 kB,
+// two pass refreshes, ack after 23 s, past the 15 s start bound). Allow the single-boundary
+// bound or one refresh budget per boundary, whichever is larger; never unbounded. py-opendisplay
+// uses the same rule (10 s + max(90 s, (passes - 1) x 45 s)).
+function driveStartAckTimeoutMs(passes) {
+  const boundaries = Math.max(1, (passes || 1) - 1);
+  return DIRECT_WRITE_ACK_TIMEOUT_MS
+    + Math.max(DIRECT_WRITE_PASS_ACK_TIMEOUT_MS, boundaries * PANEL_REFRESH_BUDGET_MS);
+}
+
 // PIPE_WRITE (sliding-window) upload tuning. The web tester attempts a windowed
 // 0x0080/0x0081/0x0082 transfer when the device config advertises it
 // (transmission_modes bit 4) and falls back to the legacy 0x70 path if the START
@@ -156,7 +167,22 @@ class OpenDisplayBLE {
     // Chrome's cached characteristic object, so a fresh anonymous listener each
     // time would stack and process every notification twice. Removing this exact
     // reference before adding it keeps the count at one per characteristic.
-    this._onNotification = (event) => this.handleNotification(event);
+    //
+    // Notifications are processed strictly one after another, in arrival order. The handler
+    // awaits (SEC2 record open, v1 decrypt), and Web Bluetooth fires the next event without
+    // waiting for it: two sealed replies opened concurrently could reach the handler chain out
+    // of order, and both could pass the record counter check before either committed it. The
+    // value is copied at once, before the next notification can replace it.
+    this._rxChain = Promise.resolve();
+    this._onNotification = (event) => {
+      const v = event && event.target && event.target.value;
+      if (!v || v.byteLength === 0) return;
+      const copy = new DataView(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+      const ev = { target: { value: copy } };
+      this._rxChain = this._rxChain
+        .then(() => this.handleNotification(ev))
+        .catch(e => this.log(`Notification handler failed: ${e && e.message}`, 'error'));
+    };
     this.configYAML = null;
     this.packetSchema = null;  // Parsed packet schema from YAML
     this.packetSizes = {};     // Cached packet sizes
@@ -1501,10 +1527,13 @@ class OpenDisplayBLE {
       // Step 1: Request authentication
       this.log('Requesting authentication...', 'info');
       const authRequest = new Uint8Array([0x00, 0x50, 0x00]);
+      // Arm the waiter BEFORE writing: the notification can fire before the write resolves.
+      let challengeWait = this.waitForAuthResponse(5000);
+      challengeWait.catch(() => {});  // handled where awaited; no unhandled rejection if the write throws
       await this.sendCommand(authRequest);
       
       // Wait for challenge response
-      let challengeResponse = await this.waitForAuthResponse(5000);
+      let challengeResponse = await challengeWait;
       if (!challengeResponse || challengeResponse.length < 3) {
         throw new Error('Invalid challenge response');
       }
@@ -1517,10 +1546,12 @@ class OpenDisplayBLE {
         // The server will clear the old session when we send a new auth request
         // Send another auth request to get a fresh challenge
         const authRequest2 = new Uint8Array([0x00, 0x50, 0x00]);
+        challengeWait = this.waitForAuthResponse(5000);
+        challengeWait.catch(() => {});  // handled where awaited; no unhandled rejection if the write throws
         await this.sendCommand(authRequest2);
         
         // Wait for new challenge response
-        challengeResponse = await this.waitForAuthResponse(5000);
+        challengeResponse = await challengeWait;
         if (!challengeResponse || challengeResponse.length < 3) {
           throw new Error('Invalid challenge response');
         }
@@ -1585,10 +1616,12 @@ class OpenDisplayBLE {
       clientResponse.set(clientNonce, 2);
       clientResponse.set(challengeResponseMac, 18);
       
+      const serverWait = this.waitForAuthResponse(5000);
+      serverWait.catch(() => {});  // handled where awaited; no unhandled rejection if the write throws
       await this.sendCommand(clientResponse);
       
       // Wait for server response
-      const serverResponse = await this.waitForAuthResponse(5000);
+      const serverResponse = await serverWait;
       if (!serverResponse || serverResponse.length < 3) {
         throw new Error('Invalid server response');
       }
@@ -2326,7 +2359,7 @@ class OpenDisplayBLE {
     const value = event.target.value;
     if (!value || value.byteLength === 0) return;
     
-    let bytes = new Uint8Array(value.buffer);
+    let bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 
     if (this.sec2Link) {
       const plain = await this.sec2Link.incoming(bytes);
@@ -4633,7 +4666,11 @@ class OpenDisplayBLE {
       prepared.onStatusChange(prepared.statusMessage || `Starting upload: ${prepared.chunks.length} chunks`);
     }
     const sendPromise = this.sendHexCommand(prepared.startCommandHex);
-    this._armDirectWriteAckTimer('start');
+    if (prepared.startCarriesData) {
+      this._armDirectWriteAckTimer('drive start', driveStartAckTimeoutMs(state.passes));
+    } else {
+      this._armDirectWriteAckTimer('start');
+    }
     return sendPromise;
   }
 
@@ -4987,6 +5024,9 @@ class OpenDisplayBLE {
           : 0,
         // Pass count drives the end-ack budget: each pass owes a panel refresh.
         passes: isMultipass ? (multipassPalette.codes[0].length || 1) : 1,
+        // A compressed 0x0085 START carries data: the device may feed it, pass refreshes
+        // included, before it acks (Nordic: 23 s for two passes on the EN04).
+        startCarriesData: useDriveWrite && !!useCompressed,
         // null for a legacy 0x0070 upload; the ACK handler skips the
         // substitution check unless the device was actually told a mode.
         requestedDriveMode,

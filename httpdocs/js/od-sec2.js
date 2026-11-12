@@ -633,6 +633,10 @@
         this.failures += 1;
         return { ok: false, reason: 'bad tag', close: this.failures >= 3 };
       }
+      // Re-check after the await: a second copy of this frame (or a newer frame) opened
+      // concurrently may have committed meanwhile. A replay is dropped, never delivered twice,
+      // and rxLast never moves backwards.
+      if (ctr <= this.rxLast) return { ok: false, reason: 'counter ' + ctr + ' not above ' + this.rxLast, close: false };
       this.rxLast = ctr;
       return { ok: true, plaintext: pt, ctr };
     }
