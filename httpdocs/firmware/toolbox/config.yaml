@@ -368,9 +368,13 @@ ble_proto:
         description: Battery sense flags (bitfield)
         bits:
           0:
-            name: reserved_0
+            name: enable_inverted
+            description: Battery-sense enable pin is active-low (e.g. XIAO ~READ_BAT on P0.14)
           1:
-            name: reserved_1
+            name: calibrated_mv
+            description: 'ESP32 only: read the sense pin through the chip''s eFuse ADC calibration; voltage_scaling_factor
+              is then the divider ratio x1000 (V = pin_mV * factor / 1000, 2:1 divider = 2000). Clear = legacy raw-count
+              scaling. Ignored on other targets.'
           2:
             name: reserved_2
           3:
@@ -404,7 +408,9 @@ ble_proto:
             description: 1s li-ion, Seeed reTerminal E-series (E1001-E1003) discharge curve
       - name: voltage_scaling_factor
         size: 2
-        description: Voltage scaling / divider factor (implementation-specific)
+        description: 'Voltage scaling / divider factor. With battery_sense_flags calibrated_mv (ESP32): divider ratio
+          x1000, V = pin_mV * factor / 1000. Otherwise implementation-specific (ESP32 legacy: V = raw_count * factor /
+          100000).'
       - name: deep_sleep_current_ua
         size: 4
         description: Deep sleep current of the board in microamperes (excl. MCU consumption), 0 if unknown
