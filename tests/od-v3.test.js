@@ -484,9 +484,12 @@ test('nRF52811: 2.x keeps the 2.x id; 3.x-only displays are not offered on 2.x',
   const bwy = presets.displays.find(d => d.id === 'ssd1619-420-bwy');
   assert.equal(V3.driveAvailability(bwy, db, 'v2', 'nrf52811').selectable, false);
   assert.equal(V3.driveAvailability(bwy, db, 'v3', 'nrf52811').selectable, true);
-  // Not checked on a panel: refused with a reason, not hidden.
+  // Checked on glass (7.4in tag): selectable.
   const u79 = presets.displays.find(d => d.id === 'uc8179-750-bwr');
-  const a = V3.driveAvailability(u79, db, 'v3', 'nrf52811');
+  assert.equal(V3.driveAvailability(u79, db, 'v3', 'nrf52811').selectable, true);
+  // Not checked on a panel: refused with a reason, not hidden.
+  const u22 = presets.displays.find(d => d.id === 'ssd1619-022-bwr');   // 0xE015, corrected
+  const a = V3.driveAvailability(u22, db, 'v3', 'nrf52811');
   assert.equal(a.selectable, false);
   assert.match(a.reason, /not been checked on a real panel/);
 });
