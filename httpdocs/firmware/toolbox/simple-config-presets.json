@@ -2284,9 +2284,9 @@
             "sleep_flags": "0x0",
             "battery_sense_pin": "3",
             "battery_sense_enable_pin": "43",
-            "battery_sense_flags": "0x0",
+            "battery_sense_flags": "0x2",
             "capacity_estimator": "1",
-            "voltage_scaling_factor": "161",
+            "voltage_scaling_factor": "2000",
             "deep_sleep_current_ua": "0",
             "deep_sleep_time_seconds": "1800"
          },
