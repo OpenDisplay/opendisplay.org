@@ -4013,13 +4013,13 @@ class OpenDisplayBLE {
    * frame per pass, concatenated, which is exactly what CMD_DRIVE_WRITE_START
    * expects in a single session.
    *
-   * The palette MUST come from the device (config packet 0x30: per-pass codes
+   * The palette MUST come from the device (config packet 0xB0: per-pass codes
    * plus the CIELAB they measured as). It is deliberately not bundled here:
    * these colours are per-unit -- two same-part-number 2.9in panels differ by
    * dE00 6.40, and a palette tuned on one measured 19% worse on the other.
    *
    * @param {HTMLCanvasElement} canvas
-   * @param {{codes: number[][], lab: number[][]}} palette - from 0x30
+   * @param {{codes: number[][], lab: number[][]}} palette - from 0xB0
    * @param {number[]} codeMap - IGNORED for a measured palette; see above
    * @param {number} rotation
    * @returns {number[]} concatenated frames, passes * frameBytes
@@ -4080,8 +4080,8 @@ class OpenDisplayBLE {
    *
    * Scheme 10 (bwry16) is NOT a panel pixel format. The panel is BWRY: 2bpp,
    * four inks. 16 colours come from driving it three times with different data,
-   * which is a property of a drive MODE -- its pass count in packet 0x2E plus
-   * the measured palette in 0x30 -- discovered via extractDriveModes(). A
+   * which is a property of a drive MODE -- its pass count in packet 0xAE plus
+   * the measured palette in 0xB0 -- discovered via extractDriveModes(). A
    * device whose DisplayConfig says 10 still packs single-pass frames as BWRY,
    * so that is what the drawing palette, preview and dither must use.
    *
@@ -4100,8 +4100,8 @@ class OpenDisplayBLE {
   /**
    * Pull the drive modes, palettes and panel properties out of a parsed config.
    *
-   * Reads packets 0x2E (display_mode), 0x30 (display_calibration: per-pass codes
-   * + measured CIELAB) and 0x31 (display_panel: colour code map) straight from
+   * Reads packets 0xAE (display_mode), 0xB0 (display_calibration: per-pass codes
+   * + measured CIELAB) and 0xB1 (display_panel: colour code map) straight from
    * the raw packet list, so nothing new has to be threaded through the walk.
    *
    * A mode with passes > 1 is a MULTI-PASS mode: it drives the panel once per
@@ -4174,7 +4174,7 @@ class OpenDisplayBLE {
   encodeCanvasMultipass(canvas, palette, codeMap = null, rotation = 0) {
     if (!palette || !Array.isArray(palette.codes) || !palette.codes.length) {
       throw new Error(
-        'bwry16 needs the measured palette from the device (config packet 0x30). ' +
+        'bwry16 needs the measured palette from the device (config packet 0xB0). ' +
         'Without the per-pass codes a frame cannot be encoded, and the colours ' +
         'are per-unit so there is no safe default to fall back to.'
       );
@@ -4862,7 +4862,7 @@ class OpenDisplayBLE {
       // 3.x only: 0xB1 code_map for the 4-colour path (see buildWireCodes). null on 2.x.
       codeMap4 = null,
       // Multi-pass (colour scheme 10 / bwry16). Both come from the DEVICE's own
-      // config -- multipassPalette from 0x30, driveModeIndex from 0x2E -- so the
+      // config -- multipassPalette from 0xB0, driveModeIndex from 0xAE -- so the
       // website never has to carry a per-unit palette or guess a mode number.
       multipassPalette = null,
       driveModeIndex = null,

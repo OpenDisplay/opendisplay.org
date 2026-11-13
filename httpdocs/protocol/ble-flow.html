@@ -745,8 +745,8 @@ payload is exactly the same blob as a single BLE <em>write</em> to the OpenDispl
       </p>
     </div>
     <p class="intro-text">
-      When both <code>streaming_decompression</code> (bit 0) and <code>zip</code> (bit 1) are set in the display 
-      <code>transmission_modes</code> field, the client may send a zlib DEFLATE stream. The device decompresses 
+      When <code>streaming_decompression</code> (bit 0) or <code>zip</code> (bit 1) is set in the display 
+      <code>transmission_modes</code> field (either bit is enough), the client may send a zlib DEFLATE stream. The device decompresses 
       <strong>incrementally</strong> as <code>0x0071</code> chunks arrive and writes decoded pixels directly to the panel — 
       no full-image RAM buffer on the device.
     </p>

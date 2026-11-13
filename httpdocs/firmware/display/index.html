@@ -1222,7 +1222,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             8: '6-color split (left half-plane then right; dual-CS)'
         };
 
-        // Drive modes read off the CONNECTED device (packets 0x2E/0x30/0x31).
+        // Drive modes read off the CONNECTED device (packets 0xAE/0xB0/0xB1).
         // Not a static list: which modes exist, their pass counts and their
         // colours are per-device, and a multi-pass palette is per-UNIT.
         let deviceDriveModes = { modes: [], codeMap: null };

@@ -774,8 +774,8 @@ After refresh: device notifies 0x00 0x73 (success) or 0x00 0x74 (timeout)</code>
     
     <h3 id="streaming-decompression">Streaming decompression</h3>
     <p class="intro-text">
-      When Flex <code>transmission_modes</code> has both <code>streaming_decompression</code> (bit 0) and 
-      <code>zip</code> (bit 1) set, the client may send a zlib DEFLATE stream over direct write. The device 
+      When Flex <code>transmission_modes</code> has <code>streaming_decompression</code> (bit 0) or 
+      <code>zip</code> (bit 1) set (either bit is enough), the client may send a zlib DEFLATE stream over direct write. The device 
       decompresses incrementally and writes pixels as they are decoded — no full-frame buffer on the device.
     </p>
     <ul style="margin: 12px 0; padding-left: 20px; color: var(--muted-foreground); line-height: 1.8;">

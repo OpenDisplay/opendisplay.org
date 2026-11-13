@@ -661,7 +661,7 @@
       if (!OpenDisplayV3.isConfigDriven(OpenDisplayV3.firmwareGeneration(designerFirmwareVersion))) return null;
       return OpenDisplayV3.wireMapFromCodeMap(deviceDriveModes.codeMap) || [0, 1, 2, 3];
     }
-    // Drive modes read off the CONNECTED device (config packets 0x2E/0x30/0x31).
+    // Drive modes read off the CONNECTED device (config packets 0xAE/0xB0/0xB1).
     // Deliberately not a static table: which modes exist, how many passes each
     // takes and what colours they produce are all per-device, and the 16-colour
     // palette is per-UNIT (two same-part-number panels differ by dE00 6.40).
