@@ -80,14 +80,19 @@ function tbDriveLimits() {
 }
 
 // ---- drive database -----------------------------------------------------------
+async function tbFetchJson(name) {
+  try {
+    const r = await fetch(name, { cache: 'no-cache' });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
 async function tbLoadDriveDb() {
-  let generated = null;
+  // drive-presets.json: Firmware_Unified (ESP32, nRF52840, nRF54, BG22).
+  // drive-presets-nrf52811.json: Firmware_NRF 3.0, panel ids 0xE000-0xE1FF, nRF52811 only.
+  const [generated, nrf52811] = await Promise.all([tbFetchJson('drive-presets.json'), tbFetchJson('drive-presets-nrf52811.json')]);
+  const classFiles = nrf52811 ? { nrf52811 } : {};
   try {
-    const r = await fetch('drive-presets.json', { cache: 'no-cache' });
-    if (r.ok) generated = await r.json();
-  } catch (e) { generated = null; }
-  try {
-    tbDriveDb = V3.buildDriveDb({ generated, displays: (simpleConfigPresets && simpleConfigPresets.displays) || [] });
+    tbDriveDb = V3.buildDriveDb({ generated, classFiles, displays: (simpleConfigPresets && simpleConfigPresets.displays) || [] });
     tbDriveDbSource = generated ? 'drive-presets.json' : 'presets';
   } catch (e) {
     addLog('Panel drive data could not be loaded: ' + e.message + '. Using the built-in presets only.', 'error');
@@ -99,7 +104,7 @@ async function tbLoadDriveDb() {
 }
 function tbDriveEntryFor(display) {
   if (!display || !tbDriveDb) return null;
-  return V3.driveEntryFor(tbDriveDb, display.panelIcType, tbTargetClass());
+  return V3.driveEntryFor(tbDriveDb, V3.displayPanelIcType(display, tbTargetGeneration()), tbTargetClass());
 }
 function tbDisplayAvailability(display, gen) {
   return V3.driveAvailability(display, tbDriveDb, gen || tbTargetGeneration(), tbTargetClass());
@@ -162,11 +167,24 @@ function tbCheckDriveFit() {
     + (cls === 'bg22' ? 'EFR32BG22' : cls) + '): ' + r.problems.join('; ') + '.' };
 }
 /** Throws a friendly error when the built config would not fit the device. */
+/**
+ * A target without a security module (nRF52811) refuses the whole config when it carries a
+ * secret (od-v3.js checkSecretsSupported), so say so before writing.
+ */
+function tbCheckSecrets() {
+  const target = tbConfigTarget();
+  const r = V3.checkSecretsSupported(instances && instances.packets, target);
+  const chip = target === 'nrf52811' ? 'nRF52811' : target;
+  return { ok: r.ok, message: r.ok ? '' : 'Not written: this device (' + chip
+    + ') does not support encryption, so it refuses a configuration with '
+    + r.problems.join(', ') + '. Remove ' + (r.problems.length > 1 ? 'them' : 'it') + ' and write again.' };
+}
 function tbAssertConfigFits(bytes) {
   const c = tbCheckConfigSize(bytes.length);
   const d = c.ok ? tbCheckDriveFit() : { ok: true };
-  if (!c.ok || !d.ok) {
-    const err = new Error(c.ok ? d.message : c.message);
+  const sx = c.ok && d.ok ? tbCheckSecrets() : { ok: true };
+  if (!c.ok || !d.ok || !sx.ok) {
+    const err = new Error(!c.ok ? c.message : !d.ok ? d.message : sx.message);
     err.tbFriendly = true;
     throw err;
   }

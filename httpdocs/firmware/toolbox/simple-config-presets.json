@@ -1312,6 +1312,60 @@
         "button_data_byte_index": "0",
         "reserved": "0x0"
       },
+      "dataBus": {
+        "instance_number": "0x0",
+        "bus_type": "1",
+        "pin_1": "0x9",
+        "pin_2": "0x8",
+        "pin_3": "0xa",
+        "pin_4": "0xff",
+        "pin_5": "0xff",
+        "pin_6": "0xff",
+        "pin_7": "0xff",
+        "bus_speed_hz": "100000",
+        "bus_flags": "0x0",
+        "pullups": "0x0",
+        "pulldowns": "0x0",
+        "reserved": "0x0"
+      },
+      "nfcConfig": {
+        "instance_number": "0x0",
+        "nfc_ic_type": "0",
+        "bus_instance": "0x0",
+        "flags": "0x1",
+        "field_detect_pin": "0xb",
+        "field_detect_mode": "2",
+        "field_detect_active": "1",
+        "field_detect_debounce_ms": "255",
+        "power_pin": "0xff",
+        "power_active": "1",
+        "power_on_delay_ms": "40",
+        "power_off_delay_ms": "0",
+        "adv_button_byte_index": "10",
+        "adv_button_button_id": "0",
+        "reserved_pin_1": "0xff",
+        "reserved_pin_2": "0xff",
+        "reserved": "0x0"
+      },
+      "flashConfig": {
+        "instance_number": "0x0",
+        "flash_ic_type": "0",
+        "bus_instance": "0xff",
+        "flags": "0x1",
+        "mosi_pin": "0xf",
+        "sck_pin": "0xe",
+        "cs_pin": "0xc",
+        "power_pin": "0xff",
+        "power_active": "0",
+        "power_on_delay_ms": "0",
+        "power_off_delay_ms": "0",
+        "mode": "0",
+        "miso_pin": "0xd",
+        "wp_pin": "0xff",
+        "hold_pin": "0xff",
+        "reserved": "0x0"
+      },
+      "supportsEncryption": false,
       "transmission_modes": "8",
       "installConfig": {
         "firmwareLetter": "N",
@@ -1363,6 +1417,7 @@
         "led_flags": "0x7",
         "reserved": "0x0"
       },
+      "supportsEncryption": false,
       "transmission_modes": "8",
       "installConfig": {
         "firmwareLetter": "N",
@@ -3106,6 +3161,7 @@
         124
       ],
       "panelIcType": "1001",
+      "v3PanelIcType": "57346",
       "config": {
         "pixel_width": "400",
         "pixel_height": "300",
@@ -3124,6 +3180,7 @@
         124
       ],
       "panelIcType": "1002",
+      "v3PanelIcType": "57347",
       "config": {
         "pixel_width": "400",
         "pixel_height": "300",
@@ -3142,6 +3199,7 @@
         124
       ],
       "panelIcType": "1006",
+      "v3PanelIcType": "57351",
       "config": {
         "pixel_width": "800",
         "pixel_height": "480",
@@ -3160,6 +3218,7 @@
         124
       ],
       "panelIcType": "1008",
+      "v3PanelIcType": "57353",
       "config": {
         "pixel_width": "800",
         "pixel_height": "480",
@@ -3178,6 +3237,7 @@
         124
       ],
       "panelIcType": "1010",
+      "v3PanelIcType": "57355",
       "config": {
         "pixel_width": "800",
         "pixel_height": "480",
@@ -3196,6 +3256,7 @@
         124
       ],
       "panelIcType": "1014",
+      "v3PanelIcType": "57359",
       "config": {
         "pixel_width": "168",
         "pixel_height": "384",
@@ -3214,6 +3275,7 @@
         124
       ],
       "panelIcType": "1016",
+      "v3PanelIcType": "57361",
       "config": {
         "pixel_width": "168",
         "pixel_height": "384",
@@ -3232,6 +3294,7 @@
         124
       ],
       "panelIcType": "1018",
+      "v3PanelIcType": "57363",
       "config": {
         "pixel_width": "200",
         "pixel_height": "200",
@@ -3250,6 +3313,7 @@
         124
       ],
       "panelIcType": "1020",
+      "v3PanelIcType": "57365",
       "config": {
         "pixel_width": "240",
         "pixel_height": "320",
@@ -3268,6 +3332,7 @@
         124
       ],
       "panelIcType": "1022",
+      "v3PanelIcType": "57367",
       "config": {
         "pixel_width": "296",
         "pixel_height": "152",
@@ -3286,6 +3351,7 @@
         124
       ],
       "panelIcType": "1024",
+      "v3PanelIcType": "57369",
       "config": {
         "pixel_width": "200",
         "pixel_height": "300",
@@ -3305,6 +3371,7 @@
         124
       ],
       "panelIcType": "1026",
+      "v3PanelIcType": "57371",
       "config": {
         "pixel_width": "152",
         "pixel_height": "522",
@@ -3323,6 +3390,7 @@
         124
       ],
       "panelIcType": "1028",
+      "v3PanelIcType": "57373",
       "config": {
         "pixel_width": "144",
         "pixel_height": "200",
@@ -3341,6 +3409,7 @@
         124
       ],
       "panelIcType": "1030",
+      "v3PanelIcType": "57375",
       "config": {
         "pixel_width": "128",
         "pixel_height": "250",
@@ -3501,6 +3570,44 @@
         "transmission_modes": "0x3"
       },
       "index": 49
+    },
+    {
+      "id": "ssd1619-420-bwy",
+      "name": "SSD1619 4.2\" B/W/Y",
+      "connectorPins": [
+        124
+      ],
+      "panelIcType": "57376",
+      "v3Only": true,
+      "config": {
+        "pixel_width": "400",
+        "pixel_height": "300",
+        "active_width_mm": "85",
+        "active_height_mm": "64",
+        "partial_update_support": "0",
+        "color_scheme": "2",
+        "full_update_mC": "0"
+      },
+      "index": 50
+    },
+    {
+      "id": "el022-160x296-bwr",
+      "name": "2.2\" 160×296 B/W/R (EL022H3WRA)",
+      "connectorPins": [
+        124
+      ],
+      "panelIcType": "57601",
+      "v3Only": true,
+      "config": {
+        "pixel_width": "160",
+        "pixel_height": "296",
+        "active_width_mm": "26",
+        "active_height_mm": "49",
+        "partial_update_support": "0",
+        "color_scheme": "1",
+        "full_update_mC": "0"
+      },
+      "index": 51
     }
   ],
   "powerOptions": [

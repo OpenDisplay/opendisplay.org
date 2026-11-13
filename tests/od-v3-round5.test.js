@@ -38,7 +38,8 @@ test('fw_target: one value per family, 0x05 nRF52840 is new; 0x01 is ESP32 only'
   assert.equal(V3.targetFromIdent(0x01), 'esp32');
   assert.equal(V3.targetFromIdent(0x05), 'nrf52840');
   assert.equal(V3.targetFromIdent(0x03), 'bg22');
-  assert.equal(V3.targetFromIdent(0x04), null);
+  assert.equal(V3.targetFromIdent(0x04), 'nrf52811');   // Firmware_NRF 3.0
+  assert.equal(V3.targetClassFromIdent(0x04), 'nrf52811');
   assert.equal(V3.targetClassFromIdent(0x05), 'default');
   assert.equal(V3.deviceTargetClass({ identTarget: 0x05, target: 'nrf52840' }).how, 'read-ident');
 });

@@ -667,3 +667,6 @@ input[type=file]{background:var(--card-background)!important;border:1.5px solid 
 .tb-dialog .tb-migrate__list,.tb-opaque-list{margin:8px 0 12px;padding-left:18px;font-size:.88rem;line-height:1.45}
 .tb-dialog .tb-migrate__list li,.tb-opaque-list li{margin:2px 0}
 .page-inner.tool-ui .tb-dialog__field select{width:100%;min-height:44px}
+.encryption-option.is-unsupported .tb-switch{
+  opacity:.6;
+}

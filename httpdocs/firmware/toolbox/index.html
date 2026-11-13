@@ -2789,12 +2789,44 @@ function initializeSimpleConfigMode() {
   loadSimpleConfigFromUrl();
 }
 
+/**
+ * Can this board's firmware store an encryption key? A preset says so with
+ * "supportsEncryption": false; the chip rule (od-v3.js targetSupportsEncryption) covers boards
+ * without the field. nRF52811 (Firmware_NRF) has no security module and refuses a config
+ * that carries a key.
+ */
+function boardSupportsEncryption(board) {
+  if (!board) return true;
+  if (board.supportsEncryption === false) return false;
+  const type = board.installConfig && board.installConfig.type;
+  return !(type && typeof OpenDisplayV3 !== 'undefined' &&
+    !OpenDisplayV3.targetSupportsEncryption(OpenDisplayV3.targetFromInstallType(type)));
+}
+function updateEncryptionSupport(board) {
+  const encSlider = document.getElementById('initRandomEncryptionSlider');
+  const encGroup = document.getElementById('encryptionOptionGroup');
+  if (!encSlider) return;
+  const supported = boardSupportsEncryption(board);
+  const wasUnsupported = !!(encGroup && encGroup.classList.contains('is-unsupported'));
+  if (encGroup) encGroup.classList.toggle('is-unsupported', !supported);
+  if (!supported) {
+    encSlider.checked = false;
+    encSlider.disabled = true;
+  } else {
+    // Back from a board without encryption: the default (on) returns.
+    if (wasUnsupported) encSlider.checked = true;
+    if (!isWifiEnabledInUi()) encSlider.disabled = false;
+  }
+  syncEncryptionOptionUi();
+}
 function syncEncryptionOptionUi() {
   const encSlider = document.getElementById('initRandomEncryptionSlider');
   const encHint = document.getElementById('encryptionHint');
   if (!encSlider) return;
   if (encHint) {
-    encHint.textContent = isWifiEnabledInUi()
+    encHint.textContent = !boardSupportsEncryption(simpleConfigSelections && simpleConfigSelections.driverBoard)
+      ? 'Not supported on this board: its firmware has no encryption, so anyone nearby can connect to the device and change it.'
+      : isWifiEnabledInUi()
       ? 'Required for Wi-Fi. You get the key when setup finishes.'
       : encSlider.checked
         ? 'Only someone with the key can connect. You get the key when setup finishes.'
@@ -2806,7 +2838,8 @@ function updateOptionsSummary() {
   const el = document.getElementById('configOptionsSummary');
   const encSlider = document.getElementById('initRandomEncryptionSlider');
   if (!el) return;
-  const parts = [encSlider && encSlider.checked ? 'Encrypted' : 'No encryption'];
+  const parts = [!boardSupportsEncryption(simpleConfigSelections && simpleConfigSelections.driverBoard)
+    ? 'No encryption (not supported)' : encSlider && encSlider.checked ? 'Encrypted' : 'No encryption'];
   if (isWifiEnabledInUi()) parts.push('Wi-Fi');
   el.textContent = parts.join(', ');
 }
@@ -2887,6 +2920,7 @@ function updateWifiVisibility(board) {
   } else {
     updateWifiCredentialsVisibility();
   }
+  updateEncryptionSupport(board);
 }
 
 const OD_LED_FLAG_BUTTON_PRESS = 1 << 4;
@@ -4340,7 +4374,7 @@ function mergeSimpleConfigToFull(opts) {
     encSlider.checked = true;
     encSlider.disabled = true;
   }
-  if (encSlider && encSlider.checked) {
+  if (encSlider && encSlider.checked && boardSupportsEncryption(simpleConfigSelections.driverBoard)) {
     if (!setupKeyHex) newSetupKey();
     const keyHex = setupKeyHex;
     lastAutoInstallRedirectKeyHex = keyHex;
@@ -4443,7 +4477,10 @@ function createDisplayConfig(display, driverBoardId) {
   return {
     instance_number: '0x0',
     display_technology: '1',
-    panel_ic_type: display.panelIcType,
+    // 2.x id or the 3.0 drive preset id (v3PanelIcType), by the firmware the config is for.
+    panel_ic_type: (typeof OpenDisplayV3 !== 'undefined' && typeof tbTargetGeneration === 'function')
+      ? String(OpenDisplayV3.displayPanelIcType(display, tbTargetGeneration()) ?? display.panelIcType)
+      : display.panelIcType,
     pixel_width: config.pixel_width,
     pixel_height: config.pixel_height,
     active_width_mm: config.active_width_mm,

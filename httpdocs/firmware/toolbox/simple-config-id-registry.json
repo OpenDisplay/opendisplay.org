@@ -1,5 +1,5 @@
 {
-  "_comment": "Stable id \u2192 index map for simple-config presets. Indexes are written into device manufacturer data (simple_config_*_index) and string ids are used in share URLs. Never change an existing mapping; only append new ids with new indexes. Validated by .github/scripts/validate-simple-config-presets.py",
+  "_comment": "Stable id → index map for simple-config presets. Indexes are written into device manufacturer data (simple_config_*_index) and string ids are used in share URLs. Never change an existing mapping; only append new ids with new indexes. Validated by .github/scripts/validate-simple-config-presets.py",
   "driverBoards": {
     "en04": 1,
     "ee04": 2,
@@ -84,7 +84,9 @@
     "ep37yr-240x416": 46,
     "ep42r-400x300": 47,
     "m5-paper-960x540": 48,
-    "m5-paper-960x540-4gray": 49
+    "m5-paper-960x540-4gray": 49,
+    "ssd1619-420-bwy": 50,
+    "el022-160x296-bwr": 51
   },
   "powerOptions": {
     "usb": 1,

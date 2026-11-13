@@ -164,13 +164,14 @@
   /**
    * Largest config (outer packet, header + CRC included) the target stores.
    *   BG22 3.x 3120 (shared/profiles.cmake), BG22 2.x 2048 (Firmware_Silabs, truncates silently),
-   *   legacy Firmware_NRF (nRF52811) 512, ESP32 / nRF52840 / nRF54 4096.
+   *   nRF52811 3.x 2000 (Firmware_NRF 3.0, READ_IDENT max_config), legacy Firmware_NRF 2.x 512,
+   *   ESP32 / nRF52840 / nRF54 4096.
    * BG22 with an unknown generation gets the 2.x cap: the smaller one is the safe one.
    */
   function configSizeLimit(target, gen) {
     switch (target) {
       case 'bg22': return gen === 'v3' ? 3120 : 2048;
-      case 'nrf52811': return 512;
+      case 'nrf52811': return gen === 'v3' ? 2000 : 512;
       case 'esp32': case 'nrf52840': case 'nrf54': return 4096;
       default: return 4096;
     }
@@ -188,12 +189,42 @@
     };
   }
 
+  // ---- secrets (encryption, Wi-Fi password, Find My keys) -----------------------
+  /**
+   * Can the target store secrets? Firmware_NRF (nRF52811) has no security module: it refuses a
+   * config whose 0x27 security packet is enabled or carries a key, a Wi-Fi password (0x26) or
+   * Find My keys (0x2D), with SECRET_NEEDS_CLAIM (0x10), on 2.x and 3.x.
+   */
+  function targetSupportsEncryption(target) {
+    return String(target || '') !== 'nrf52811';
+  }
+  function nonzeroHex(v) { return v != null && /[1-9a-f]/i.test(String(v).replace(/^0x/i, '')); }
+  /**
+   * Packets in an editor model that a target without encryption would refuse.
+   * @returns {{ok:boolean, problems:string[]}}
+   */
+  function checkSecretsSupported(packets, target) {
+    const res = { ok: true, problems: [] };
+    if (targetSupportsEncryption(target)) return res;
+    for (const p of packets || []) {
+      if (!p || !p.fields) continue;
+      const f = p.fields, pid = String(p.pid);
+      if (pid === '39' && (nonzeroHex(f.encryption_enabled) || nonzeroHex(f.encryption_key))) res.problems.push('encryption (security config 0x27)');
+      if (pid === '38' && f.password != null && String(f.password) !== '') res.problems.push('a Wi-Fi password (0x26)');
+      if (pid === '45' && (nonzeroHex(f.eik) || nonzeroHex(f.net_a_adv_key) || nonzeroHex(f.advertisement_key))) res.problems.push('Find My keys (0x2D)');
+    }
+    res.ok = !res.problems.length;
+    return res;
+  }
+
   // ---- target classes (drive interpreter limits) ------------------------------
   /**
    * The od_epd interpreter differs per target, so drive data is derived per class
    * (Firmware_Unified panels/README.md "Target classes", drive_presets.json `target_classes`):
    *   default  ESP32, nRF52840, nRF54: WINDOW/FILL escapes.
    *   bg22     EFR32BG22: WINDOW/FILL compiled out, so its partial modes are whole-panel only.
+   *   nrf52811 Firmware_NRF 3.0 (nRF52811): no escapes (READ_IDENT escapes 0), and panel ids of its
+   *            own (0xE000-0xE1FF, drive-presets-nrf52811.json), so its data is a separate file.
    * Since schema_minor 2 sequences stream from storage: there is no per-target sequence BYTE cap
    * any more (packets are bounded by the config size). What remains, on every target, is 128
    * steps per sequence (OD_EPD_MAX_SEQ_STEPS, a runaway bound) and 16 B for the 0xB1 sleep
@@ -202,14 +233,15 @@
    */
   const TARGET_CLASS_LIMITS = Object.freeze({
     default: Object.freeze({ max_steps: 128, window: true, sleep_max: 20 }),
-    bg22: Object.freeze({ max_steps: 128, window: false, sleep_max: 20 })
+    bg22: Object.freeze({ max_steps: 128, window: false, sleep_max: 20 }),
+    nrf52811: Object.freeze({ max_steps: 128, window: false, sleep_max: 20 })
   });
   /** The class used when the device's class cannot be determined: the smallest interpreter. */
   const RESTRICTIVE_CLASS = 'bg22';
-  const TARGET_CLASS_LABEL = { default: 'ESP32 / nRF', bg22: 'EFR32BG22' };
+  const TARGET_CLASS_LABEL = { default: 'ESP32 / nRF', bg22: 'EFR32BG22', nrf52811: 'nRF52811' };
   /**
    * READ_IDENT (0x0046) fw_target byte -> class. One value per MCU family (PROTOCOL_CHANGES_3.0
-   * row 5, final): 0x01 ESP32, 0x02 nRF54, 0x03 EFR32BG22, 0x04 nRF52811 (reserved, never 3.x),
+   * row 5, final): 0x01 ESP32, 0x02 nRF54, 0x03 EFR32BG22, 0x04 nRF52811 (Firmware_NRF 3.0),
    * 0x05 nRF52840. Anything else is unknown (null).
    */
   const FW_TARGET = Object.freeze({ ESP32: 0x01, NRF54: 0x02, SILABS: 0x03, NRF52811: 0x04, NRF52840: 0x05 });
@@ -218,12 +250,13 @@
     switch (num(fwTarget)) {
       case 0x01: case 0x02: case 0x05: return 'default';
       case 0x03: return 'bg22';
+      case 0x04: return 'nrf52811';
       default: return null;
     }
   }
-  /** fw_target -> the chip family name used by targetFromIcType() ('esp32', 'nrf54', 'bg22', 'nrf52840'), or null. */
+  /** fw_target -> the chip family name used by targetFromIcType() ('esp32', 'nrf54', 'bg22', 'nrf52840', 'nrf52811'), or null. */
   function targetFromIdent(fwTarget) {
-    return { 1: 'esp32', 2: 'nrf54', 3: 'bg22', 5: 'nrf52840' }[num(fwTarget)] || null;
+    return { 1: 'esp32', 2: 'nrf54', 3: 'bg22', 4: 'nrf52811', 5: 'nrf52840' }[num(fwTarget)] || null;
   }
   /**
    * The limits a device reports in its READ_IDENT tail win over the class table; the table is
@@ -244,6 +277,7 @@
   function targetClassFromTarget(target) {
     switch (String(target || '')) {
       case 'bg22': return 'bg22';
+      case 'nrf52811': return 'nrf52811';
       case 'esp32': case 'nrf52840': case 'nrf54': return 'default';
       default: return null;
     }
@@ -343,17 +377,47 @@
   const VERIFIED = Object.freeze(['glass', 'equivalent', 'untested']);
   /**
    * Does a panel need drive packets under 3.x? bb_epaper SPI panels (panel_ic_type < 1000) do:
-   * 3.0 links no bb_epaper anywhere. Firmware_NRF native panels (1000-2999) only run on the
-   * legacy nRF52811 fleet, which never gets 3.x. FastEPD / IT8951 / parallel panels (>= 3000)
+   * 3.0 links no bb_epaper anywhere. So do the Firmware_NRF 3.0 panels 0xE000-0xE1FF
+   * (drive-presets-nrf52811.json); their 2.x ids (1000-2999) are mapped onto them by
+   * displayPanelIcType() / nrf52811PanelFor(). FastEPD / IT8951 / parallel panels (3000-3005)
    * are driven by their own path, not by drive packets (today).
    */
+  const NRF52811_PANEL_MIN = 0xE000, NRF52811_PANEL_MAX = 0xE1FF;
   function panelNeedsDriveData(panelIcType) {
     const t = num(panelIcType);
-    return t != null && t > 0 && t < 1000;
+    return t != null && t > 0 && (t < 1000 || (t >= NRF52811_PANEL_MIN && t <= NRF52811_PANEL_MAX));
+  }
+  /**
+   * The panel_ic_type a simple-config display preset writes for generation `gen`. A Firmware_NRF
+   * display keeps its 2.x id in `panelIcType` (2.x devices read it) and names its 3.0 drive
+   * preset in `v3PanelIcType`; a 3.x-only display (`v3Only`) has the 3.0 id in `panelIcType`.
+   */
+  function displayPanelIcType(display, gen) {
+    if (!display) return null;
+    if (isConfigDriven(gen) && display.v3PanelIcType != null && display.v3PanelIcType !== '') return num(display.v3PanelIcType);
+    return num(display.panelIcType);
+  }
+  /**
+   * The Firmware_NRF 3.0 preset for a 2.x Firmware_NRF panel id (1000-2999), from the drive
+   * database: the nRF52811 entry whose legacy.panel_ic_type is `legacyId`. Entries derived from
+   * the 2.x driver (they carry legacy.model_id) win over op-list ones for the same panel.
+   * @returns {number|null}
+   */
+  function nrf52811PanelFor(db, legacyId) {
+    const t = num(legacyId);
+    if (!db || t == null || t < 1000 || t > 2999) return null;
+    let best = null;
+    for (const e of db.values()) {
+      if (!e || !e.classes || !e.classes.nrf52811 || !e.legacy || num(e.legacy.panel_ic_type) !== t) continue;
+      const rank = e.legacy.model_id != null ? 0 : 1;
+      if (!best || rank < best.rank || (rank === best.rank && e.panelIcType < best.t)) best = { rank, t: e.panelIcType };
+    }
+    return best ? best.t : null;
   }
   function normalizeVerified(v) {
     const s = String(v == null ? '' : v).toLowerCase();
-    if (s === 'glass' || s === 'verified' || s === 'true') return 'glass';
+    // drive-presets-nrf52811.json says where: "glass 2026-11-13: two 2.9in SSD BWR tags".
+    if (s === 'glass' || s === 'verified' || s === 'true' || /^glass\b/.test(s)) return 'glass';
     if (s === 'equivalent' || s === 'derived') return 'equivalent';
     return 'untested';
   }
@@ -406,6 +470,7 @@
         blockedReason = status === 'blocked'
           ? 'Not yet available for firmware 3.x: the drive sequence needs a firmware change (' + (on || 'unspecified') + ').'
           : status === 'differs' ? 'Not yet available for firmware 3.x: the converted drive data does not match the 2.x driver.'
+          : status === 'corrected' || status === 'extracted' ? 'Not yet available for firmware 3.x: the drive data exists but has not been checked on a real panel or against a compiled driver (' + status + ').'
           : 'Not yet available for firmware 3.x: no drive data (' + status + ').';
       }
     }
@@ -458,9 +523,27 @@
    *    until the generated file exists). Their status comes from display.driveVerified.
    * @returns {Map<number, object>} panel_ic_type -> entry
    */
-  function buildDriveDb({ generated = null, displays = [] } = {}) {
+  function buildDriveDb({ generated = null, displays = [], classFiles = {} } = {}) {
     const db = new Map();
     db.natives = new Map();
+    // A class-specific file (drive-presets-nrf52811.json): its panels exist on that class only,
+    // so the top level is never usable and driveEntryFor() uses the class view.
+    for (const [cls, doc] of Object.entries(classFiles || {})) {
+      if (!doc || !Object.prototype.hasOwnProperty.call(TARGET_CLASS_LIMITS, cls)) continue;
+      if (doc.schema != null && doc.schema !== 'opendisplay.drive_presets') {
+        throw new Error('drive presets (' + cls + '): unexpected schema ' + doc.schema);
+      }
+      const panels = doc.panels || {};
+      for (const [k, e] of Object.entries(panels)) {
+        const entry = entryFromGenerated(k, { ...e, panel_ic_type: e.panel_ic_type != null ? e.panel_ic_type : k }, panels);
+        if (!entry || db.has(entry.panelIcType)) continue;
+        const only = 'Only on ' + (TARGET_CLASS_LABEL[cls] || cls) + ' firmware 3.x.';
+        db.set(entry.panelIcType, Object.assign(entry, {
+          classes: { [cls]: Object.assign({}, entry, driveView(e, cls), { classes: undefined }) },
+          usable: false, packets: [], blockedReason: only, onlyClass: cls
+        }));
+      }
+    }
     for (const d of displays || []) {
       if (!d || !Array.isArray(d.drivePackets) || !d.drivePackets.length) continue;
       const t = num(d.panelIcType);
@@ -542,10 +625,15 @@
    * stay dark).
    */
   function driveAvailability(display, db, gen, cls) {
-    const t = display ? num(display.panelIcType) : null;
+    const t = displayPanelIcType(display, gen);
     const needsDrive = panelNeedsDriveData(t);
     const entry = driveEntryFor(db, t, cls);
     const res = { selectable: true, needsDrive, entry, badge: null, reason: '', targetClass: normalizeClass(cls) };
+    if (display && display.v3Only && !isConfigDriven(gen)) {
+      res.selectable = false;
+      res.reason = 'This display needs firmware 3.x: firmware 2.x has no driver for it.';
+      return res;
+    }
     if (!isConfigDriven(gen) || !needsDrive) return res;
     if (!entry || !entry.usable) {
       res.selectable = false;
@@ -562,7 +650,13 @@
   }
   function badgeText(avail) {
     if (!avail) return '';
-    if (!avail.selectable) return avail.targetClass === 'bg22' && avail.entry ? 'not on this target' : 'not yet on 3.x';
+    if (!avail.selectable) {
+      // Data that exists for another target only (a Firmware_NRF panel on an ESP32), or the
+      // BG22 interpreter limit: "not on this target". Everything else: "not yet on 3.x".
+      const e = avail.entry;
+      const elsewhere = e && ((e.onlyClass && e.onlyClass !== avail.targetClass) || avail.targetClass === 'bg22');
+      return elsewhere ? 'not on this target' : 'not yet on 3.x';
+    }
     if (avail.badge === 'untested') return 'untested on glass';
     return '';
   }
@@ -687,14 +781,16 @@
     const disp = findPacket(packets, PID.DISPLAY);
     const sys = findPacket(packets, PID.SYSTEM);
     // An index that disagrees with the stored panel is not trusted (the editor may have changed 0x20).
+    // A display preset is named by its 2.x id or its 3.0 drive preset id (v3PanelIcType).
+    const idsOf = d => [num(d.panelIcType), num(d.v3PanelIcType)].filter(x => x != null);
     if (res.display && disp && num(disp.fields.panel_ic_type) != null &&
-        num(res.display.panelIcType) !== num(disp.fields.panel_ic_type)) {
+        !idsOf(res.display).includes(num(disp.fields.panel_ic_type))) {
       res.display = null; res.how.display = null;
     }
     if (!res.display && disp) {
       const t = num(disp.fields.panel_ic_type);
       const w = num(disp.fields.pixel_width), h = num(disp.fields.pixel_height);
-      let c = (presets.displays || []).filter(d => num(d.panelIcType) === t);
+      let c = (presets.displays || []).filter(d => idsOf(d).includes(t));
       const sized = c.filter(d => d.config && num(d.config.pixel_width) === w && num(d.config.pixel_height) === h);
       if (sized.length) c = sized;
       if (res.driverBoard) {
@@ -738,8 +834,12 @@
     const plan = { needed: false, blocked: false, reason: '', panelIcType: null, targetClass: cls, entry: null, add: [], remove: [] };
     if (!isConfigDriven(gen)) { plan.reason = 'not a 3.x device'; return plan; }
     const disp = findPacket(packets, PID.DISPLAY);
-    const t = panelIcType != null ? num(panelIcType) : (disp ? num(disp.fields.panel_ic_type) : null);
+    let t = panelIcType != null ? num(panelIcType) : (disp ? num(disp.fields.panel_ic_type) : null);
+    // A config carried over from Firmware_NRF 2.x names the panel by its 2.x id; 3.0 names it by
+    // the drive preset's id (applyMigration rewrites 0x20).
+    if (cls === 'nrf52811') { const m = nrf52811PanelFor(db, t); if (m != null) t = m; }
     plan.panelIcType = t;
+    const remapped = disp && panelIcType == null && t !== num(disp.fields.panel_ic_type);
     if (!disp && panelIcType == null) { plan.reason = 'no display configured'; return plan; }
     const burned = (packets || []).filter(p => isBurnedPid(p.pid));
     const missing = !hasPanelPacket(packets) || !hasModePacket(packets);
@@ -754,7 +854,7 @@
     // BG22): they must be replaced, the device refuses them.
     const present = drivePacketsOf(packets);
     const presentFit = present.length ? checkDrivePacketsFit(present, cls) : { ok: true };
-    if (!missing && presentFit.ok && !deviceSaysNeedsMigration && panelIcType == null) {
+    if (!missing && presentFit.ok && !deviceSaysNeedsMigration && panelIcType == null && !remapped) {
       if (burned.length) { plan.needed = true; plan.remove = burned; plan.reason = 'remove burned lab packets'; }
       else plan.reason = 'already has drive data';
       return plan;
@@ -1057,7 +1157,8 @@
     TARGET_CLASS_LIMITS, RESTRICTIVE_CLASS, targetClassFromIdent, targetClassFromTarget, deviceTargetClass,
     FW_TARGET, FW_TARGET_NAME, targetFromIdent, limitsFromIdent,
     walkSequence, checkDrivePacketsFit,
-    panelNeedsDriveData, buildDriveDb, driveEntryFor, nativeControllerFor, driveAvailability, badgeText,
+    panelNeedsDriveData, displayPanelIcType, nrf52811PanelFor, targetSupportsEncryption, checkSecretsSupported,
+    buildDriveDb, driveEntryFor, nativeControllerFor, driveAvailability, badgeText,
     drivePacketsOf, hasPanelPacket, syncDrivePackets,
     decodeDrivePacket, codeMapFromPackets, wireMapFromCodeMap,
     identifyPreset, planMigration, applyMigration, describePlan,

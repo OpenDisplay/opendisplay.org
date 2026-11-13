@@ -10,7 +10,8 @@ const TOOLBOX = path.join(__dirname, '..', 'httpdocs', 'firmware', 'toolbox');
 const presets = JSON.parse(fs.readFileSync(path.join(TOOLBOX, 'simple-config-presets.json'), 'utf8'));
 const generated = JSON.parse(fs.readFileSync(path.join(TOOLBOX, 'drive-presets.json'), 'utf8'));
 const dbFallback = V3.buildDriveDb({ displays: presets.displays });
-const db = V3.buildDriveDb({ generated, displays: presets.displays });
+const nrf52811Doc = JSON.parse(fs.readFileSync(path.join(TOOLBOX, 'drive-presets-nrf52811.json'), 'utf8'));
+const db = V3.buildDriveDb({ generated, classFiles: { nrf52811: nrf52811Doc }, displays: presets.displays });
 
 // Legacy body sizes from the schema the toolbox ships (pid -> bytes).
 const SIZES = { 1: 22, 2: 22, 4: 30, 32: 46, 33: 22, 35: 30, 36: 30, 37: 30, 38: 160, 39: 64, 40: 32, 41: 32, 42: 32, 43: 32, 44: 288, 45: 128 };
@@ -73,6 +74,7 @@ test('config size limit per target and generation', () => {
   assert.equal(V3.configSizeLimit('bg22', 'v2'), 2048);
   assert.equal(V3.configSizeLimit('bg22', 'unknown'), 2048);
   assert.equal(V3.configSizeLimit('nrf52811', 'v2'), 512);
+  assert.equal(V3.configSizeLimit('nrf52811', 'v3'), 2000);
   assert.equal(V3.configSizeLimit('esp32', 'v3'), 4096);
   assert.equal(V3.configSizeLimit('nrf52840', 'v2'), 4096);
   assert.equal(V3.configSizeLimit('nrf54', 'v3'), 4096);
@@ -103,7 +105,8 @@ test('drive db: generated file covers every bb_epaper preset, glass entries matc
       assert.deepEqual(b, a, d.id);
     }
     // The 2.x fields an old client keys on must agree with what the preset writes into 0x20.
-    if (e.legacy && e.legacy.color_scheme != null) assert.equal(Number(d.config.color_scheme), e.legacy.color_scheme, d.id + ' color_scheme');
+    // (A 3.x-only display never meets a 2.x client.)
+    if (!d.v3Only && e.legacy && e.legacy.color_scheme != null) assert.equal(Number(d.config.color_scheme), e.legacy.color_scheme, d.id + ' color_scheme');
   }
 });
 
@@ -146,8 +149,12 @@ test('drive db: blocked entries are not usable and say why; the 4.2in palette is
   assert.match(bg.blockedReason, /^Not available on this target \(EFR32BG22\): the drive data needs WINDOW\.$/);
   assert.equal(V3.driveEntryFor(cx, 2, null).usable, false);
   assert.equal(V3.driveEntryFor(cx, 2, 'default').usable, true);
-  // Shipped data (schema_minor 2): every panel is driveable on both classes.
-  for (const [t] of db) for (const cls of ['default', 'bg22']) assert.ok(V3.driveEntryFor(db, t, cls).usable, t + ' ' + cls);
+  // Shipped data (schema_minor 2): every Firmware_Unified panel is driveable on both classes
+  // (drive-presets-nrf52811.json panels are nRF52811-only, see the nRF52811 tests).
+  for (const [t, e] of db) {
+    if (e.onlyClass) continue;
+    for (const cls of ['default', 'bg22']) assert.ok(V3.driveEntryFor(db, t, cls).usable, t + ' ' + cls);
+  }
   assert.equal(db.get(58).paletteVerified, false);
   const alias = db.get(1004);
   assert.equal(alias.aliasOf, '0x003A');
@@ -192,7 +199,8 @@ test('deviceTargetClass: READ_IDENT fw_target first, chip family second, restric
   assert.equal(V3.deviceTargetClass({ identTarget: 6, target: 'bg22' }).cls, 'bg22');      // not a fw_target value
   assert.deepEqual(V3.deviceTargetClass({ identTarget: 0x01, target: 'bg22' }), { cls: 'bg22', how: 'conflict', restrictive: true });
   assert.deepEqual(V3.deviceTargetClass({}), { cls: 'bg22', how: 'unknown', restrictive: true });
-  assert.equal(V3.deviceTargetClass({ identTarget: 0x04, target: 'nrf52811' }).cls, 'bg22');
+  assert.deepEqual(V3.deviceTargetClass({ identTarget: 0x04, target: 'nrf52811' }), { cls: 'nrf52811', how: 'read-ident', restrictive: false });
+  assert.equal(V3.deviceTargetClass({ target: 'nrf52811' }).cls, 'nrf52811');
   assert.equal(V3.deviceTargetClass({ target: V3.targetFromIcType(6) }).cls, 'bg22');
 });
 
@@ -443,4 +451,85 @@ test('compareVersions: a leading v is ignored, so v3.0.0 sorts above 2.x like 3.
   assert.ok(V3.compareVersions('2.9', '2.10') < 0);
   const sorted = ['2.27.1', 'v3.0.0', '2.3.0', '3.1.0'].sort((a, b) => V3.compareVersions(b, a));
   assert.deepEqual(sorted, ['3.1.0', 'v3.0.0', '2.27.1', '2.3.0']);
+});
+
+// ---- nRF52811 (Firmware_NRF 3.0) -------------------------------------------------------------
+const nrfDisplays = presets.displays.filter(d => (d.connectorPins || []).includes(124));
+const GLASS_NRF = ['ssd1619-420-bwr', 'uc8151-029-bwr', 'ssd1619-029-bwr', 'ssd1619-016-bwr', 'uc8151-027-bwr',
+  'uc43-430-bwr', 'ssd1619-013-bwr', 'ssd1619-022-lite-bwr', 'ssd1619-420-bwy', 'el022-160x296-bwr'];
+
+test('nRF52811: every M3 display names a 3.0 preset; the glass-tested ones are selectable without a badge', () => {
+  for (const d of nrfDisplays) {
+    const t = V3.displayPanelIcType(d, 'v3');
+    assert.ok(t >= 0xE000 && t <= 0xE1FF, d.id + ' 3.0 id ' + t);
+    assert.ok(V3.panelNeedsDriveData(t), d.id);
+    const e = db.get(t);
+    assert.ok(e && e.classes && e.classes.nrf52811, d.id + ' has nRF52811 drive data');
+    const a = V3.driveAvailability(d, db, 'v3', 'nrf52811');
+    if (GLASS_NRF.includes(d.id)) {
+      assert.ok(a.selectable, d.id + ': ' + a.reason);
+      assert.equal(V3.badgeText(a), '', d.id + ' is glass');
+    }
+    // Firmware_NRF data never reaches another class.
+    assert.equal(V3.driveAvailability(d, db, 'v3', 'default').selectable, false, d.id + ' on ESP32');
+    assert.equal(V3.driveEntryFor(db, t, 'bg22').usable, false);
+  }
+});
+
+test('nRF52811: 2.x keeps the 2.x id; 3.x-only displays are not offered on 2.x', () => {
+  const d29 = presets.displays.find(d => d.id === 'ssd1619-029-bwr');
+  assert.equal(V3.displayPanelIcType(d29, 'v2'), 1016);
+  assert.equal(V3.displayPanelIcType(d29, 'v3'), 0xE011);
+  assert.equal(V3.driveAvailability(d29, db, 'v2', 'nrf52811').selectable, true);
+  const bwy = presets.displays.find(d => d.id === 'ssd1619-420-bwy');
+  assert.equal(V3.driveAvailability(bwy, db, 'v2', 'nrf52811').selectable, false);
+  assert.equal(V3.driveAvailability(bwy, db, 'v3', 'nrf52811').selectable, true);
+  // Not checked on a panel: refused with a reason, not hidden.
+  const u79 = presets.displays.find(d => d.id === 'uc8179-750-bwr');
+  const a = V3.driveAvailability(u79, db, 'v3', 'nrf52811');
+  assert.equal(a.selectable, false);
+  assert.match(a.reason, /not been checked on a real panel/);
+});
+
+test('nRF52811: a 2.x config is migrated to the 3.0 preset id with its drive packets', () => {
+  assert.equal(V3.nrf52811PanelFor(db, 1016), 0xE011);   // 2.x-driver entry wins over the op-list 0xE105
+  assert.equal(V3.nrf52811PanelFor(db, 1001), 0xE002);
+  assert.equal(V3.nrf52811PanelFor(db, 57), null);
+  const pk = [{ pid: '1', fields: { ic_type: '5' } }, { pid: '32', fields: { panel_ic_type: '1016' } }];
+  const plan = V3.planMigration({ packets: pk, gen: 'v3', db, targetClass: 'nrf52811' });
+  assert.equal(plan.needed, true); assert.equal(plan.blocked, false);
+  assert.equal(plan.panelIcType, 0xE011);
+  assert.deepEqual(plan.add.map(p => p.pid).sort(), ['174', '177']);
+  const out = V3.applyMigration(pk, plan);
+  assert.equal(Number(out.find(p => p.pid === '32').fields.panel_ic_type), 0xE011);
+  // Already migrated: nothing to do.
+  const again = V3.planMigration({ packets: out, gen: 'v3', db, targetClass: 'nrf52811' });
+  assert.equal(again.needed, false, again.reason);
+});
+
+test('nRF52811 has no encryption: board presets say so, and a config with secrets is refused', () => {
+  for (const id of ['m3-nrf', 'm3-lite-nrf']) {
+    assert.equal(presets.driverBoards.find(b => b.id === id).supportsEncryption, false, id);
+  }
+  assert.equal(V3.targetSupportsEncryption('nrf52811'), false);
+  assert.equal(V3.targetSupportsEncryption('esp32'), true);
+  const key = { pid: '39', fields: { encryption_enabled: '0x1', encryption_key: 'ab'.repeat(16) } };
+  assert.deepEqual(V3.checkSecretsSupported([key], 'nrf52811').problems, ['encryption (security config 0x27)']);
+  assert.equal(V3.checkSecretsSupported([key], 'esp32').ok, true);
+  const off = { pid: '39', fields: { encryption_enabled: '0x0', encryption_key: '0'.repeat(32) } };
+  assert.equal(V3.checkSecretsSupported([off], 'nrf52811').ok, true);
+  const wifi = { pid: '38', fields: { ssid: 'x', password: 'secret' } };
+  const fm = { pid: '45', fields: { eik: '01' + '00'.repeat(31) } };
+  assert.equal(V3.checkSecretsSupported([wifi, fm], 'nrf52811').problems.length, 2);
+});
+
+test('m3-nrf board: NFC bus, NFC and flash packets match the firmware-tested layout', () => {
+  const b = presets.driverBoards.find(x => x.id === 'm3-nrf');
+  assert.equal(Number(b.dataBus.bus_type), 1);                  // I2C
+  assert.deepEqual([b.dataBus.pin_1, b.dataBus.pin_2, b.dataBus.pin_3].map(Number), [9, 8, 10]);   // SCL, SDA, power
+  assert.equal(Number(b.nfcConfig.field_detect_pin), 11);
+  assert.equal(Number(b.nfcConfig.adv_button_byte_index), 10);
+  assert.notEqual(Number(b.nfcConfig.adv_button_byte_index), Number(b.buttons.button_data_byte_index));
+  assert.deepEqual([b.flashConfig.mosi_pin, b.flashConfig.sck_pin, b.flashConfig.cs_pin].map(Number), [15, 14, 12]);
+  assert.equal(Number(b.flashConfig.flags) & 1, 1);
 });
