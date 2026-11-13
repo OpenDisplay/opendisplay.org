@@ -3180,7 +3180,6 @@
         124
       ],
       "panelIcType": "1002",
-      "v3PanelIcType": "57347",
       "config": {
         "pixel_width": "400",
         "pixel_height": "300",
@@ -3218,7 +3217,6 @@
         124
       ],
       "panelIcType": "1008",
-      "v3PanelIcType": "57353",
       "config": {
         "pixel_width": "800",
         "pixel_height": "480",
@@ -3237,7 +3235,6 @@
         124
       ],
       "panelIcType": "1010",
-      "v3PanelIcType": "57355",
       "config": {
         "pixel_width": "800",
         "pixel_height": "480",
@@ -3313,7 +3310,6 @@
         124
       ],
       "panelIcType": "1020",
-      "v3PanelIcType": "57365",
       "config": {
         "pixel_width": "240",
         "pixel_height": "320",
@@ -3332,7 +3328,6 @@
         124
       ],
       "panelIcType": "1022",
-      "v3PanelIcType": "57367",
       "config": {
         "pixel_width": "296",
         "pixel_height": "152",

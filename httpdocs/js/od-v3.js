@@ -634,6 +634,13 @@
       res.reason = 'This display needs firmware 3.x: firmware 2.x has no driver for it.';
       return res;
     }
+    // nRF52811 on 3.x drives only panels with a preset; there is no built-in driver to fall back
+    // to, so a display without one (no v3PanelIcType: no preset checked on glass) is refused.
+    if (isConfigDriven(gen) && res.targetClass === 'nrf52811' && !needsDrive) {
+      res.selectable = false;
+      res.reason = 'Not yet available for firmware 3.x on the nRF52811: no preset for this panel has been checked on a real panel. Keep this display on firmware 2.x for now.';
+      return res;
+    }
     if (!isConfigDriven(gen) || !needsDrive) return res;
     if (!entry || !entry.usable) {
       res.selectable = false;

@@ -455,12 +455,20 @@ test('compareVersions: a leading v is ignored, so v3.0.0 sorts above 2.x like 3.
 
 // ---- nRF52811 (Firmware_NRF 3.0) -------------------------------------------------------------
 const nrfDisplays = presets.displays.filter(d => (d.connectorPins || []).includes(124));
-const GLASS_NRF = ['ssd1619-420-bwr', 'uc8151-029-bwr', 'ssd1619-029-bwr', 'ssd1619-016-bwr', 'uc8151-027-bwr',
+const GLASS_NRF = ['ssd1619-420-bwr', 'uc8179-750-bwr', 'uc8151-029-bwr', 'ssd1619-029-bwr', 'ssd1619-016-bwr', 'uc8151-027-bwr',
   'uc43-430-bwr', 'ssd1619-013-bwr', 'ssd1619-022-lite-bwr', 'ssd1619-420-bwy', 'el022-160x296-bwr'];
 
-test('nRF52811: every M3 display names a 3.0 preset; the glass-tested ones are selectable without a badge', () => {
+test('nRF52811: only displays with a glass-checked 3.0 preset are offered on 3.x', () => {
   for (const d of nrfDisplays) {
     const t = V3.displayPanelIcType(d, 'v3');
+    if (!GLASS_NRF.includes(d.id)) {
+      // No preset ships for it: refused on 3.x (there is no built-in driver), still fine on 2.x.
+      const a = V3.driveAvailability(d, db, 'v3', 'nrf52811');
+      assert.equal(a.selectable, false, d.id + ' must not be offered on 3.x');
+      assert.equal(V3.badgeText(a), 'not yet on 3.x', d.id);
+      if (!d.v3Only) assert.equal(V3.driveAvailability(d, db, 'v2', 'nrf52811').selectable, true, d.id + ' on 2.x');
+      continue;
+    }
     assert.ok(t >= 0xE000 && t <= 0xE1FF, d.id + ' 3.0 id ' + t);
     assert.ok(V3.panelNeedsDriveData(t), d.id);
     const e = db.get(t);
@@ -487,15 +495,15 @@ test('nRF52811: 2.x keeps the 2.x id; 3.x-only displays are not offered on 2.x',
   // Checked on glass (7.4in tag): selectable.
   const u79 = presets.displays.find(d => d.id === 'uc8179-750-bwr');
   assert.equal(V3.driveAvailability(u79, db, 'v3', 'nrf52811').selectable, true);
-  // Not checked on a panel: refused with a reason, not hidden.
-  const u22 = presets.displays.find(d => d.id === 'ssd1619-022-bwr');   // 0xE015, corrected
+  // No preset checked on a panel: refused with a reason, not hidden.
+  const u22 = presets.displays.find(d => d.id === 'ssd1619-022-bwr');
   const a = V3.driveAvailability(u22, db, 'v3', 'nrf52811');
   assert.equal(a.selectable, false);
-  assert.match(a.reason, /not been checked on a real panel/);
+  assert.match(a.reason, /checked on a real panel/);
 });
 
 test('nRF52811: a 2.x config is migrated to the 3.0 preset id with its drive packets', () => {
-  assert.equal(V3.nrf52811PanelFor(db, 1016), 0xE011);   // 2.x-driver entry wins over the op-list 0xE105
+  assert.equal(V3.nrf52811PanelFor(db, 1016), 0xE011);
   assert.equal(V3.nrf52811PanelFor(db, 1001), 0xE002);
   assert.equal(V3.nrf52811PanelFor(db, 57), null);
   const pk = [{ pid: '1', fields: { ic_type: '5' } }, { pid: '32', fields: { panel_ic_type: '1016' } }];
