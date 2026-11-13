@@ -19,6 +19,8 @@
       color: var(--fg1);
     }
     .page-inner.doc-page main#main-content { padding: 20px 0 0; }
+    /* The page's own display rules (.key, .actions, ...) must not override the hidden attribute. */
+    [hidden] { display: none !important; }
     .setup { margin: 0 0 20px; }
     .setup__note { margin: 0 0 12px; line-height: 1.45; }
     .setup__fine { margin: 12px 0 0; font-size: 0.85rem; color: var(--fg3); line-height: 1.4; }
@@ -345,7 +347,7 @@
       </div>
     </section>
 
-    <h2>What do you want to do?</h2>
+    <h2 id="actions-heading">What do you want to do?</h2>
     <div class="actions" id="actions">
       <a href="../firmware/display/index.html" class="act act--primary" id="cta-display-go">
         <svg class="act__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>
@@ -684,6 +686,7 @@
       document.querySelector('.lp__lead').textContent = 'Connect to it over Bluetooth and the Toolbox walks you through the rest.';
       document.getElementById('setup').hidden = false;
       document.getElementById('actions').hidden = true;
+      document.getElementById('actions-heading').hidden = true;
       if (p.name) {
         document.getElementById('display-name').textContent = p.name;
         document.getElementById('display-mfg').textContent = p.targetName ? 'Firmware ' + (p.fw ? p.fw.text : '') + ' on ' + p.targetName : '';
@@ -724,7 +727,9 @@
 
     // SECURITY_V2 rev 5 § 7.8.1: a query that starts with f=… is the setup/recovery QR of a 3.0
     // display (SETUP or RESET screen); anything else is the boot-screen device link below.
-    var setupUrl = window.OpenDisplaySetupUrl ? OpenDisplaySetupUrl.parseSetupUrl(window.location.href) : null;
+    // Only the query is parsed: the scheme and host checks are for links read from elsewhere
+    // (scanned or pasted); this page is already the entry point, wherever it is served from.
+    var setupUrl = window.OpenDisplaySetupUrl ? OpenDisplaySetupUrl.parseSetupUrl(window.location.search) : null;
     if (setupUrl && (setupUrl.status === 'setup' || setupUrl.status === 'generic')) {
       encodedData = null;
       showSetup(setupUrl);
