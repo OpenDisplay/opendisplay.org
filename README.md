@@ -28,7 +28,7 @@ Optional fields the Toolbox reads:
 
 - Board `supportsEncryption: false`: the firmware has no security module (nRF52811). The encryption switch is off and disabled, and no 0x27 packet is written. Whatever the preset says, a config carrying a secret (0x27 key, Wi-Fi password, Find My keys) is refused before writing to an nRF52811.
 - Board `dataBus`, `nfcConfig`, `flashConfig`: written as 0x24, 0x2A and 0x2B.
-- Display `v3PanelIcType`: the firmware 3.x drive preset of a Firmware_NRF display (e.g. 1016 on 2.x, 0xE011 on 3.x, from `drive-presets-nrf52811.json`). `panelIcType` keeps the 2.x id.
+- Display `v3PanelIcType`: the firmware 3.x drive preset of a Firmware_NRF display (e.g. 1016 on 2.x, 0xE011 on 3.x, from `drive-presets-nrf52811.json`). `panelIcType` keeps the 2.x id. Only displays whose 3.x preset was checked on a real panel carry it: the firmware ships no other presets, and on 3.x an nRF52811 display without one is refused.
 - Display `v3Only: true`: no 2.x driver exists; `panelIcType` is already the 3.x id and the display is not offered for 2.x.
 
 Local check:

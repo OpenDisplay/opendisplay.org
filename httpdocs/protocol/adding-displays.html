@@ -226,7 +226,7 @@ table code {
     <div class="code-block">python3 .github/scripts/sync-drive-presets.py /path/to/Firmware_Unified
 python3 .github/scripts/sync-drive-presets.py /path/to/Firmware_Unified --check   # CI: exit 1 when stale</div>
     <p>It writes <code>httpdocs/firmware/toolbox/drive-presets.json</code>. Mention the Firmware_Unified commit in the commit message.</p>
-    <p>nRF52811 (Firmware_NRF 3.0) has its own panel ids (0xE000-0xE1FF) and its own file, <code>httpdocs/firmware/toolbox/drive-presets-nrf52811.json</code>, used only for that target:</p>
+    <p>nRF52811 (Firmware_NRF 3.0) has its own panel ids (0xE000-0xE1FF) and its own file, <code>httpdocs/firmware/toolbox/drive-presets-nrf52811.json</code>, used only for that target. It holds only presets checked on a real panel; to offer a display on 3.x, give it a <code>v3PanelIcType</code> from that file:</p>
     <div class="code-block">python3 .github/scripts/sync-drive-presets.py --src /path/to/Firmware_NRF/presets/drive_presets_nrf52811.json \
   --out httpdocs/firmware/toolbox/drive-presets-nrf52811.json</div>
   </div>
