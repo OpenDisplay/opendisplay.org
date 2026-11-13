@@ -39,7 +39,7 @@
   const DEFAULT_FRAG_MAX = S.FRAG_MAX_MIN;
   const REPLY_TIMEOUT_MS = 5000;
   const HANDSHAKE_TIMEOUT_MS = 8000;
-  // BUSY back-off, the same policy as py-opendisplay (v3/py-v9 sec2/client.py): the device counts
+  // BUSY back-off, the same policy as py-opendisplay (sec2/client.py): the device counts
   // every BEGIN / HELLO it answers (BUSY included), every AUTH_FAILED on FINISH and every failed
   // CONFIRM tag in a ring of RATE_RING per RATE_WINDOW_MS (§ 8.7); RATE_LIMITED is not counted.
   // Quick retries burned that ring on hardware and turned a brief BUSY into RATE_LIMITED, so

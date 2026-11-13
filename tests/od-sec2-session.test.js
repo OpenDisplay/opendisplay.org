@@ -417,7 +417,7 @@ test('Sec2SessionError carries a text key', () => {
   assert.equal(e.textKey, 'claim_first'); assert.ok(e instanceof Error);
 });
 
-// ---- BUSY back-off inside the device's handshake rate limit (same policy as py-v9) --------------
+// ---- BUSY back-off inside the device's handshake rate limit (same policy as py-opendisplay) --------
 test('BUSY back-off: 2/4/8/16 s, the same numbers as py-opendisplay', () => {
   assert.deepEqual(BUSY_BACKOFF_MS, [2000, 4000, 8000, 16000]);
   assert.equal(RATE_RING, 10); assert.equal(BUSY_RETRY_RESERVE, 3);
