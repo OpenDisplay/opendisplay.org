@@ -415,11 +415,24 @@ test('backup file round trip, raw .bin accepted, damage detected', () => {
 });
 
 test('code_map -> 4-colour wire map (3.x)', () => {
-  assert.deepEqual(V3.codeMapFromPackets(db.get(30).packets.map(p => ({ pid: p.pid, raw: p.raw }))), [0, 1, 3, 2]);
+  assert.deepEqual(V3.codeMapFromPackets(db.get(30).packets.map(p => ({ pid: p.pid, raw: p.raw }))), [0, 1, 2, 3]);
   assert.deepEqual(V3.wireMapFromCodeMap([0, 1, 3, 2]), [0, 1, 3, 2]);
   assert.equal(V3.wireMapFromCodeMap([0, 1, 1, 2]), null);
   assert.equal(V3.wireMapFromCodeMap([0, 1, 2]), null);
   assert.equal(V3.wireMapFromCodeMap(null), null);
+});
+
+// Measured on glass 2026-11-13 (BG22 on 3.0, full mode): raw 2 draws yellow, raw 3 red, so these
+// six BWRY panels need the identity map. [0, 1, 3, 2] swapped yellow and red on every one of them.
+test('glass BWRY panels carry the identity code_map, in the database and the website presets', () => {
+  for (const id of [0x001C, 0x001E, 0x0036, 0x0038, 0x003A, 0x0040]) {
+    const key = '0x' + id.toString(16).toUpperCase().padStart(4, '0');
+    const fromDb = generated.panels[key].packets.map(p => ({ pid: String(p.id), raw: p.body_hex }));
+    assert.deepEqual(V3.codeMapFromPackets(fromDb), [0, 1, 2, 3], key + ' drive-presets.json');
+    const disp = presets.displays.find(d => Number(d.panelIcType) === id && Array.isArray(d.drivePackets));
+    assert.ok(disp, key + ': website preset with drive packets');
+    assert.deepEqual(V3.codeMapFromPackets(disp.drivePackets), [0, 1, 2, 3], key + ' ' + disp.id);
+  }
 });
 
 test('decodeDrivePacket summaries', () => {

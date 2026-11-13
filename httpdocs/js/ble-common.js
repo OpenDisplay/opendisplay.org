@@ -4224,10 +4224,9 @@ class OpenDisplayBLE {
     }
 
     // Pack one 2bpp frame per pass. NO code map: a palette entry's per-pass
-    // values are ALREADY panel 2-bit codes. code_map (0x31) turns a LOGICAL
+    // values are ALREADY panel 2-bit codes. code_map (0xB1) turns a LOGICAL
     // BWRY colour into a panel code for the 4-colour path; applying it to codes
-    // that are already panel codes maps 2->3 and 3->2, swapping yellow and red
-    // in every pass.
+    // that are already panel codes would remap them a second time.
     const out = [];
     for (let p = 0; p < passes; p++) {
       const codes = new Uint8Array(w * h);
