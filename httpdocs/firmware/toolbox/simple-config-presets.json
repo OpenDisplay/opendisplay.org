@@ -239,6 +239,29 @@
             "voltage_scaling_factor": "0xb1",
             "deep_sleep_current_ua": "0"
          },
+         "dataBus": {
+            "instance_number": "0x0",
+            "bus_type": "1",
+            "pin_1": "0x29",
+            "pin_2": "0x2a",
+            "pin_3": "0x0",
+            "pin_4": "0x0",
+            "pin_5": "0x0",
+            "pin_6": "0x0",
+            "pin_7": "0x0",
+            "bus_speed_hz": "0x61a80",
+            "bus_flags": "0x0",
+            "pullups": "0x3",
+            "pulldowns": "0x0",
+            "reserved": "0x0"
+         },
+         "sensorData": {
+            "sensor_type": "4",
+            "instance_number": "0",
+            "bus_id": "0x0",
+            "i2c_addr_7bit": "0x44",
+            "msd_data_start_byte": "7"
+         },
          "defaultDisplay": "seeed-ed103-1872x1404",
          "defaultPower": "battery-3000",
          "installConfig": {
