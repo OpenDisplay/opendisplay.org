@@ -3722,6 +3722,22 @@
       "index": 6
     },
     {
+      "id": "battery-prim-3p",
+      "name": "3 CR2450",
+      "powerOption": {
+        "power_mode": "1",
+        "battery_capacity_mah": "1800",
+        "sleep_timeout_ms": "40000",
+        "tx_power": "0x8",
+        "sleep_flags": "0x0",
+        "battery_sense_flags": "0x0",
+        "capacity_estimator": "4",
+        "deep_sleep_time_seconds": "0",
+        "reserved": "0x0"
+      },
+      "index": 13
+    },
+    {
       "id": "battery-prim-4p",
       "name": "4 CR2450",
       "powerOption": {
