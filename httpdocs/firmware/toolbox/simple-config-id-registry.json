@@ -100,6 +100,7 @@
     "battery-650": 9,
     "inkplate": 10,
     "battery-5000": 11,
-    "m5paper-1150": 12
+    "m5paper-1150": 12,
+    "battery-prim-3p": 13
   }
 }
