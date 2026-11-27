@@ -834,13 +834,13 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                                 </div>
                                 <div class="slider-row">
                                     <label for="tuneTone">Tone</label>
-                                    <input type="range" id="tuneTone" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                                    <output for="tuneTone" id="tuneToneOut">auto</output>
+                                    <input type="range" id="tuneTone" min="0" max="1" step="0.05" value="0" data-default="0" />
+                                    <output for="tuneTone" id="tuneToneOut">off</output>
                                 </div>
                                 <div class="slider-row">
                                     <label for="tuneGamut">Gamut</label>
-                                    <input type="range" id="tuneGamut" min="-0.05" max="1" step="0.05" value="-0.05" data-default="-0.05" />
-                                    <output for="tuneGamut" id="tuneGamutOut">auto</output>
+                                    <input type="range" id="tuneGamut" min="0" max="1" step="0.05" value="0" data-default="0" />
+                                    <output for="tuneGamut" id="tuneGamutOut">off</output>
                                 </div>
                                 <p class="bt-hint bt-hint--flush">Tone and gamut need a measured palette.</p>
                                 <div class="checkbox-group">
@@ -2553,11 +2553,16 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
          * swatches makes the extra colours undrawable even though the upload
          * path supports them.
          */
-        function driveModePaletteHex() {
+        /** The selected multi-pass mode's measured Lab (D65, media-relative), or null. */
+        function driveModePaletteLab() {
             const m = (typeof selectedDriveMode === 'function') ? selectedDriveMode() : null;
             if (!m || !m.palette || !m.palette.lab || m.palette.lab.length < 2) return null;
             if (m.passes <= 1) return null;   // single-pass uses the scheme table
-            return m.palette.lab.map(([L, a, b]) => labToHex(L, a, b));
+            return m.palette.lab;
+        }
+        function driveModePaletteHex() {
+            const lab = driveModePaletteLab();
+            return lab ? lab.map(([L, a, b]) => labToHex(L, a, b)) : null;
         }
 
         function fillColorSwatches(container, currentColor, onSelect) {
@@ -3173,11 +3178,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         // more interaction than before; the tuning panel stays collapsed.
         const TUNE_IDS = ['Exposure', 'Saturation', 'Shadows', 'Highlights', 'Tone', 'Gamut'];
         const PRESETS = {
-            auto: { mode: 'auto', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: -0.05, Gamut: -0.05, serpentine: true },
-            photo: { mode: 'burkes', Exposure: 1, Saturation: 1.1, Shadows: 0.25, Highlights: 0.2, Tone: -0.05, Gamut: -0.05, serpentine: true },
+            auto: { mode: 'auto', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: 0, Gamut: 0, serpentine: true },
+            photo: { mode: 'burkes', Exposure: 1, Saturation: 1.1, Shadows: 0.25, Highlights: 0.2, Tone: 0, Gamut: 0, serpentine: true },
             graphics: { mode: 'ordered', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: 0, Gamut: 0, serpentine: false },
             logo: { mode: 'none', Exposure: 1, Saturation: 1, Shadows: 0, Highlights: 0, Tone: 0, Gamut: 0, serpentine: false },
-            poster: { mode: 'atkinson', Exposure: 1.05, Saturation: 1.35, Shadows: 0.15, Highlights: 0.35, Tone: -0.05, Gamut: -0.05, serpentine: true }
+            poster: { mode: 'atkinson', Exposure: 1.05, Saturation: 1.35, Shadows: 0.15, Highlights: 0.35, Tone: 0, Gamut: 0, serpentine: true }
         };
         const TUNING_STORE_KEY = 'od.display.tuning';
         let lastDither = null;
@@ -3197,15 +3202,6 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
          * it was measured in. These colours are per-unit, so there is no static
          * table that could stand in for them.
          */
-        function driveModePaletteRGB() {
-            const hexes = driveModePaletteHex();
-            if (!hexes) return null;
-            return hexes.map((h) => ({
-                r: parseInt(h.slice(1, 3), 16),
-                g: parseInt(h.slice(3, 5), 16),
-                b: parseInt(h.slice(5, 7), 16),
-            }));
-        }
         /**
          * Scheme the PREVIEW should quantise against.
          *
@@ -3225,11 +3221,11 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
          */
         function ditherKnowsMultipass() {
             const lib = window.OpenDisplayDither;
-            return !!(lib && lib.BWRY16 === 10 && typeof lib.devicePaletteToColorPalette === 'function');
+            return !!(lib && lib.BWRY16 === 10 && typeof lib.devicePaletteToPalette === 'function');
         }
         let warnedStaleDither = false;
         function previewColorScheme() {
-            if (!driveModePaletteRGB()) return currentColorScheme();
+            if (!driveModePaletteLab()) return currentColorScheme();
             if (!ditherKnowsMultipass()) {
                 if (!warnedStaleDither) {
                     warnedStaleDither = true;
@@ -3241,12 +3237,6 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             }
             return 10;
         }
-        /** Slider value to library option: negative means 'auto', zero means 'off'. */
-        function toneValue(v) {
-            if (v < 0) return 'auto';
-            if (v === 0) return 'off';
-            return v;
-        }
         function tuningValues() {
             const read = (id) => parseFloat(document.getElementById('tune' + id).value);
             return {
@@ -3254,8 +3244,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 saturation: read('Saturation'),
                 shadows: read('Shadows'),
                 highlights: read('Highlights'),
-                tone: toneValue(read('Tone')),
-                gamut: toneValue(read('Gamut')),
+                tone: read('Tone'),
+                gamut: read('Gamut'),
                 serpentine: document.getElementById('tuneSerpentine').checked,
                 realistic: document.getElementById('tuneRealistic').checked,
                 paletteId: document.getElementById('paletteSelect').value || 'auto',
@@ -3263,7 +3253,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 // Present only for a multi-pass mode. dither.js treats a device
                 // palette as outranking both the idealised scheme tables and the
                 // built-in measured ones, because it is a measurement of THIS unit.
-                devicePalette: driveModePaletteRGB()
+                devicePalette: driveModePaletteLab()
             };
         }
         function syncTuneOutputs() {
@@ -3272,8 +3262,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const out = document.getElementById('tune' + id + 'Out');
                 if (!input || !out) continue;
                 const v = parseFloat(input.value);
-                if (id === 'Tone' || id === 'Gamut') out.textContent = v < 0 ? 'auto' : (v === 0 ? 'off' : v.toFixed(2));
-                else if (id === 'Exposure' || id === 'Saturation') out.textContent = v.toFixed(2) + 'x';
+                if (id === 'Exposure' || id === 'Saturation') out.textContent = v.toFixed(2) + 'x';
                 else out.textContent = v === 0 ? 'off' : v.toFixed(2);
             }
         }
@@ -3412,7 +3401,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             // preview) for every bwry16 image.
             let swatches;
             try {
-                swatches = lib.idealPalette(scheme, driveModePaletteRGB());
+                swatches = lib.idealPalette(scheme, driveModePaletteLab());
             } catch (err) {
                 bar.innerHTML = '';
                 legend.innerHTML = '';
