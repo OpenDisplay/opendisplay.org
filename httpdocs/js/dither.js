@@ -225,6 +225,7 @@ function pickAuto(imageData) {
  * @param {number} [opts.tone] Black-point lift, 0 (off) to 1
  * @param {number} [opts.gamut] Gamut compression, 0 (off) to 1
  * @param {number[][]} [opts.devicePalette] Device Lab for scheme 10
+ * @param {boolean} [opts.dbs] Refine with Direct Binary Search (slow)
  * @returns {{indices:Uint8Array,preview:Array,wireMap:number[],ms:number,modeValue:string,measuredId:string|null,counts:Uint32Array,names:string[]}}
  */
 function dither(imageData, opts = {}) {
@@ -263,6 +264,9 @@ function dither(imageData, opts = {}) {
     highlights: num(opts.highlights, 0),
     tone: unit(opts.tone),
     gamut: unit(opts.gamut),
+    // Direct Binary Search: a refinement pass after diffusion, roughly 10-15x
+    // slower (about 1.5 s for 800x480), so callers enable it for final renders only.
+    dbs: Boolean(opts.dbs),
   };
 
   // A device palette outranks everything: it is a real measurement of THIS
@@ -300,6 +304,7 @@ function dither(imageData, opts = {}) {
     counts,
     names: paletteNames(scheme, result.palette.length),
     devicePaletteUsed: Boolean(devicePalette),
+    dbs: options.dbs,
   };
 }
 

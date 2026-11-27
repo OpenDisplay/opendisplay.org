@@ -845,6 +845,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                                 <p class="bt-hint bt-hint--flush">Tone and gamut need a measured palette.</p>
                                 <div class="checkbox-group">
                                     <label for="tuneSerpentine"><input type="checkbox" id="tuneSerpentine" checked /> Serpentine scan</label>
+                                    <label for="tuneDbs"><input type="checkbox" id="tuneDbs" /> Refine with DBS (finer detail, about 1&ndash;2 s per render)</label>
                                 </div>
                                 <div id="usePartialUploadRow" class="checkbox-group" style="display: none; margin-top: 0;">
                                     <label for="usePartialUpload">
@@ -2772,7 +2773,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             // (a measured palette's "white" would otherwise sprinkle colored specks over it).
             const plain = !sourceImage || !baseImageData;
             const result = lib.dither(getBaseImageData(width, height), plain
-                ? { ...options, scheme, mode: 'none', paletteId: 'ideal' }
+                ? { ...options, scheme, mode: 'none', paletteId: 'ideal', dbs: false }
                 : { ...options, scheme, mode });
             if (compositeInkOntoIndices(result.indices, width, height, result.preview)) recountDitherCounts(result);
             result.scheme = scheme;
@@ -3247,6 +3248,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 tone: read('Tone'),
                 gamut: read('Gamut'),
                 serpentine: document.getElementById('tuneSerpentine').checked,
+                dbs: document.getElementById('tuneDbs').checked,
                 realistic: document.getElementById('tuneRealistic').checked,
                 paletteId: document.getElementById('paletteSelect').value || 'auto',
                 panelIcType: displayPanelIcType,
@@ -3338,6 +3340,12 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     if (coarsePreview) {
                         renderCoarsePreview(lib, ctx, canvas, scheme, mode, options);
                     } else {
+                        if (options.dbs && sourceImage) {
+                            // DBS blocks the thread for a second or two: let the note paint first.
+                            const summary = document.getElementById('tuningSummary');
+                            if (summary) summary.textContent = 'Refining with DBS…';
+                            await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+                        }
                         // Use the library directly: the preview runs before any BLE connection.
                         const result = ditherBaseAndCompositeInk(lib, ctx, canvas.width, canvas.height, scheme, mode, options);
                         lastDither = result;
@@ -3370,7 +3378,8 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             base.height = canvas.height;
             base.getContext('2d').putImageData(getBaseImageData(canvas.width, canvas.height), 0, 0);
             sctx.drawImage(base, 0, 0, w, h);
-            const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode });
+            // DBS is too slow to follow a slider; the full render after the drag applies it.
+            const result = lib.dither(sctx.getImageData(0, 0, w, h), { ...options, scheme, mode, dbs: false });
             lib.paint(sctx, w, h, result.indices, result.preview);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
@@ -3385,9 +3394,10 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 const palette = result.measuredId
                     ? (lib.MEASURED.find(m => m.id === result.measuredId) || {}).label
                     : 'ideal colors';
+                const dbs = result.dbs ? ' · DBS' : '';
                 // Without a photo nothing is dithered; don't make it look like the chosen setting was ignored.
                 summary.textContent = sourceImage
-                    ? `${label} · ${palette} · ${result.ms.toFixed(0)} ms`
+                    ? `${label} · ${palette}${dbs} · ${result.ms.toFixed(0)} ms`
                     : 'Applies to photos';
             }
             const bar = document.getElementById('inkBar');
@@ -3450,6 +3460,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
         function resetTuning() {
             document.getElementById('paletteSelect').value = 'auto';
             document.getElementById('tuneRealistic').checked = false;
+            document.getElementById('tuneDbs').checked = false;
             document.getElementById('fitMode').value = 'cover';
             sourceRotation = 0;
             applyPreset('auto');
@@ -3459,6 +3470,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             const state = { mode: document.getElementById('ditheringSelect').value };
             for (const id of TUNE_IDS) state[id] = document.getElementById('tune' + id).value;
             state.serpentine = document.getElementById('tuneSerpentine').checked;
+            state.dbs = document.getElementById('tuneDbs').checked;
             state.realistic = document.getElementById('tuneRealistic').checked;
             state.palette = document.getElementById('paletteSelect').value;
             state.fit = document.getElementById('fitMode').value;
@@ -3481,6 +3493,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
             if (state) {
                 for (const id of TUNE_IDS) if (state[id] != null) document.getElementById('tune' + id).value = state[id];
                 if (state.serpentine != null) document.getElementById('tuneSerpentine').checked = state.serpentine;
+                if (state.dbs != null) document.getElementById('tuneDbs').checked = state.dbs;
                 if (state.realistic != null) document.getElementById('tuneRealistic').checked = state.realistic;
                 if (state.fit) document.getElementById('fitMode').value = state.fit;
             }
@@ -3689,7 +3702,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                 cv.width = w;
                 cv.height = h;
                 const cctx = cv.getContext('2d');
-                const result = lib.dither(source, { ...options, scheme, mode: m.value });
+                const result = lib.dither(source, { ...options, scheme, mode: m.value, dbs: false });
                 lib.paint(cctx, w, h, result.indices, result.preview);
                 const label = document.createElement('span');
                 label.textContent = `${m.label} · ${result.ms.toFixed(0)} ms`;
@@ -3769,7 +3782,7 @@ button.color-swatch.selected:hover{box-shadow:0 0 0 2px var(--accent)!important}
                     getPixelData();
                 });
             }
-            for (const id of ['tuneSerpentine', 'tuneRealistic', 'paletteSelect']) {
+            for (const id of ['tuneSerpentine', 'tuneDbs', 'tuneRealistic', 'paletteSelect']) {
                 document.getElementById(id).addEventListener('change', () => {
                     markPresetCustom();
                     saveTuning();
