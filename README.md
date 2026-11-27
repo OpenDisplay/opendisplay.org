@@ -31,6 +31,8 @@ The Toolbox, BLE Tester and designer pick the path by the connected device's fir
 |---|---|---|
 | `httpdocs/firmware/toolbox/drive-presets.json` | Firmware_Unified `panels/generated/drive_presets.json` | `python3 .github/scripts/sync-drive-presets.py <Firmware_Unified checkout>` |
 | `httpdocs/firmware/toolbox/drive-presets-nrf52811.json` | Firmware_NRF `presets/drive_presets_nrf52811.json` | `python3 .github/scripts/sync-drive-presets.py --src <file> --out httpdocs/firmware/toolbox/drive-presets-nrf52811.json` |
+| `httpdocs/js/vendor/epaper-dithering.js` | npm `@opendisplay/epaper-dithering` `dist/index.js`, at the version py-opendisplay pins | copy, dropping the `sourceMappingURL` lines |
+| `httpdocs/js/vendor/palettes/*.json` | py-opendisplay `src/opendisplay/palettes/`; the maps in `httpdocs/js/dither.js` mirror `display_palettes.py` | copy |
 | `tests/fixtures/sec2_vectors.json` | py-opendisplay `tests/fixtures/` (same file in Firmware_Unified) | copy |
 | `tests/fixtures/user_texts.json` | py-opendisplay `tests/fixtures/`; mirrored word for word in `httpdocs/js/od-texts.js` | copy, then update `od-texts.js` |
 

@@ -1,20 +1,6 @@
 // OpenDisplay dithering front-end for @opendisplay/epaper-dithering (Rust/WASM core).
 // Publishes window.OpenDisplayDither and fires 'opendisplay-dither-ready' once loaded.
-import {
-  ditherImage,
-  ColorScheme,
-  DitherMode,
-  getPalette,
-  SPECTRA_7_3_6COLOR,
-  SPECTRA_7_3_6COLOR_V2,
-  BWRY_3_97,
-  BWRY_4_2,
-  MONO_4_26,
-  SOLUM_BWR,
-  HANSHOW_BWR,
-  HANSHOW_BWY,
-  VERSION,
-} from './vendor/epaper-dithering.js';
+import { ditherImage, DitherMode, Palette, VERSION } from './vendor/epaper-dithering.js';
 
 const MODES = [
   { value: 'auto', label: 'Auto', mode: null },
@@ -31,30 +17,51 @@ const MODES = [
 ];
 const MODE_BY_VALUE = new Map(MODES.map((m) => [m.value, m]));
 
+// epaper-dithering 7 ships no palettes. These files are copied from py-opendisplay
+// (src/opendisplay/palettes/), which owns them; tests/drift.test.js keeps them equal.
+// Entry order is the palette-index order wireMap() and the encoders expect.
+async function loadPalette(file) {
+  const res = await fetch(new URL(`./vendor/palettes/${file}`, import.meta.url));
+  if (!res.ok) throw new Error(`palette ${file}: HTTP ${res.status}`);
+  return Palette.fromJson(await res.text());
+}
+
+// Idealised palette per firmware colour scheme. Mirrors IDEAL_PALETTE_FILES in
+// py-opendisplay/src/opendisplay/display_palettes.py.
+const IDEAL_FILES = {
+  0: 'ideal_mono.json',
+  1: 'ideal_bwr.json',
+  2: 'ideal_bwy.json',
+  3: 'ideal_bwry.json',
+  4: 'ideal_bwgbry.json',
+  5: 'ideal_grayscale_4.json',
+  6: 'ideal_grayscale_16.json',
+  7: 'ideal_seven_color.json',
+  8: 'ideal_bwgbry.json', // same inks as 4; only the plane packing differs
+};
+
 // Measured palettes, keyed for the UI. `scheme` is the canonical firmware wire value.
-const MEASURED = [
-  { id: 'spectra73v2', label: 'Spectra 7.3" 6-color v2', scheme: 4, palette: SPECTRA_7_3_6COLOR_V2 },
-  { id: 'spectra73', label: 'Spectra 7.3" 6-color', scheme: 4, palette: SPECTRA_7_3_6COLOR },
-  { id: 'bwry397', label: 'BWRY 3.97" 800x480', scheme: 3, palette: BWRY_3_97 },
-  { id: 'bwry42', label: 'BWRY 4.2"', scheme: 3, palette: BWRY_4_2 },
-  { id: 'mono426', label: 'Mono 4.26"', scheme: 0, palette: MONO_4_26 },
-  { id: 'solumbwr', label: 'Solum BWR', scheme: 1, palette: SOLUM_BWR },
-  { id: 'hanshowbwr', label: 'Hanshow BWR', scheme: 1, palette: HANSHOW_BWR },
-  { id: 'hanshowbwy', label: 'Hanshow BWY', scheme: 2, palette: HANSHOW_BWY },
+const MEASURED_FILES = [
+  { id: 'spectra73v2', label: 'Spectra 7.3" 6-color', scheme: 4, file: 'spectra6_7in3_v2.json' },
+  { id: 'bwry397', label: 'BWRY 3.97" 800x480', scheme: 3, file: 'ep397yr_bwry.json' },
 ];
-const MEASURED_BY_ID = new Map(MEASURED.map((m) => [m.id, m]));
 
 // panel_ic_type + color_scheme -> measured palette id.
-// Mirrors DISPLAY_PALETTE_MAP in py-opendisplay/src/opendisplay/display_palettes.py.
+// Mirrors MEASURED_PALETTE_FILES in py-opendisplay/src/opendisplay/display_palettes.py.
 const PANEL_PALETTES = new Map([
-  ['35:4', 'spectra73'],
-  ['39:0', 'mono426'],
-  ['33:1', 'solumbwr'],
+  ['35:4', 'spectra73v2'],
+  ['66:8', 'spectra73v2'], // 13.3" Spectra 6, borrows the 7.3" measurement
   ['55:3', 'bwry397'],
 ]);
 
+const files = [...new Set([...Object.values(IDEAL_FILES), ...MEASURED_FILES.map((m) => m.file)])];
+const loaded = new Map(await Promise.all(files.map(async (f) => [f, await loadPalette(f)])));
+const IDEAL = new Map(Object.entries(IDEAL_FILES).map(([s, f]) => [Number(s), loaded.get(f)]));
+const MEASURED = MEASURED_FILES.map(({ file, ...m }) => ({ ...m, palette: loaded.get(file) }));
+const MEASURED_BY_ID = new Map(MEASURED.map((m) => [m.id, m]));
+
 // Palette index -> value written on the wire, per color scheme.
-// Index order comes from the library palette (black, white, yellow, red, blue, green...).
+// Index order comes from the palette files (black, white, yellow, red, blue, green...).
 // Schemes 1/2 encode a 2-bit code: bit0 = plane1, bit1 = plane2.
 const GRAY4_LUT = [3, 1, 2, 0];
 const GRAY4_LUT_V2 = [3, 2, 1, 0];
@@ -89,7 +96,7 @@ function wireMap(scheme, panelIcType = null) {
     case 7: return [0, 1, 2, 3, 4, 5, 6];
     // Scheme 10's "wire value" is the PALETTE INDEX, not a panel code: the
     // multi-pass encoder looks each index up in the device's per-pass code
-    // triples (config packet 0x30) to build one frame per pass. Mapping it
+    // triples (config packet 0xB0) to build one frame per pass. Mapping it
     // here would corrupt that lookup, so the table stays identity.
     case BWRY16: return IDENTITY_16;
     default: return IDENTITY_16;
@@ -108,80 +115,70 @@ function canonicalScheme(scheme) {
 }
 
 /**
- * Build a library ColorPalette from a device's measured 16-colour palette.
+ * Build a library Palette from a device's measured multi-pass palette.
  *
- * This is the path scheme 10 takes instead of a scheme id. The colours are
+ * This is the path scheme 10 takes instead of a scheme table. The colours are
  * PER-UNIT -- two same-part-number 2.9" panels differ by dE00 6.40, and a
  * palette tuned on one measured 19% worse on the other -- so there is no
  * correct static table to fall back to. The device carries its own in config
- * packet 0x30, and that is what must be dithered against.
+ * packet 0xB0, and that is what must be dithered against.
  *
- * `scheme` is deliberately left unset: the core then matches against these
- * bytes directly rather than looking the id up in its own table, which is why
- * this works on a bundle that predates the scheme value.
+ * The entries stay unnamed: they are blended pigment states from several
+ * passes, not inks, so there is no nominal colour to snap or anchor to.
  *
- * @param {Array<{r:number,g:number,b:number}>} colors Palette-index order
- * @returns {{colors:Record<string,{r:number,g:number,b:number}>,accent:string}}
+ * @param {number[][]} lab CIELAB D65, media-relative (paper white = L* 100), in
+ *   palette-index order -- what extractDriveModes() reads from 0xB0
+ * @returns {Palette}
  */
-function devicePaletteToColorPalette(colors) {
-  if (!Array.isArray(colors) || colors.length < 2) {
-    throw new Error(`device palette needs at least 2 colours, got ${colors ? colors.length : 0}`);
+function devicePaletteToPalette(lab) {
+  if (!Array.isArray(lab) || lab.length < 2) {
+    throw new Error(`device palette needs at least 2 colours, got ${lab ? lab.length : 0}`);
   }
-  const named = {};
-  colors.forEach((c, i) => { named[`e${i}`] = { r: c.r, g: c.g, b: c.b }; });
-  // Accent drives the core's chroma-preservation bias. Pick the most chromatic
-  // entry rather than a fixed index: which entry is the strongest ink varies
-  // per unit, and on BWRY most entries are near-neutral.
-  let accent = 'e0';
-  let best = -1;
-  colors.forEach((c, i) => {
-    const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
-    if (chroma > best) { best = chroma; accent = `e${i}`; }
-  });
-  return { colors: named, accent };
+  return new Palette(lab.map(([L, a, b]) => ({ appearance: [L, a, b] })), true);
 }
 
 /**
- * Measured palette for a connected panel, or null when none is calibrated.
+ * Measured palette for a connected panel, or null when none is measured.
  * @param {number|null} panelIcType
  * @param {number} scheme
  */
 function paletteForPanel(panelIcType, scheme) {
   if (panelIcType == null) return null;
-  // Scheme 10 shares its inks with scheme 3 but has 16 entries, not 4. The
-  // built-in measured palettes are keyed to the 4-entry layout, so applying one
-  // would silently quantise 16 colours down to 4.
-  if (Number(scheme) === BWRY16) return null;
-  const id = PANEL_PALETTES.get(`${Number(panelIcType)}:${canonicalScheme(scheme)}`);
+  const id = PANEL_PALETTES.get(`${Number(panelIcType)}:${Number(scheme)}`);
   return id ? MEASURED_BY_ID.get(id) : null;
+}
+
+function idealFor(scheme) {
+  const palette = IDEAL.get(Number(scheme));
+  if (!palette) throw new Error(`no palette for colour scheme ${scheme}`);
+  return palette;
 }
 
 /**
  * Ideal sRGB colors for a scheme, in palette-index order.
  *
- * `devicePalette` is required for scheme 10 and ignored otherwise: the library
- * has no table for it, and there is no honest static default (see
- * devicePaletteToColorPalette).
+ * `devicePalette` is required for scheme 10 and ignored otherwise: there is no
+ * honest static default for it (see devicePaletteToPalette).
  * @param {number} scheme
- * @param {Array<{r:number,g:number,b:number}>} [devicePalette]
+ * @param {number[][]} [devicePalette] Device Lab, as for devicePaletteToPalette
  */
 function idealPalette(scheme, devicePalette = null) {
   if (Number(scheme) === BWRY16) {
     if (!devicePalette) {
       throw new Error(
         'colour scheme 10 (bwry16) has no ideal palette: its 16 colours are ' +
-        'per-unit and must be read from the device (config packet 0x30)',
+        'per-unit and must be read from the device (config packet 0xB0)',
       );
     }
-    return devicePalette.map((c) => ({ r: c.r, g: c.g, b: c.b }));
+    return devicePaletteToPalette(devicePalette).previewRgb();
   }
-  return Object.values(getPalette(Number(scheme)).colors);
+  return idealFor(scheme).previewRgb();
 }
 
 /**
  * Human-readable color names for a scheme, in palette-index order.
  * @param {number} scheme
- * @param {number} [count] Entry count, for schemes with no library table
+ * @param {number} [count] Entry count, for scheme 10
  */
 function paletteNames(scheme, count = 16) {
   // e0..eN rather than invented hues: these are blended pigment states, not
@@ -190,7 +187,7 @@ function paletteNames(scheme, count = 16) {
   if (Number(scheme) === BWRY16) {
     return Array.from({ length: count }, (_, i) => `e${i}`);
   }
-  return Object.keys(getPalette(Number(scheme)).colors);
+  return idealFor(scheme).entries.map((e) => e.name);
 }
 
 /**
@@ -198,7 +195,7 @@ function paletteNames(scheme, count = 16) {
  * cleanly with a direct map; continuous tone needs error diffusion.
  * Tone and gamut stay under the caller's control so their sliders remain live.
  * @param {ImageData} imageData
- * @returns {{mode:number,serpentine:boolean}}
+ * @returns {{mode:string,serpentine:boolean}}
  */
 function pickAuto(imageData) {
   const data = imageData.data;
@@ -220,11 +217,15 @@ function pickAuto(imageData) {
  * Dither an ImageData buffer.
  * @param {ImageData|{width:number,height:number,data:Uint8ClampedArray}} imageData
  * @param {object} opts
- * @param {number} opts.scheme Firmware color scheme (0-8)
+ * @param {number} opts.scheme Firmware color scheme (0-8, or 10 with devicePalette)
  * @param {number|null} [opts.panelIcType]
  * @param {string} [opts.mode] Mode value from MODES ('auto' by default)
  * @param {string} [opts.paletteId] 'auto' | 'ideal' | measured palette id
- * @param {boolean} [opts.realistic] Preview using measured RGB instead of ideal
+ * @param {boolean} [opts.realistic] Preview using measured colours instead of ideal
+ * @param {number} [opts.tone] Black-point lift, 0 (off) to 1
+ * @param {number} [opts.gamut] Gamut compression, 0 (off) to 1
+ * @param {number[][]} [opts.devicePalette] Device Lab for scheme 10
+ * @param {boolean} [opts.dbs] Refine with Direct Binary Search (slow)
  * @returns {{indices:Uint8Array,preview:Array,wireMap:number[],ms:number,modeValue:string,measuredId:string|null,counts:Uint32Array,names:string[]}}
  */
 function dither(imageData, opts = {}) {
@@ -236,7 +237,7 @@ function dither(imageData, opts = {}) {
     throw new Error(
       'colour scheme 10 (bwry16) needs opts.devicePalette: its 16 colours are ' +
       'per-unit, so they must come from the connected device (config packet ' +
-      '0x30) rather than a built-in table',
+      '0xB0) rather than a built-in table',
     );
   }
 
@@ -254,38 +255,41 @@ function dither(imageData, opts = {}) {
   const entry = MODE_BY_VALUE.get(modeValue);
   const mode = auto ? auto.mode : (entry ? entry.mode : DitherMode.BURKES);
 
-  const settings = {
+  const options = {
     mode,
     serpentine: auto ? auto.serpentine : opts.serpentine !== false,
     exposure: num(opts.exposure, 1),
     saturation: num(opts.saturation, 1),
     shadows: num(opts.shadows, 0),
     highlights: num(opts.highlights, 0),
-    tone: opts.tone ?? 'auto',
-    gamut: opts.gamut ?? 'auto',
+    tone: unit(opts.tone),
+    gamut: unit(opts.gamut),
+    // Direct Binary Search: a refinement pass after diffusion, roughly 10-15x
+    // slower (about 1.5 s for 800x480), so callers enable it for final renders only.
+    dbs: Boolean(opts.dbs),
   };
 
   // A device palette outranks everything: it is a real measurement of THIS
-  // unit, where the built-in tables are either idealised or measured on a
+  // unit, where the bundled files are either idealised or measured on a
   // different panel.
   let target;
-  if (devicePalette) target = devicePaletteToColorPalette(devicePalette);
+  if (devicePalette) target = devicePaletteToPalette(devicePalette);
   else if (measured) target = measured.palette;
-  else target = Number(scheme);
+  else target = idealFor(scheme);
 
   const started = performance.now();
   const result = ditherImage(
     { width: imageData.width, height: imageData.height, data: imageData.data },
     target,
-    settings,
+    options,
   );
   const ms = performance.now() - started;
 
   // With a device palette the measured colours ARE the honest preview, so
   // there is no idealised alternative to fall back to.
-  const preview = devicePalette
+  const preview = (devicePalette || (measured && opts.realistic))
     ? result.palette
-    : ((measured && opts.realistic) ? result.palette : idealPalette(scheme));
+    : idealFor(scheme).previewRgb();
 
   const counts = new Uint32Array(result.palette.length);
   for (let i = 0; i < result.indices.length; i++) counts[result.indices[i]]++;
@@ -300,6 +304,7 @@ function dither(imageData, opts = {}) {
     counts,
     names: paletteNames(scheme, result.palette.length),
     devicePaletteUsed: Boolean(devicePalette),
+    dbs: options.dbs,
   };
 }
 
@@ -311,6 +316,12 @@ function modeLabelFor(mode) {
 function num(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** 0..1 strength; anything else (a 6.x 'auto'/'off' from saved settings) is off. */
+function unit(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
 }
 
 /** Paint palette indices onto a canvas context using the given preview colors. */
@@ -332,7 +343,6 @@ window.OpenDisplayDither = {
   VERSION,
   MODES,
   MEASURED,
-  ColorScheme,
   DitherMode,
   dither,
   paint,
@@ -341,7 +351,7 @@ window.OpenDisplayDither = {
   paletteForPanel,
   idealPalette,
   paletteNames,
-  devicePaletteToColorPalette,
+  devicePaletteToPalette,
   BWRY16,
   pickAuto,
 };

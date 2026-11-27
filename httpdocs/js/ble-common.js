@@ -4123,7 +4123,9 @@ class OpenDisplayBLE {
       } else if (pkt.id === 0xB0 && d.length >= 4) {
         // 4-byte head [inst, mode_index, cal_flags, entry_count] + 8 B/entry:
         // codes:u16 LE (pass p in bits [2p+1:2p], LSB-first -- structs 2.2)
-        // + CIELAB x100 as 3 x int16 LE.
+        // + CIELAB x100 as 3 x int16 LE, under D50/2 deg, media-relative
+        // (Firmware_Unified #106). Adapted to D65 here, once, because every
+        // reader (the quantiser, the swatch previews) works in sRGB's D65 Lab.
         const n = Math.min(d[3], Math.floor((d.length - 4) / 8));
         const codes = [], lab = [];
         const rd = (k) => { const u = d[k] | (d[k + 1] << 8); return (u > 32767 ? u - 65536 : u) / 100; };
@@ -4133,7 +4135,7 @@ class OpenDisplayBLE {
           const triple = [];
           for (let p = 0; p < 8; p++) triple.push((cw >> (2 * p)) & 3);
           codes.push(triple);
-          lab.push([rd(o + 2), rd(o + 4), rd(o + 6)]);
+          lab.push(this._d50LabToD65([rd(o + 2), rd(o + 4), rd(o + 6)]));
         }
         calByMode.set(d[1], { codes, lab, measured: (d[2] & 1) === 1 });
       }
@@ -4239,7 +4241,30 @@ class OpenDisplayBLE {
     return out;
   }
 
-  /** sRGB byte triple -> CIELAB (D65), matching the measurement convention. */
+  /**
+   * CIELAB under D50 -> CIELAB under D65 (Bradford), for 0xB0 entries.
+   *
+   * 0xB0 stores D50/2 deg media-relative Lab (paper white = L* 100, a* 0, b* 0).
+   * The D50 white maps to the D65 white, so paper white stays exactly that.
+   */
+  _d50LabToD65([L, a, b]) {
+    const D50 = [0.96422, 1.0, 0.82521], D65 = [0.95047, 1.0, 1.08883];
+    // Bradford D50 -> D65, in XYZ (Lindbloom).
+    const M = [
+      [0.9555766, -0.0230393, 0.0631636],
+      [-0.0282895, 1.0099416, 0.0210077],
+      [0.0122982, -0.0204830, 1.3299098]
+    ];
+    const e = 216 / 24389, k = 24389 / 27;
+    const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
+    const inv = (f) => (f * f * f > e ? f * f * f : (116 * f - 16) / k);
+    const xyz = [inv(fx) * D50[0], inv(fy) * D50[1], inv(fz) * D50[2]];
+    const t = M.map((row, i) => (row[0] * xyz[0] + row[1] * xyz[1] + row[2] * xyz[2]) / D65[i]);
+    const g = t.map((v) => (v > e ? Math.cbrt(v) : (k * v + 16) / 116));
+    return [116 * g[1] - 16, 500 * (g[0] - g[1]), 200 * (g[1] - g[2])];
+  }
+
+  /** sRGB byte triple -> CIELAB (D65), the space the quantiser compares in. */
   _srgbToLabTriple(r, g, b) {
     const lin = (v) => {
       v /= 255;
